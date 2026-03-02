@@ -140,8 +140,6 @@ class _MainPageState extends ConsumerState<MainPage> {
     final imageSnapshot = List<String>.of(captureImages);
     // 清空
     ref.read(captureImageProvider.notifier).clear();
-    _promptTF.clear();
-
     await SessionRoute(
       SessionRouteExtra(
         sessionKey: App().auth.sessionKey.isEmpty ? 'agent:main:main' : App().auth.sessionKey,
@@ -149,6 +147,7 @@ class _MainPageState extends ConsumerState<MainPage> {
         imageUrls: imageSnapshot,
       ),
     ).push(context);
+    _promptTF.clear();
     // 是否子页面恢复
     logi('[MainPage] jumpPreChatPage: returned, resuming media...');
     // 重复播放动画

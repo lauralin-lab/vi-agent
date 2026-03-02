@@ -70,6 +70,7 @@ class LiveKitRpcHandler {
     }
     if (pId == null || pId.isEmpty) {
       logw('[RpcHandler] app2ServerRpc: no agent found! participants=${_room.remoteParticipants.keys.toList()}');
+      return;
     } else {
       logi('[RpcHandler] → app2ServerRpc: method=${type.method}, agent=$pId, payloadLen=${payload.length}');
     }

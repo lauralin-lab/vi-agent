@@ -177,9 +177,6 @@ class Authentication {
   /// 用户 UUID
   String get uuid => currentAuth.self?.uuid ?? App().preferences.uuidInLocalCache;
 
-  /// 用户 FirebaseID
-  String get firebaseId => currentAuth.self?.firebaseID ?? App().preferences.firebaseIdInLocalCache;
-
   /// liveKit Token
   String get liveKitToken => currentAuth.self?.liveKit.liveKitToken ?? '';
 
@@ -609,13 +606,6 @@ class Authentication {
     final preferences = App().preferences;
     if (preferences.uuidInLocalCache == uuid) return;
     App().preferences.setUuidInLocalCache(uuid);
-  }
-
-  /// 设置FirebaseID
-  set _currentFirebaseId(String firebaseId) {
-    final preferences = App().preferences;
-    if (preferences.firebaseIdInLocalCache == firebaseId) return;
-    App().preferences.setFirebaseIdLocalCache(uuid);
   }
 
   /// 上报信息
