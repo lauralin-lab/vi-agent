@@ -1,6 +1,6 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "2.1.1"
+version: "2.3.0"
 ---
 
 # /team-ship — Deliver Mission
@@ -223,7 +223,15 @@ Determine commit type from the Contract title/objective:
 
 Capture the PR number and URL from the output.
 
-### 4d: Add labels
+### 4d: Post PR comment to Issue
+
+```bash
+gh issue comment {issue} --body "📦 PR #{pr-number} created — {pr-url}"
+```
+
+Non-fatal: if comment fails, warn but continue.
+
+### 4e: Add labels
 
 ```bash
 gh pr edit {pr-number} --add-label "status:review"

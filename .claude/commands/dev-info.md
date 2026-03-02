@@ -4,7 +4,7 @@
 
 ## 配置
 
-- **服务器 IP**: `34.56.23.173`
+- **服务器 IP**: `34.172.9.61`
 
 ## SSH 连接
 
@@ -14,7 +14,7 @@
 for key in ~/.ssh/gcp_ssh_key ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa; do
   if [ -f "$key" ]; then SSH_KEY="$key"; break; fi
 done
-SSH_CMD="ssh -A -i $SSH_KEY liyasong@34.56.23.173"
+SSH_CMD="ssh -A -i $SSH_KEY liyasong@34.172.9.61"
 ```
 
 如果连接失败，提示用户联系管理员添加 SSH key。
@@ -56,14 +56,14 @@ REMOTE
 
 ```
 ## 🖥 服务器状态
-   IP: 34.56.23.173 | CPU: {load} | 内存: {used}/{total} ({pct}%) | 磁盘: {used}/{total}
+   IP: 34.172.9.61 | CPU: {load} | 内存: {used}/{total} ({pct}%) | 磁盘: {used}/{total}
 
 ## 📦 实例列表 ({count} 个运行中)
 
 | Name | Frontend (HTTPS) | Frontend (HTTP) | API | API Docs | Gateway | Status | 内存 |
 |------|------------------|-----------------|-----|----------|---------|--------|------|
-| liya | https://34.56.23.173:3110 | http://34.56.23.173:3100 | http://34.56.23.173:3101 | http://34.56.23.173:3101/docs | :3102 | ✅ all healthy | ~660M |
-| felisa | https://34.56.23.173:3210 | http://34.56.23.173:3200 | http://34.56.23.173:3201 | http://34.56.23.173:3201/docs | :3202 | ✅ all healthy | ~985M |
+| liya | https://34.172.9.61:3110 | http://34.172.9.61:3100 | http://34.172.9.61:3101 | http://34.172.9.61:3101/docs | :3102 | ✅ all healthy | ~660M |
+| felisa | https://34.172.9.61:3210 | http://34.172.9.61:3200 | http://34.172.9.61:3201 | http://34.172.9.61:3201/docs | :3202 | ✅ all healthy | ~985M |
 
 ## 📊 资源详情
    每实例约 650M-1.1G 内存，realtime 服务是主要消耗者
@@ -74,8 +74,8 @@ REMOTE
 ```
 
 **关键: 访问链接必须是完整的 URL 格式**，包括:
-- Frontend HTTPS URL (`https://34.56.23.173:{https_port}`) — 摄像头需要 HTTPS
-- Frontend HTTP URL (`http://34.56.23.173:{port}`)
+- Frontend HTTPS URL (`https://34.172.9.61:{https_port}`) — 摄像头需要 HTTPS
+- Frontend HTTP URL (`http://34.172.9.61:{port}`)
 - API URL
 - API Docs URL (`{API_URL}/docs`)
 - Gateway URL

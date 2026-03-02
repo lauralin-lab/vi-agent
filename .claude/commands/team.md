@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "2.1.1"
+version: "2.3.0"
 ---
 
 # /team — Init + Dashboard (Teamwork v2)
@@ -688,7 +688,26 @@ Read data from GitHub and config, then display formatted dashboard.
 cat $TEAMWORK_DIR/config.yml
 ```
 
-### 6b: Fetch GitHub data
+### 6b: Check Issue freshness for active Contracts
+
+If any `$TEAMWORK_DIR/active/MISSION-*.md` Contract exists:
+
+```bash
+# Read issue number and content hash from Contract frontmatter
+ISSUE_NUMBER=$(grep '^issue:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//')
+CONTRACT_HASH=$(grep 'issue_content_hash:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
+
+# Fetch current Issue content and compute hash
+ISSUE_DATA=$(gh issue view $ISSUE_NUMBER --json title,body 2>/dev/null)
+CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f1)
+```
+
+- If `issue_content_hash` is not in Contract (pre-v2.3.0) → skip check
+- If `gh issue view` fails (network) → skip check (non-fatal)
+- If `CURRENT_HASH ≠ CONTRACT_HASH` → set `ISSUE_STALE=true` for this Issue
+- If hashes match → Issue content unchanged since claim
+
+### 6c: Fetch GitHub data
 
 Read the mission label from config. If config has `mc_label` field → use it. If config has the teamwork v2 schema → use `mission`. Default: `mission`.
 
@@ -741,7 +760,7 @@ Milestone: {active milestone} ({closed}/{total} = {pct}%)
 
 {For each team member from config.yml:}
   {username} ({role})
-     {If has assigned status:wip issue:} Working on: #{N} {title} [{priority}]
+     {If has assigned status:wip issue:} Working on: #{N} {title} [{priority}] {If ISSUE_STALE:} [UPDATED]
      {If has open PR:} PR: #{pr} — {CI status}
      {If idle:} Idle (last merged: #{last_merged_pr})
 
