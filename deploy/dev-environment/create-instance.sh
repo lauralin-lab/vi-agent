@@ -1,6 +1,9 @@
 #!/bin/bash
 # Create a new dev environment instance for a team member
-# Usage: ./create-instance.sh <name> <branch> [commit]
+# Usage: ./create-instance.sh <name> <branch> [commit] [build_mode] [image_tag]
+#
+# build_mode: "build" (source build on server) or "image" (pull from Docker Hub)
+# image_tag:  Docker image tag (required for image mode, e.g. dev-20260302-abc1234)
 #
 # This script runs ON the server (called via SSH from /dev skill)
 set -e
@@ -8,10 +11,12 @@ set -e
 DEV_NAME="$1"
 BRANCH="${2:-main}"
 COMMIT="$3"
+BUILD_MODE="${4:-build}"
+IMAGE_TAG="${5:-latest}"
 
 if [ -z "$DEV_NAME" ]; then
     echo "ERROR: Developer name required"
-    echo "Usage: $0 <name> <branch> [commit]"
+    echo "Usage: $0 <name> <branch> [commit] [build_mode] [image_tag]"
     exit 1
 fi
 
@@ -102,6 +107,15 @@ PGPASSWORD="${POSTGRES_ADMIN_PASSWORD:-vi_shared_dev}" psql -h localhost -U vi_a
 echo "Creating instance directory..."
 mkdir -p "$INSTANCE_DIR"
 
+# Select template based on build mode
+if [ "$BUILD_MODE" = "image" ]; then
+    TEMPLATE_FILE="docker-compose.instance-image.yml.tpl"
+    echo "Mode: image pull (tag=$IMAGE_TAG)"
+else
+    TEMPLATE_FILE="docker-compose.instance.yml.tpl"
+    echo "Mode: source build"
+fi
+
 # Generate docker-compose from template
 sed -e "s/__DEV_NAME__/$DEV_NAME/g" \
     -e "s/__SLOT__/$SLOT/g" \
@@ -109,7 +123,8 @@ sed -e "s/__DEV_NAME__/$DEV_NAME/g" \
     -e "s/__API_PORT__/$API_PORT/g" \
     -e "s/__GATEWAY_PORT__/$GATEWAY_PORT/g" \
     -e "s/__REALTIME_PORT__/$REALTIME_PORT/g" \
-    "$TEMPLATE_DIR/docker-compose.instance.yml.tpl" > "$INSTANCE_DIR/docker-compose.yml"
+    -e "s/__IMAGE_TAG__/$IMAGE_TAG/g" \
+    "$TEMPLATE_DIR/$TEMPLATE_FILE" > "$INSTANCE_DIR/docker-compose.yml"
 
 # Create .env from shared secrets + developer overrides
 SERVER_IP=$(python3 -c "import json; print(json.load(open('$REGISTRY'))['server_ip'])")
@@ -125,11 +140,17 @@ JWT_SECRET=$(openssl rand -hex 32)
 SERVER_IP=$SERVER_IP
 ENVEOF
 
-# --- Build and start ---
-echo "Building and starting services..."
+# --- Build/Pull and start ---
 cd "$INSTANCE_DIR"
-docker compose build
-docker compose up -d
+if [ "$BUILD_MODE" = "image" ]; then
+    echo "Pulling images (tag=$IMAGE_TAG)..."
+    docker compose pull
+    docker compose up -d
+else
+    echo "Building and starting services..."
+    docker compose build
+    docker compose up -d
+fi
 
 # --- Wait for health ---
 echo "Waiting for API server..."
@@ -159,6 +180,8 @@ r['instances']['$DEV_NAME'] = {
     },
     'branch': '$BRANCH',
     'commit': '$ACTUAL_COMMIT',
+    'image_tag': '$IMAGE_TAG',
+    'build_mode': '$BUILD_MODE',
     'deployed_at': '$DEPLOYED_AT',
     'deployed_by': '$DEV_NAME',
     'status': 'running'
@@ -166,6 +189,19 @@ r['instances']['$DEV_NAME'] = {
 r['next_slot'] = $SLOT + 1
 with open('$REGISTRY','w') as f: json.dump(r,f,indent=2)
 "
+
+# --- Run deployment tests ---
+echo ""
+echo "Running deployment tests..."
+if [ -f "$TEMPLATE_DIR/test-instance.sh" ]; then
+    bash "$TEMPLATE_DIR/test-instance.sh" "$SERVER_IP" "$FRONTEND_PORT" "$API_PORT" "$GATEWAY_PORT"
+    TEST_EXIT=$?
+    if [ $TEST_EXIT -ne 0 ]; then
+        echo "⚠️  Some tests failed. Instance is running but may have issues."
+    fi
+else
+    echo "(test-instance.sh not found — skipping)"
+fi
 
 echo ""
 echo "=== Instance Created ==="

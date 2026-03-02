@@ -7,8 +7,8 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_API_URL=http://localhost:8000
-ARG VITE_LIVEKIT_URL=wss://localhost:7880
+ARG VITE_API_URL=""
+ARG VITE_LIVEKIT_URL=""
 
 RUN npm run build
 

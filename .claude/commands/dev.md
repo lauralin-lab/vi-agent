@@ -41,8 +41,8 @@ cat ~/.ssh/id_ed25519.pub
 2. 发送公钥 + 名字给 liyasong ──→    3. 运行 /dev
                                         - 输入成员名字
                                         - 粘贴成员的 SSH public key
-                                        - 选择版本
-                                        - 自动部署隔离实例
+                                        - 选择版本 (git tag)
+                                        - 自动: 服务器构建 → push Hub → 部署 → 测试
 4. 收到访问信息             ←──      5. 发送给成员:
    - ssh casey@34.56.23.173             - 服务器 IP + 端口
    - http://34.56.23.173:3200           - .env 文件 (如果还没发)
@@ -52,6 +52,52 @@ cat ~/.ssh/id_ed25519.pub
 
 ## 执行流程
 
+### Step 0: Pre-flight Check（代码状态检查）
+
+**每次部署前必须执行。** 这一步确保要部署的代码已经正确提交和推送。
+
+```bash
+# 1. 检查工作区是否干净
+git status --porcelain
+
+# 2. 检查当前分支是否已推送到远程
+git log --oneline @{upstream}..HEAD 2>/dev/null
+
+# 3. 列出最近的 git tags
+git tag --sort=-creatordate | head -5
+
+# 4. 检查远程是否有这些 tags
+git ls-remote --tags origin | tail -5
+```
+
+**根据检查结果:**
+
+- ❌ 有未提交的更改 → 提醒用户:
+  ```
+  ⚠️ 检测到未提交的更改。部署前请先提交并推送:
+     git add -A && git commit -m "type(scope): description"
+     git push
+  ```
+
+- ❌ 有未推送的 commit → 提醒用户:
+  ```
+  ⚠️ 有本地 commit 未推送到远程。请先:
+     git push
+  ```
+
+- ❌ 没有合适的 tag → 提醒用户打 tag:
+  ```
+  ⚠️ 没有找到 dev tag。镜像需要通过 tag 来版本管理。请执行:
+     git tag dev-$(date +%Y%m%d)-$(git rev-parse --short HEAD)
+     git push --tags
+
+  Tag 格式: dev-YYYYMMDD-COMMIT (如 dev-20260302-abc1234)
+  ```
+
+- ✅ 工作区干净 + 已推送 + 有 tag → 继续下一步
+
+**注意**: 如果用户选择部署现有 Hub 镜像（不需要新构建），可以跳过 tag 检查。
+
 ### Step 1: 收集信息
 
 使用 AskUserQuestion 收集（一次性问完，减少来回）:
@@ -59,7 +105,7 @@ cat ~/.ssh/id_ed25519.pub
 1. **名字** — 用作命名空间（仅小写字母，如 casey, alice, bob）
    - 这个名字将用于: Docker 项目名、数据库名、端口分配、SSH 用户标识
 
-2. **版本** — 部署哪个版本的镜像
+2. **版本** — 部署哪个版本
    - 先检查 Docker Hub 上有哪些可用 tags:
      ```bash
      # 查询 Docker Hub 可用 tags (取 api-server 为代表)
@@ -67,17 +113,20 @@ cat ~/.ssh/id_ed25519.pub
      import json,sys
      data=json.load(sys.stdin)
      for t in data.get('results',[]): print(f\"  {t['name']:30s} {t['last_updated'][:19]}\")
-     " 2>/dev/null || echo "  (Docker Hub 暂无镜像，将在服务器上构建)"
+     " 2>/dev/null || echo "  (Docker Hub 暂无镜像，需要先构建)"
+     ```
+   - 同时列出本地 git tags:
+     ```bash
+     git tag --sort=-creatordate | head -10
      ```
    - 选项:
-     - latest (推荐) — Docker Hub 最新版本
-     - 列出 Docker Hub 上可用的 tags (main-xxx, v1.0.0 等)
-     - 指定 git 分支 → 服务器上构建
+     - **从 Docker Hub 拉取已有镜像** (推荐，秒级) — 选择一个已有的 Hub tag
+     - **从 git tag 构建新镜像** — 在服务器上构建并推送到 Hub
+     - **从当前 HEAD 构建** — 不需要 tag，直接构建 latest
 
-3. **构建模式** — 镜像从哪来
-   - **从 Docker Hub 拉取 (推荐)** — 最快，秒级部署。前提是镜像已推送到 Hub
-   - **在目标机器上构建** — 从源码构建，构建后自动 push 到 Docker Hub。适合新版本首次部署或快速迭代
-   - **本地构建 + push** — 在开发者 Mac 上构建（注意 ARM→AMD64 交叉编译），push 后服务器 pull
+3. **构建模式** — 镜像从哪来（根据上面的选择自动决定）
+   - **Mode A: Docker Hub Pull（推荐）** — 前提是 Hub 上有对应 tag 的镜像
+   - **Mode B: 服务器构建 + Push** — 服务器 checkout tag → build → push to Hub → deploy
 
 4. **SSH Public Key** (仅首次) — 如果该用户名在 registry 中不存在
    - 选项: 自动检测本地 ~/.ssh/*.pub, 使用已有的 gcp_ssh_key, 手动粘贴
@@ -135,7 +184,7 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
   "cat /opt/vi-agent/registry.json 2>/dev/null || echo '{\"instances\":{},\"next_slot\":1}'"
 ```
 
-端口方案: Slot N → frontend=3N00, api=3N01, gateway=3N02, realtime=3N03, postgres=5432+N, redis=6379+N
+端口方案: Slot N → frontend=3N00, api=3N01, gateway=3N02, realtime=3N03
 
 如果用户已有实例，询问: 更新现有实例还是重新创建？
 
@@ -158,104 +207,81 @@ CORS_ORIGINS=http://<SERVER_IP>:<FRONTEND_PORT>,http://localhost:<FRONTEND_PORT>
 
 SCP 这个 .env 到服务器: `/opt/vi-agent/instances/<DEV_NAME>/.env`
 
-### Step 6: 部署（根据构建模式分支）
+### Step 6: 构建镜像（Mode B 才执行）
 
-#### 模式 A: 从 Docker Hub 拉取（推荐，最快）
-
-生成 docker-compose.yml 使用 `image:` 而非 `build:`:
-
-```yaml
-services:
-  api-server:
-    image: collov/vi-agent-api-server:<TAG>
-    # ... (不需要 build context)
-```
+如果选择了 Mode B（服务器构建），先在服务器上构建并推送镜像:
 
 ```bash
-ssh ... "cd /opt/vi-agent/instances/<DEV_NAME> && docker compose pull && docker compose up -d"
+ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
+  "bash /opt/vi-agent/templates/build-and-push.sh <TAG>"
 ```
 
-#### 模式 B: 在目标机器上构建
+这个脚本会:
+1. `git fetch --tags` 并 checkout 到指定 tag
+2. 构建 4 个服务镜像 (api-server, frontend, gateway, realtime)
+3. Tag 为 `collov/vi-agent-{service}:{tag}` 和 `collov/vi-agent-{service}:latest`
+4. Push 到 Docker Hub
+
+**重要**: 构建在服务器上执行（不是本地），避免 ARM→AMD64 交叉编译问题。
+Frontend 镜像使用 `VITE_API_URL=""` (空值/相对路径)，使镜像在任何实例上通用。
+
+构建完成后，后续 Mode A 部署可以直接 pull 这个 tag。
+
+### Step 7: 部署实例
+
+使用 `create-instance.sh` 创建实例:
 
 ```bash
-ssh ... << 'REMOTE_BUILD'
-cd /opt/vi-agent
-git fetch --all && git checkout <BRANCH> && git pull
+# Mode A: 从 Docker Hub 拉取
+ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
+  "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <COMMIT> image <TAG>"
 
-cd /opt/vi-agent/instances/<DEV_NAME>
-# docker-compose.yml 使用 build: context
-docker compose build
-docker compose up -d
-
-# 构建完自动 push 到 Docker Hub（后台执行，不阻塞）
-COMMIT=$(cd /opt/vi-agent && git rev-parse --short HEAD)
-TAG="<BRANCH>-${COMMIT}"
-for svc in api-server frontend gateway realtime; do
-    docker tag "vi-agent-<DEV_NAME>-${svc}:latest" "collov/vi-agent-${svc}:${TAG}"
-    docker tag "vi-agent-<DEV_NAME>-${svc}:latest" "collov/vi-agent-${svc}:latest"
-    docker push "collov/vi-agent-${svc}:${TAG}" &
-    docker push "collov/vi-agent-${svc}:latest" &
-done
-wait
-echo "Images pushed to Docker Hub with tag: ${TAG}"
-REMOTE_BUILD
+# Mode B: 在服务器上构建 (如果 Step 6 没有单独执行)
+ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
+  "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <COMMIT> build"
 ```
 
-#### 模式 C: 本地构建 + push
-
-```bash
-# 本地构建（注意交叉编译！）
-cd <项目根目录>
-COMMIT=$(git rev-parse --short HEAD)
-BRANCH=$(git branch --show-current)
-TAG="${BRANCH}-${COMMIT}"
-
-for svc_dir in api-server frontend gateway realtime; do
-    docker buildx build \
-        --platform linux/amd64 \
-        -t "collov/vi-agent-${svc_dir}:${TAG}" \
-        -t "collov/vi-agent-${svc_dir}:latest" \
-        --push \
-        "./${svc_dir}"
-done
-
-# 然后服务器上 pull
-ssh ... "cd /opt/vi-agent/instances/<DEV_NAME> && docker compose pull && docker compose up -d"
-```
-
-**注意**: 本地构建必须使用 `docker buildx build --platform linux/amd64`，因为开发者 Mac 是 ARM 架构，服务器是 AMD64。
-
-### Step 7: 生成 docker-compose.yml
-
-根据构建模式生成不同的 compose 文件:
-
-**关键区别**: 拉取模式用 `image:`，构建模式用 `build:`
-
-生成 compose 文件时必须包含:
-- `DATABASE_URL` 环境变量（api-server 需要显式设置）
-- SSL 证书挂载（frontend 需要）
-- postgres healthcheck 指定正确的数据库名
-- 资源限制 (deploy.resources.limits)
-
-**SSL 证书**: 如果实例目录下没有 ssl/ 目录:
-```bash
-ssh ... "cd /opt/vi-agent/instances/<DEV_NAME> && mkdir -p ssl && \
-  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout ssl/key.pem -out ssl/cert.pem -subj '/CN=vi-agent-dev' 2>/dev/null"
-```
+`create-instance.sh` 自动完成:
+- 分配端口 slot
+- 创建数据库
+- 生成 docker-compose.yml (image 或 build 模式)
+- 启动服务
+- 等待 health check
+- **运行部署测试套件** (test-instance.sh)
+- 更新 registry.json
 
 ### Step 8: 验证并输出结果
 
-1. 健康检查:
-```bash
-ssh ... "curl -sf http://localhost:<API_PORT>/health"
+`create-instance.sh` 执行完毕后，检查输出中的测试结果:
+
+```
+=== Layer 1: Smoke Test ===
+  ✅ Frontend HTTP 200
+  ✅ Frontend returns HTML
+  ✅ API /health
+  ✅ API /docs reachable
+  ✅ Gateway /health
+  ✅ API /api/config returns JSON
+
+=== Layer 2: Functional Test ===
+  ✅ API register
+  ✅ API login returns JWT
+  ✅ API /users/me with JWT
+
+=== Layer 3: Connectivity Test ===
+  ✅ Frontend→API proxy (/health via nginx)
+  ✅ Frontend→API proxy (/api/config via nginx)
+  ✅ CORS headers present
+
+===============================
+  Results: 12/12 passed, 0 failed
+===============================
+  ✅ All tests passed
 ```
 
-2. 更新 registry.json（服务器端）
+同步更新本地 `.teamspace/environments/dev/registry.yml`
 
-3. 同步更新本地 `.teamspace/environments/dev/registry.yml`
-
-4. 输出部署摘要:
+输出部署摘要:
 
 ```
 ✅ <DEV_NAME> 的 vi-agent 实例已部署完成！
@@ -273,9 +299,14 @@ ssh ... "curl -sf http://localhost:<API_PORT>/health"
    Image Tag: <TAG>
    Branch:    <BRANCH>
    Commit:    <COMMIT>
-   Build:     <remote|local|hub-pull>
+   Build:     <server-build|hub-pull>
    Deployed:  <TIMESTAMP>
    By:        <DEV_NAME>
+
+🧪 测试结果:
+   Smoke:        ✅ 6/6
+   Functional:   ✅ 3/3
+   Connectivity: ✅ 3/3
 
 🔧 ENV 来源:
    API Keys:  从本地 .env 读取
@@ -296,7 +327,8 @@ ssh ... "curl -sf http://localhost:<API_PORT>/health"
 - 资源不足: 当前机器最多 3-4 个实例，建议升级到 e2-standard-8
 - Docker Hub push 失败 (insufficient scopes): 需要 Read+Write 权限的 token
 - 本地 .env 缺少 API keys: 提示用户先配置本地 `.env`，参考 `.env.example`
-- 本地构建架构不匹配: 确保使用 `--platform linux/amd64`
+- 镜像构建失败: 检查 `build-and-push.sh` 输出，确认 Dockerfile 语法正确
+- 测试失败: 检查具体哪层失败，查看 `docker compose logs` 排查
 
 ## 关键注意事项（从部署实践中总结）
 
@@ -305,12 +337,16 @@ ssh ... "curl -sf http://localhost:<API_PORT>/health"
    DATABASE_URL=postgresql+asyncpg://vi:${POSTGRES_PASSWORD}@postgres:5432/vi_${DEV_NAME}
    ```
 
-2. **SSL 证书**: frontend 的 nginx 需要 `/etc/nginx/ssl/cert.pem`。必须生成自签名证书并挂载。
+2. **Frontend 使用相对 API URL**: `VITE_API_URL=""` 使前端通过 nginx proxy 访问 `/api/*`，不再写死绝对 URL。这样同一个 frontend 镜像可以跑在任何实例上。LiveKit URL 通过 `/api/config` 端点在运行时获取。
 
-3. **source .env 会覆盖变量**: 服务器 `.env` 含 `API_PORT=8000`，脚本中先 source 再设置自定义端口。
+3. **镜像必须在服务器上构建**: 不要在本地 Mac 构建 (ARM→AMD64 问题)。流程:
+   ```
+   本地: commit → push → tag → push tags
+   服务器: git fetch → checkout tag → docker build → docker push to Hub
+   ```
 
-4. **Healthcheck**: postgres 的 healthcheck 需指定 `-d vi_${DEV_NAME}`
+4. **Tag 命名规范**: `dev-YYYYMMDD-COMMIT`，如 `dev-20260302-abc1234`。用于 git tag 和 Docker image tag，一一对应。
 
-5. **目标机器构建后记得 push**: 在服务器上 build 后，tag 并 push 到 Docker Hub，这样其他人可以直接 pull。
+5. **Healthcheck**: postgres 的 healthcheck 需指定 `-d vi_${DEV_NAME}`
 
-6. **本地构建注意架构**: Mac (ARM) → 服务器 (AMD64)，必须 `docker buildx build --platform linux/amd64`
+6. **服务器已登录 Docker Hub**: 服务器上已执行 `docker login`，可以直接 push。如果 push 失败，检查 token 权限。

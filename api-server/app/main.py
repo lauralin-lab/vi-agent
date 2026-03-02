@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -102,3 +103,13 @@ app.include_router(events_router, prefix="/api/users", tags=["events"])
 @limiter.exempt
 async def health(request: Request):
     return {"status": "ok"}
+
+
+@app.get("/api/config")
+@limiter.exempt
+async def client_config(request: Request):
+    """Public runtime config for frontend — avoids baking env vars at build time."""
+    return {
+        "livekit_url": settings.LIVEKIT_URL,
+        "version": os.getenv("IMAGE_TAG", "dev"),
+    }
