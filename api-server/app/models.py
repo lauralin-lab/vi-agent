@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+import sqlalchemy as sa
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, MetaData, String, Text, UniqueConstraint
 from sqlalchemy.types import DateTime as _DateTime
 
 # Use timezone-aware TIMESTAMP WITH TIME ZONE for all datetime columns
@@ -16,8 +17,17 @@ engine = create_async_engine(settings.DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 
+convention = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+
 class Base(AsyncAttrs, DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=convention)
 
 
 class User(Base):
@@ -114,5 +124,10 @@ class AgentMemory(Base):
 
 
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Validate database connectivity on startup.
+
+    Schema creation is handled by Alembic migrations.
+    Run 'alembic upgrade head' before starting the server.
+    """
+    async with engine.connect() as conn:
+        await conn.execute(sa.text("SELECT 1"))
