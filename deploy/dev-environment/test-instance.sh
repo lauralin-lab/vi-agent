@@ -66,32 +66,31 @@ echo ""
 echo "=== Layer 2: Functional Test ==="
 
 # Generate unique test user to avoid collision
-TEST_USER="smoke_$(date +%s)"
-TEST_PASS="test1234"
-TEST_EMAIL="${TEST_USER}@test.dev"
+TEST_EMAIL="smoke_$(date +%s)@test.dev"
+TEST_PASS="test1234test"
 
-# Register
+# Signup
 REG_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-    -X POST "http://$SERVER_IP:$A_PORT/api/auth/register" \
+    -X POST "http://$SERVER_IP:$A_PORT/api/auth/signup" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"$TEST_USER\",\"password\":\"$TEST_PASS\",\"email\":\"$TEST_EMAIL\"}")
-check "API register (status=$REG_CODE)" \
+    -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASS\"}")
+check "API signup (status=$REG_CODE)" \
     bash -c "[ '$REG_CODE' = '200' ] || [ '$REG_CODE' = '201' ]"
 
 # Login and extract token
 TOKEN=$(curl -sf --max-time 10 \
     -X POST "http://$SERVER_IP:$A_PORT/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"$TEST_USER\",\"password\":\"$TEST_PASS\"}" | \
-    python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+    -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASS\"}" | \
+    python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('access_token','') or d.get('token',''))" 2>/dev/null)
 
 check "API login returns JWT" test -n "$TOKEN"
 
 if [ -n "$TOKEN" ]; then
-    check "API /users/me with JWT" \
+    check "API /auth/me with JWT" \
         curl -sf --max-time 10 \
             -H "Authorization: Bearer $TOKEN" \
-            "http://$SERVER_IP:$A_PORT/api/users/me"
+            "http://$SERVER_IP:$A_PORT/api/auth/me"
 fi
 
 echo ""

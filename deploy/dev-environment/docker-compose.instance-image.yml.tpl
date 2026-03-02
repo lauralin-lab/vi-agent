@@ -7,20 +7,63 @@
 name: vi-agent-__DEV_NAME__
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vi___DEV_NAME__
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: vi___DEV_NAME__
+    ports:
+      - "127.0.0.1:__POSTGRES_PORT__:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vi___DEV_NAME__ -d vi___DEV_NAME__"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - vi-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:__REDIS_PORT__:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} --no-auth-warning ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - vi-network
+
   api-server:
     image: collov/vi-agent-api-server:__IMAGE_TAG__
     restart: unless-stopped
     ports:
       - "__API_PORT__:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://vi___DEV_NAME__:${POSTGRES_PASSWORD}@host.docker.internal:5432/vi___DEV_NAME__
+      - DATABASE_URL=postgresql+asyncpg://vi___DEV_NAME__:${POSTGRES_PASSWORD}@postgres:5432/vi___DEV_NAME__
       - POSTGRES_USER=vi___DEV_NAME__
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=vi___DEV_NAME__
-      - POSTGRES_HOST=host.docker.internal
+      - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@host.docker.internal:6379/0
-      - REDIS_PREFIX=__DEV_NAME__:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - "REDIS_PREFIX=__DEV_NAME__:"
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRE_MINUTES=1440
@@ -31,12 +74,15 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - API_HOST=0.0.0.0
       - API_PORT=8000
-      - API_BASE_URL=http://host.docker.internal:__API_PORT__
+      - API_BASE_URL=http://${SERVER_IP}:__API_PORT__
       - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,http://localhost:__FRONTEND_PORT__
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
       - IMAGE_TAG=__IMAGE_TAG__
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -52,12 +98,16 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - vi-network
 
   frontend:
     image: collov/vi-agent-frontend:__IMAGE_TAG__
     restart: unless-stopped
     ports:
       - "__FRONTEND_PORT__:80"
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       api-server:
         condition: service_healthy
@@ -71,6 +121,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - vi-network
 
   vi-gateway:
     image: collov/vi-agent-gateway:__IMAGE_TAG__
@@ -83,10 +135,8 @@ services:
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - API_BASE_URL=http://host.docker.internal:__API_PORT__
+      - API_BASE_URL=http://api-server:8000
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     deploy:
       resources:
         limits:
@@ -102,6 +152,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - vi-network
 
   vi-realtime:
     image: collov/vi-agent-realtime:__IMAGE_TAG__
@@ -112,10 +164,8 @@ services:
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - API_BASE_URL=http://host.docker.internal:__API_PORT__
+      - API_BASE_URL=http://api-server:8000
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     deploy:
       resources:
         limits:
@@ -126,3 +176,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - vi-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  vi-network:
+    driver: bridge

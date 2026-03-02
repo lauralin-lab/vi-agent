@@ -5,18 +5,24 @@
 ## 配置
 
 - **服务器 IP**: `34.56.23.173`
-- **管理员 SSH Key**: `~/.ssh/gcp_ssh_key`
+- **管理员 SSH Key**: `~/.ssh/gcp_ssh_key`（仅管理员 liyasong 的机器上有）
 - **管理员用户**: `liyasong`
 - **GCP Project**: `excellent-nexus-488404-c8`
 - **GCP Zone**: `us-central1-c`
 - **Instance Name**: `vi-agent`
-- **服务器工作目录**: `/opt/vi-agent`
+- **服务器工作目录**: `/opt/vi-agent`（registry、templates）
+- **代码目录**: 每人一份，位于 `~/vi-agent-repo`（即 `/home/<USER>/vi-agent-repo`）
 - **Docker Hub**: `collov` (org name)
 - **镜像名称**: `collov/vi-agent-{api-server,frontend,gateway,realtime}`
 
 ## 谁来运行 /dev？
 
-**只有管理员 (liyasong) 运行 `/dev`**。团队成员不需要安装任何工具，只需提供两样东西：
+**⚠️ 只有管理员 (liyasong) 运行 `/dev`。** 团队成员不需要、也不应该运行此命令。
+
+这意味着:
+- `/dev` 中所有 SSH 命令都使用管理员的 key: `ssh -A -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173`
+- 团队成员不需要 `gcp_ssh_key`，他们用自己的 SSH key 登录服务器
+- `-A` 参数启用 SSH Agent Forwarding，让服务器能用管理员本地的 GitHub SSH key 拉取代码
 
 ### 团队成员需要准备的
 
@@ -44,9 +50,19 @@ cat ~/.ssh/id_ed25519.pub
                                         - 选择版本 (git tag)
                                         - 自动: 服务器构建 → push Hub → 部署 → 测试
 4. 收到访问信息             ←──      5. 发送给成员:
-   - ssh casey@34.56.23.173             - 服务器 IP + 端口
+   - ssh liyasong@34.56.23.173         - 服务器 IP + 端口
    - http://34.56.23.173:3200           - .env 文件 (如果还没发)
 ```
+
+### SSH 命令模板
+
+**所有 SSH 命令统一使用此格式:**
+```bash
+SSH_CMD="ssh -A -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173"
+```
+
+- `-A`: Agent Forwarding，让服务器用管理员本地的 GitHub SSH key（服务器本身没有 GitHub key）
+- `-i ~/.ssh/gcp_ssh_key`: 管理员的 GCP SSH key（仅在管理员机器上）
 
 ---
 
@@ -160,9 +176,10 @@ USER_KEYS=(
 如果是新用户，通过管理员 SSH 添加 key:
 
 ```bash
+SSH_CMD="ssh -A -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173"
+
 # 1. 即时生效: 追加到 authorized_keys
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
-  "echo '<USER_SSH_PUBLIC_KEY>' >> ~/.ssh/authorized_keys"
+$SSH_CMD "echo '<USER_SSH_PUBLIC_KEY>' >> ~/.ssh/authorized_keys"
 
 # 2. 持久化: 添加到 GCP metadata (防止 guest agent 覆盖)
 gcloud compute instances describe vi-agent \
@@ -180,13 +197,23 @@ gcloud compute instances add-metadata vi-agent \
 ### Step 4: 查询 registry，分配端口
 
 ```bash
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
-  "cat /opt/vi-agent/registry.json 2>/dev/null || echo '{\"instances\":{},\"next_slot\":1}'"
+SSH_CMD="ssh -A -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173"
+$SSH_CMD "cat /opt/vi-agent/registry.json 2>/dev/null || echo '{\"instances\":{},\"next_slot\":1}'"
 ```
 
-端口方案: Slot N → frontend=3N00, api=3N01, gateway=3N02, realtime=3N03
+**端口方案:** Slot N →
+
+| 服务 | 端口 |
+|------|------|
+| Frontend | 3000 + N×100 |
+| API | 3000 + N×100 + 1 |
+| Gateway | 3000 + N×100 + 2 |
+| Realtime | 3000 + N×100 + 3 |
+| PostgreSQL | 5432 + N |
+| Redis | 6379 + N |
 
 如果用户已有实例，询问: 更新现有实例还是重新创建？
+更新已有实例会**复用原来的 slot 和端口**，不会分配新的。
 
 ### Step 5: 生成实例 .env
 
@@ -198,32 +225,40 @@ JWT_SECRET=$(openssl rand -hex 32)
 INTERNAL_API_TOKEN=$(openssl rand -hex 16)
 POSTGRES_PASSWORD=vi_dev_<DEV_NAME>
 REDIS_PASSWORD=redis_dev_<DEV_NAME>
-
-# 计算的部分
-DATABASE_URL=postgresql+asyncpg://vi:${POSTGRES_PASSWORD}@postgres:5432/vi_<DEV_NAME>
-API_BASE_URL=http://<SERVER_IP>:<API_PORT>
-CORS_ORIGINS=http://<SERVER_IP>:<FRONTEND_PORT>,http://localhost:<FRONTEND_PORT>
+SERVER_IP=34.56.23.173
 ```
+
+**注意**: 不需要在 .env 中设置 DATABASE_URL、REDIS_URL 等连接字符串 — 这些在 docker-compose.yml 的 environment 中直接定义，使用 Docker 服务名（postgres、redis）作为主机名。
 
 SCP 这个 .env 到服务器: `/opt/vi-agent/instances/<DEV_NAME>/.env`
 
+**更新已有实例时**: 如果 .env 已存在，保留原文件（保护已有的密钥和 API keys），只确保 `SERVER_IP` 存在。
+
 ### Step 6: 构建镜像（Mode B 才执行）
 
-如果选择了 Mode B（服务器构建），先在服务器上构建并推送镜像:
+如果选择了 Mode B（服务器构建），先确保代码库存在，然后构建并推送镜像:
 
 ```bash
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
-  "bash /opt/vi-agent/templates/build-and-push.sh <TAG>"
+SSH_CMD="ssh -A -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173"
+
+# 1. 确保代码库存在（每人一份，在自己的 home 下）
+$SSH_CMD "test -d ~/vi-agent-repo/.git || git clone git@github.com:flair-home-stylist/vi_agent.git ~/vi-agent-repo"
+
+# 2. 构建并推送镜像
+$SSH_CMD "REPO_DIR=~/vi-agent-repo bash /opt/vi-agent/templates/build-and-push.sh <TAG>"
 ```
 
-这个脚本会:
-1. `git fetch --tags` 并 checkout 到指定 tag
+`build-and-push.sh` 会:
+1. `git fetch --all --tags` 并 checkout 到指定 tag
 2. 构建 4 个服务镜像 (api-server, frontend, gateway, realtime)
 3. Tag 为 `collov/vi-agent-{service}:{tag}` 和 `collov/vi-agent-{service}:latest`
 4. Push 到 Docker Hub
 
-**重要**: 构建在服务器上执行（不是本地），避免 ARM→AMD64 交叉编译问题。
-Frontend 镜像使用 `VITE_API_URL=""` (空值/相对路径)，使镜像在任何实例上通用。
+**关键点:**
+- `REPO_DIR=~/vi-agent-repo` — 代码在各自 home 目录下，不是共享的 `/opt/vi-agent/repo`
+- `-A` SSH Agent Forwarding — 服务器没有 GitHub SSH key，通过管理员本地 key 拉取代码
+- 构建在服务器上执行（不是本地），避免 ARM→AMD64 交叉编译问题
+- Frontend 镜像使用 `VITE_API_URL=""` (空值/相对路径)，使镜像在任何实例上通用
 
 构建完成后，后续 Mode A 部署可以直接 pull 这个 tag。
 
@@ -232,20 +267,24 @@ Frontend 镜像使用 `VITE_API_URL=""` (空值/相对路径)，使镜像在任�
 使用 `create-instance.sh` 创建实例:
 
 ```bash
-# Mode A: 从 Docker Hub 拉取
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
-  "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <COMMIT> image <TAG>"
+SSH_CMD="ssh -A -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173"
 
-# Mode B: 在服务器上构建 (如果 Step 6 没有单独执行)
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
-  "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <COMMIT> build"
+# Mode A: 从 Docker Hub 拉取
+$SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <COMMIT> image <TAG>"
+
+# Mode B: 服务器构建后部署（Step 6 已构建并推送到 Hub，这里用 image 模式拉取）
+$SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <COMMIT> image <TAG>"
 ```
 
+**注意**: 即使是 Mode B，Step 6 构建完成后镜像已在 Hub 上，部署时也用 `image` 模式拉取。只有需要直接从源码部署（不经过 Hub）时才用 `build` 模式。
+
 `create-instance.sh` 自动完成:
-- 分配端口 slot
-- 创建数据库
-- 生成 docker-compose.yml (image 或 build 模式)
-- 启动服务
+- 分配端口 slot（已有实例复用原 slot）
+- 生成 SSL 自签名证书（如果不存在）
+- 从模板生成 docker-compose.yml (image 或 build 模式)
+- 生成 .env（仅首次，已有则保留）
+- 停止旧容器（如果是更新）
+- 拉取镜像 / 启动服务
 - 等待 health check
 - **运行部署测试套件** (test-instance.sh)
 - 更新 registry.json
@@ -264,9 +303,9 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
   ✅ API /api/config returns JSON
 
 === Layer 2: Functional Test ===
-  ✅ API register
+  ✅ API signup (status=200)
   ✅ API login returns JWT
-  ✅ API /users/me with JWT
+  ✅ API /auth/me with JWT
 
 === Layer 3: Connectivity Test ===
   ✅ Frontend→API proxy (/health via nginx)
@@ -278,8 +317,6 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
 ===============================
   ✅ All tests passed
 ```
-
-同步更新本地 `.teamspace/environments/dev/registry.yml`
 
 输出部署摘要:
 
@@ -293,7 +330,7 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
    Gateway:   http://34.56.23.173:<GATEWAY_PORT>
 
 🔑 SSH 访问:
-   ssh <DEV_NAME>@34.56.23.173
+   ssh liyasong@34.56.23.173
 
 📦 版本信息:
    Image Tag: <TAG>
@@ -301,16 +338,11 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
    Commit:    <COMMIT>
    Build:     <server-build|hub-pull>
    Deployed:  <TIMESTAMP>
-   By:        <DEV_NAME>
 
 🧪 测试结果:
    Smoke:        ✅ 6/6
    Functional:   ✅ 3/3
    Connectivity: ✅ 3/3
-
-🔧 ENV 来源:
-   API Keys:  从本地 .env 读取
-   基础设施:   自动生成
 
 🛠 常用命令 (SSH 到服务器后):
    cd /opt/vi-agent/instances/<DEV_NAME>
@@ -321,32 +353,47 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
 
 ## 错误处理
 
-- SSH 连接失败: 检查 `~/.ssh/gcp_ssh_key` 是否存在
+- SSH 连接失败: 检查 `~/.ssh/gcp_ssh_key` 是否存在（此 key 仅管理员有）
 - gcloud 命令失败: 提示用户运行 `gcloud auth login`
+- GitHub 拉取失败 (Permission denied): 确保 SSH 命令使用了 `-A` 参数（Agent Forwarding）
 - 端口冲突: 从 registry 重新分配 slot
-- 资源不足: 当前机器最多 3-4 个实例，建议升级到 e2-standard-8
+- 资源不足: 当前机器最多 5-6 个实例
 - Docker Hub push 失败 (insufficient scopes): 需要 Read+Write 权限的 token
 - 本地 .env 缺少 API keys: 提示用户先配置本地 `.env`，参考 `.env.example`
 - 镜像构建失败: 检查 `build-and-push.sh` 输出，确认 Dockerfile 语法正确
 - 测试失败: 检查具体哪层失败，查看 `docker compose logs` 排查
+- 服务器代码仓库不存在: 自动 clone 到 `~/vi-agent-repo`
 
 ## 关键注意事项（从部署实践中总结）
 
-1. **DATABASE_URL 必须显式设置**: api-server 读取 `DATABASE_URL` 环境变量，不会自动拼接。格式:
+1. **每人一份代码仓库**: 代码放在各自 home 目录下 `~/vi-agent-repo`，不共享。避免文件权限冲突。构建脚本通过 `REPO_DIR` 环境变量指定路径。
+
+2. **SSH Agent Forwarding 必须开启**: 服务器没有 GitHub SSH key。所有 SSH 命令必须用 `-A` 参数，让服务器通过管理员本地的 GitHub key 拉取代码。
+
+3. **每个实例自带 PostgreSQL 和 Redis**: 不共享数据库。每个实例在 docker-compose 中定义自己的 postgres 和 redis 容器，通过 Docker 网络（服务名 `postgres:5432`、`redis:6379`）互联，不使用 `host.docker.internal`。
+
+4. **DATABASE_URL 在 docker-compose.yml 中定义**: 使用 Docker 服务名作为主机名，格式:
    ```
-   DATABASE_URL=postgresql+asyncpg://vi:${POSTGRES_PASSWORD}@postgres:5432/vi_${DEV_NAME}
+   DATABASE_URL=postgresql+asyncpg://vi_<DEV_NAME>:${POSTGRES_PASSWORD}@postgres:5432/vi_<DEV_NAME>
    ```
 
-2. **Frontend 使用相对 API URL**: `VITE_API_URL=""` 使前端通过 nginx proxy 访问 `/api/*`，不再写死绝对 URL。这样同一个 frontend 镜像可以跑在任何实例上。LiveKit URL 通过 `/api/config` 端点在运行时获取。
+5. **REDIS_PREFIX 必须加引号**: YAML 中 `REDIS_PREFIX=name:` 的尾部冒号会被解析为 map key。必须写成:
+   ```yaml
+   - "REDIS_PREFIX=__DEV_NAME__:"
+   ```
 
-3. **镜像必须在服务器上构建**: 不要在本地 Mac 构建 (ARM→AMD64 问题)。流程:
+6. **Frontend 需要 SSL 证书**: nginx 需要 `/etc/nginx/ssl/cert.pem`。`create-instance.sh` 会自动生成自签名证书并通过 `./ssl:/etc/nginx/ssl:ro` 挂载。
+
+7. **Frontend 使用相对 API URL**: `VITE_API_URL=""` 使前端通过 nginx proxy 访问 `/api/*`，不写死绝对 URL。同一个 frontend 镜像可以跑在任何实例上。LiveKit URL 通过 `/api/config` 端点在运行时获取。
+
+8. **镜像必须在服务器上构建**: 不要在本地 Mac 构建 (ARM→AMD64 问题)。流程:
    ```
    本地: commit → push → tag → push tags
    服务器: git fetch → checkout tag → docker build → docker push to Hub
    ```
 
-4. **Tag 命名规范**: `dev-YYYYMMDD-COMMIT`，如 `dev-20260302-abc1234`。用于 git tag 和 Docker image tag，一一对应。
+9. **Tag 命名规范**: `dev-YYYYMMDD-COMMIT`，如 `dev-20260302-abc1234`。用于 git tag 和 Docker image tag，一一对应。
 
-5. **Healthcheck**: postgres 的 healthcheck 需指定 `-d vi_${DEV_NAME}`
+10. **服务器已登录 Docker Hub**: 服务器上已执行 `docker login`，可以直接 push。如果 push 失败，检查 token 权限。
 
-6. **服务器已登录 Docker Hub**: 服务器上已执行 `docker login`，可以直接 push。如果 push 失败，检查 token 权限。
+11. **API Auth 端点**: 注册用 `/api/auth/signup`（email+password），登录用 `/api/auth/login`，用户信息用 `/api/auth/me`。登录返回的 JWT 字段名为 `token`。

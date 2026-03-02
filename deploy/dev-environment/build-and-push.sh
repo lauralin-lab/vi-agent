@@ -23,7 +23,7 @@ if [ -z "$TAG" ]; then
     exit 1
 fi
 
-REPO_DIR="/opt/vi-agent/repo"
+REPO_DIR="${REPO_DIR:-$HOME/vi-agent-repo}"
 DOCKER_ORG="collov"
 SERVICES=(api-server frontend gateway realtime)
 
