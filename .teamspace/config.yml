@@ -70,6 +70,18 @@ worktree:
   # 分支命名遵循 CONTRIBUTING.md
   branch_pattern: "{type}/{task-id}-{slug}"
   # 示例: ../vi-wt-vad-fix → bugfix/T-044-vad-signal
+  # 一键创建: scripts/setup-worktree.sh {task-slug} [port-offset]
+  setup_script: "scripts/setup-worktree.sh"
+
+# 端口隔离 — 多人并行开发时避免端口冲突
+# 每个开发者的 worktree 通过 port offset 获得独立端口
+port_isolation:
+  base_ports:
+    api: 8000
+    frontend: 5173
+    gateway: 18789
+  offset_step: 100  # 每个开发者 +100
+  # 示例: Dev A → API:8100, FE:5273, GW:18889
 
 # 版本管理
 versions:

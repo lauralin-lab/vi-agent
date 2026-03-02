@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  # API Server checks
+  api-server:
+    name: API Server (Python)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vi_db_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: api-server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint with ruff
+        working-directory: api-server
+        run: |
+          pip install ruff
+          ruff check .
+
+      - name: Run tests
+        working-directory: api-server
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vi_db_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-key
+          JWT_ALGORITHM: HS256
+        run: |
+          python -m pytest tests/ -v --tb=short
+
+  # Gateway checks
+  gateway:
+    name: Gateway (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: gateway/plugin
+        run: npm ci
+
+      - name: Type check
+        working-directory: gateway/plugin
+        run: npm run type-check
+
+      - name: Lint
+        working-directory: gateway/plugin
+        run: npm run lint
+
+  # Frontend checks
+  frontend:
+    name: Frontend (React)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npx eslint src/ || true  # non-blocking until eslint fully configured
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ""
+          VITE_LIVEKIT_URL: "wss://test.livekit.cloud"
+        run: npm run build
+
+  # Realtime checks
+  realtime:
+    name: Realtime (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        working-directory: realtime
+        run: uv sync
+
+      - name: Run tests
+        working-directory: realtime
+        run: uv run python -m pytest tests/ -v --tb=short || true  # non-blocking if no tests yet
+
+  # Branch protection summary
+  ci-summary:
+    name: CI Summary
+    needs: [api-server, gateway, frontend, realtime]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.api-server.result }}" = "failure" ] || \
+             [ "${{ needs.gateway.result }}" = "failure" ] || \
+             [ "${{ needs.frontend.result }}" = "failure" ]; then
+            echo "CI failed"
+            exit 1
+          fi
+          echo "All CI checks passed"

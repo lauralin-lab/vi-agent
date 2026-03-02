@@ -213,9 +213,57 @@ cd realtime && uv run python -m pytest tests/ -v
 
 ---
 
+## 团队协作模式 — Mission Contract Pull System
+
+本项目使用三个核心概念驱动团队协作：
+
+### 三个概念
+
+| 概念 | 定义 | 载体 |
+|------|------|------|
+| **Mission Contract** | 原子任务，独立可合入 | `.teamspace/board.md` 上的一个 task |
+| **Role** | 人 + Claude Code 的组合 | `claude --agent feature-lead` |
+| **Product** | main 分支上的产品 | 衡量指标 = 合入 main 的数目 |
+
+### Role 的工作循环
+
+```
+pull(从 board 领取 MC) → execute(端到端实现) → resolve(解决冲突) → merge(合入 main) → pull(下一个)
+```
+
+```bash
+# 激活 Role — agent 自动读取 board 并呈现下一个 Mission Contract
+claude --agent feature-lead
+
+# 或手动创建隔离环境:
+./scripts/setup-worktree.sh food-calorie
+cd ../vi-wt-food-calorie && ./dev.sh
+```
+
+### 端口隔离（并行开发）
+
+`scripts/setup-worktree.sh` 自动为每个 worktree 分配独立端口（偏移量 +100）。
+支持多个 Role 在同一台机器上并行开发，互不干扰。
+
+---
+
 ## Skill 工具链
 
-本项目内置 Claude Code 技能系统（`.claude/commands/`），clone 后自动可用：
+本项目内置 Claude Code 技能和 Agent 系统，clone 后自动可用：
+
+### Agent（角色模式，通过 `--agent` 激活）
+
+| Agent | 用途 |
+|-------|------|
+| `feature-lead` | 版本迭代 Feature Lead — 自动读取 board，呈现 Mission Contract，端到端推动 |
+| `code-reviewer` | 自动 PR 代码审查 — 安全性、架构合规性、质量检查 |
+
+```bash
+# 激活角色 agent
+claude --agent feature-lead
+```
+
+### 技能（Slash Commands，在对话中调用）
 
 | 命令 | 用途 |
 |------|------|

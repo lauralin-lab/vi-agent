@@ -79,6 +79,12 @@
 - **Done this month**: 2 tasks
 - **V0.1 progress**: 0/8 tasks done
 
+### 🏆 Merge Count (合入 main 的数目 — 核心指标)
+
+| Role | Merged | Current MC |
+|------|--------|------------|
+| casey | 2 | — |
+
 ## 📝 Conventions
 
 - **Task ID**: `T-{三位数字}`, 递增, 下一个可用: T-064
