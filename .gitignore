@@ -31,8 +31,11 @@ htmlcov/
 
 # Docker
 docker-compose.override.yml
+ssl
+*.egg-info
 
 # Claude Code runtime artifacts (not committed)
 .claude/drive/
 .claude/worktrees/
 .claude/config/self-drive.json
+CLAUDE.md
