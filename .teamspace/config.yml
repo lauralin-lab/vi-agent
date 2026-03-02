@@ -50,7 +50,7 @@ members:
     github: caseyz-vv
   - id: liyasong
     name: "Liya Song"
-    role: lead
+    role: infra-engineer
     github: lysfighting
 
 # Kanban 状态定义（顺序即流转方向）
