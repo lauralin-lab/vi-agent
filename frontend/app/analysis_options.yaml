@@ -1,0 +1,61 @@
+####################################################################################################
+##  项目编码规范，请勿擅自修改！
+## 以下定义按照规则等级或字母排序
+####################################################################################################
+
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - plugins/
+    - "**/*.g.dart"
+    - third_party/**
+  errors:
+    lines_longer_than_80_chars: ignore
+    todo: ignore
+    avoid_escaping_inner_quotes: warning
+    curly_braces_in_flow_control_structures: warning
+    depend_on_referenced_packages: warning
+    join_return_with_assignment: warning
+    no_runtimeType_toString: warning
+    prefer_const_constructors: warning
+    always_declare_return_types: error
+    avoid_void_async: error
+    file_names: error
+    invalid_use_of_visible_for_testing_member: error
+    library_prefixes: error
+    no_leading_underscores_for_local_identifiers: error
+    only_throw_errors: error
+    non_constant_identifier_names: error
+    prefer_contains: error
+    prefer_relative_imports: error
+    prefer_typing_uninitialized_variables: error
+    sort_child_properties_last: error
+
+linter:
+  rules:
+    always_declare_return_types: true
+    avoid_dynamic_calls: true
+    avoid_escaping_inner_quotes: true
+    avoid_print: true
+    avoid_void_async: true
+    constant_identifier_names: true
+    directives_ordering: true
+    eol_at_end_of_file: true
+    flutter_style_todos: true
+    implicit_call_tearoffs: true
+    join_return_with_assignment: true
+    leading_newlines_in_multiline_strings: true
+    lines_longer_than_80_chars: false
+    non_constant_identifier_names: true
+    no_runtimeType_toString: true
+    one_member_abstracts: true
+    only_throw_errors: true
+    prefer_relative_imports: true
+    prefer_const_declarations: true
+    prefer_const_constructors: true
+    use_string_buffers: true
+
+formatter:
+  page_width: 120
+  trailing_commas: preserve # 解决 Dart 3.8 格式化的问题

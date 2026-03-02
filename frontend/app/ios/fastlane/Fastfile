@@ -1,0 +1,100 @@
+default_platform(:ios)
+
+platform :ios do
+
+  desc "构建 Flutter 应用并上传到 TestFlight"
+  lane :beta do
+    # 1. 确保 git 状态干净（可选，注释掉如果不需要）
+    # ensure_git_status_clean
+
+    # 2. 自增 build number
+    increment_build_number(
+      xcodeproj: "Runner.xcodeproj"
+    )
+
+    # 3. Flutter build iOS (在 bundler 环境外运行，以正确找到 CocoaPods)
+    Dir.chdir("..") do
+      Bundler.with_clean_env do
+        sh("flutter", "build", "ios", "--release", "--no-codesign")
+      end
+    end
+
+    # 4. 构建并签名 IPA
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "CollovCamera.ipa",
+      clean: true,
+    )
+
+    # 5. 上传到 TestFlight
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,  # 不等待处理完成
+      skip_submission: true,                     # 不自动提交审核
+    )
+  end
+
+  desc "仅构建 IPA（不上传）"
+  lane :build do
+    # Flutter build iOS
+    Dir.chdir("..") do
+      Bundler.with_clean_env do
+        sh("flutter", "build", "ios", "--release", "--no-codesign")
+      end
+    end
+
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "CollovCamera.ipa",
+      clean: true,
+    )
+  end
+
+  desc "仅上传已有 IPA 到 TestFlight"
+  lane :upload do
+    upload_to_testflight(
+      ipa: "./build/CollovCamera.ipa",
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+    )
+  end
+
+  desc "构建内部版本（包含 DevTools）并上传到 TestFlight"
+  lane :beta_internal do
+    increment_build_number(
+      xcodeproj: "Runner.xcodeproj"
+    )
+
+    Dir.chdir("..") do
+      Bundler.with_clean_env do
+        sh("flutter", "build", "ios", "--release", "--no-codesign",
+           "--dart-define=IS_INTERNAL_VERSION=true")
+      end
+    end
+
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      export_options: {
+        signingStyle: "automatic",
+        uploadBitcode: false,
+        uploadSymbols: true,
+      },
+      output_directory: "./build",
+      output_name: "CollovCamera.ipa",
+      clean: true,
+    )
+
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+    )
+  end
+
+end

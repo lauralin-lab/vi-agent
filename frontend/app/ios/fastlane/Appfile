@@ -1,0 +1,6 @@
+app_identifier("com.ai.collov.agentzero.ios")  # Bundle Identifier
+apple_id(ENV["FASTLANE_USER"])                  # 通过环境变量设置，每人不同
+team_id("N6JMG7ZL5J")                            # Developer Portal Team ID
+
+# App Store Connect
+itc_team_id("127863553")               # App Store Connect Team ID (如果有多个团队)

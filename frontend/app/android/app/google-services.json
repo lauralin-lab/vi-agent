@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "97241356775",
+    "project_id": "agent-zero-4d690",
+    "storage_bucket": "agent-zero-4d690.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:97241356775:android:8e045c914eda0e22498542",
+        "android_client_info": {
+          "package_name": "com.collov.collov_camera"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBWxvv2SoHz3NbRQW_CGFQVyneof1U2jNU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
