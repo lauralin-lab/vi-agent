@@ -265,12 +265,30 @@ claude --agent feature-lead
 
 ### 技能（Slash Commands，在对话中调用）
 
+**团队生命周期（每个成员的工作循环）：**
+
+| 命令 | 用途 |
+|------|------|
+| `/set-role` | 设置角色身份 — 首次进来先注册，关联 teamspace |
+| `/get-mission` | 领取 Mission Contract — 从 board 拉取任务，claim 并创建隔离环境 |
+| `/complete-mission` | 提交 Mission Contract — QA 验证、创建 PR、合入 main、更新 board |
+
+**开发工具：**
+
 | 命令 | 用途 |
 |------|------|
 | `/drive` | 高驱自主执行 — 分层蜂群模式 |
 | `/self-drive` | 持续自主改进循环 |
 | `/architect` | 系统架构设计 |
 | `/improve-user` | 认知教练 |
+
+**基础设施：**
+
+| 命令 | 用途 |
+|------|------|
+| `/dev` | 创建个人 Dev 环境（GCP 服务器） |
+| `/dev-info` | 查看 Dev 环境状态 |
+| `/dev-log` | 查看 Dev 环境日志 |
 
 ### 首次设置
 

@@ -3,7 +3,7 @@ name: feature-lead
 description: Role agent for the VI Agent team. Continuously pulls Mission Contracts from the board, drives end-to-end implementation, resolves conflicts, and merges to main. Activate with claude --agent feature-lead.
 model: opus
 permissionMode: bypassPermissions
-skills: drive
+skills: drive, set-role, get-mission, complete-mission
 ---
 
 # Role Agent — Continuous Mission Contract Execution
@@ -52,41 +52,8 @@ The only metric that matters: **how many Mission Contracts you merge to main.**
 
 ## PULL: Get Next Mission Contract
 
-### On first startup, identify yourself:
-```bash
-git config user.name
-```
-Match against `.teamspace/config.yml` → `members`. If no match, ask the watcher.
-
-### Read the board:
-Read `.teamspace/board.md`. Look for Mission Contracts in this priority:
-
-1. **Your WIP tasks** (already claimed, in progress) → resume
-2. **Queued tasks assigned to you** (Owner = your id) → start
-3. **Queued tasks with no owner** (P0 first, then P1, then P2) → claim
-
-### Read version context:
-Read the version spec from `.teamspace/config.yml` → `versions.spec_path`.
-Understand quality gates that apply to this Mission Contract.
-
-### Present the Mission Contract:
-
-```
-╔══════════════════════════════════════════════╗
-║  MISSION CONTRACT                            ║
-╠══════════════════════════════════════════════╣
-║  Task: {T-xxx} {title}                       ║
-║  Priority: {P0/P1/P2}                        ║
-║  Estimate: {S/M/L}                           ║
-║  Services: {which services to touch}         ║
-║  Success: {what "done" looks like}           ║
-║  Quality Gates: {relevant gates from spec}   ║
-╚══════════════════════════════════════════════╝
-
-Your merge count so far: {N} (from Done section)
-```
-
-Ask the watcher to confirm or pick a different Mission Contract.
+Use `/get-mission` to pull the next available Mission Contract from the board.
+This handles identity check, board reading, MC presentation, and claiming.
 
 ---
 
@@ -151,44 +118,13 @@ After rebase:
 
 ## MERGE: Ship to Main
 
-### 1. Push and create PR
-```bash
-git push -u origin {branch-name}
+Use `/complete-mission` to handle the full shipping flow:
+QA verification → rebase on main → create PR → report.
 
-gh pr create --title "{type}({scope}): {description}" --body "$(cat <<'EOF'
-## Mission Contract: {T-xxx}
-{task title}
+After PR is merged, use `/complete-mission done T-{xxx}` to:
+update board → increment merge count → clean worktree.
 
-## Changes
-- {what changed and why}
-
-## Verification
-- {quality gate}: {result}
-- Tests: passing
-- Conflicts: resolved (rebased on latest main)
-EOF
-)"
-```
-
-### 2. Wait for CI
-GitHub Actions runs build + test + lint on all 4 services. Must pass.
-
-### 3. After merge
-```bash
-# Update board: move task → Done
-# Update .teamspace/members/{your-id}.md with completion log
-
-# Clean up worktree
-cd /path/to/vi-agent-team-version
-git worktree remove ../vi-wt-{task-slug}
-
-# Pull latest main
-git checkout main && git pull
-```
-
-### 4. Immediately PULL next Mission Contract
-Do not stop. Read the board again. Present the next available Mission Contract.
-The loop continues.
+Then immediately loop back to PULL.
 
 ---
 

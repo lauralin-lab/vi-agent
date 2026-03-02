@@ -47,25 +47,29 @@ Agent presents next Mission Contract → repeat
 ### Start Working
 
 ```bash
-# Activate your Role
-claude --agent feature-lead
+# 1. 设置身份（首次）
+/set-role
 
-# The agent handles everything:
-# - Identifies you from git config
-# - Reads the board for available Mission Contracts
-# - Presents one for you to claim
-# - Creates isolated dev environment
-# - Drives implementation
-# - Resolves conflicts and merges
-# - Loops to the next Mission Contract
+# 2. 领取任务
+/get-mission
+
+# 3. 执行（用 drive 模式）
+/drive T-{xxx}
+
+# 4. 提交完成
+/complete-mission
+```
+
+或直接用 Agent 模式：
+```bash
+claude --agent feature-lead
 ```
 
 ### Team Member Setup
 
-1. Added to `.teamspace/config.yml` → `members`
-2. Has a file at `.teamspace/members/{id}.md`
-3. Set git identity: `git config user.name "{name}"`
-4. Run `.claude/install.sh` (once, for hooks and notifications)
+1. Set git identity: `git config user.name "{name}"`
+2. Run `.claude/install.sh` (once, for hooks and notifications)
+3. Run `/set-role` to register and link to teamspace
 
 ---
 
