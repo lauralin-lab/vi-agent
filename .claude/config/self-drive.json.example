@@ -1,0 +1,11 @@
+{
+  "slack": {
+    "bot_token": "xoxb-YOUR-BOT-TOKEN-HERE",
+    "app_token": "xapp-YOUR-APP-TOKEN-HERE",
+    "channel_id": "D-YOUR-CHANNEL-ID"
+  },
+  "telegram": {
+    "bot_token": "",
+    "chat_id": ""
+  }
+}

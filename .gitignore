@@ -32,5 +32,7 @@ htmlcov/
 # Docker
 docker-compose.override.yml
 
-# Claude Code session artifacts
+# Claude Code runtime artifacts (not committed)
 .claude/drive/
+.claude/worktrees/
+.claude/config/self-drive.json
