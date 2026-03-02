@@ -210,7 +210,7 @@ export default function LiveCameraView({
 
   // ── Handle agent transcripts → update card text ──
   useEffect(() => {
-    if (livekit.lastAgentText) {
+    if (livekit.lastAgentText && !livekit.lastAgentText.startsWith('[SYSTEM')) {
       setCardText(livekit.lastAgentText);
       setShowCard(true);
     }

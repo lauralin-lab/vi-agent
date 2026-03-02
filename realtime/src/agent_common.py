@@ -1370,7 +1370,7 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
                 if assistant._agent_session:
                     assistant._agent_session.generate_reply(
                         user_input=(
-                            "[SYSTEM] A task has been dispatched to the backend. "
+                            "A task has been dispatched to the backend. "
                             "Tell the user briefly that you're working on it. "
                             "Do NOT call any tools. Keep it under 15 words."
                         )
@@ -1439,11 +1439,11 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
                 # CRITICAL: "Do not call any tools" prevents Gemini from speaking info_bar
                 # metadata aloud. "under 10 words" caps greeting length to reduce audio streaming time.
                 greeting_prompt = (
-                    "[SYSTEM: Do NOT call any tools. Greet the user warmly in under 10 words. "
-                    + f"Previous context: {cached[:150]}]"
+                    f"Do NOT call any tools. Greet the user warmly in under 10 words. "
+                    f"Previous context: {cached[:150]}"
                 )
             else:
-                greeting_prompt = "[SYSTEM: Do NOT call any tools. If you can see video input, briefly describe what you see in under 15 words. Otherwise, greet warmly in under 10 words.]"
+                greeting_prompt = "Do NOT call any tools. If you can see video input, briefly describe what you see in under 15 words. Otherwise, greet warmly in under 10 words."
             assistant._greeting_sent = True
             session.generate_reply(user_input=greeting_prompt)
             logger.info(f"[init] Instant greeting fired (cached={'yes' if cached else 'no'})")
