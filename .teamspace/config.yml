@@ -48,6 +48,10 @@ members:
     name: "Casey"
     role: lead
     github: caseyz-vv
+  - id: liyasong
+    name: "Liya Song"
+    role: lead
+    github: lysfighting
 
 # Kanban 状态定义（顺序即流转方向）
 # Backlog → Queued → WIP → Blocked / In Review → Done → Archive
