@@ -1,6 +1,6 @@
 ---
 description: "Execute mission from Contract. Try: /team-drive help"
-version: "2.2.0"
+version: "2.3.0"
 ---
 
 # /team-drive — Execute Mission
@@ -76,6 +76,49 @@ Extract from body:
 - **Acceptance Criteria**
 - **Context Files**
 - **Test Command**
+
+---
+
+## Step 0b: Issue Freshness Check
+
+Check whether the Issue has been modified since the Contract was generated.
+
+```bash
+# Fetch current Issue content
+ISSUE_DATA=$(gh issue view {issue} --json title,body 2>/dev/null)
+```
+
+- If `gh issue view` fails (network error, offline) → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
+
+If fetch succeeds:
+
+```bash
+# Compute hash of current Issue content
+CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f1)
+# Compare with Contract's issue_content_hash
+CONTRACT_HASH=$(grep 'issue_content_hash:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
+```
+
+If `issue_content_hash` is not in Contract (pre-v2.3.0 Contract) → skip check, continue.
+
+If `CURRENT_HASH ≠ CONTRACT_HASH`:
+
+Display the current Issue body to the user:
+```
+⚠ ISSUE UPDATED since claim
+═══════════════════════════════════════
+The Issue description has changed since you generated this Contract.
+
+Current Issue body:
+──────────────────────────────────────
+{current Issue body}
+──────────────────────────────────────
+```
+
+Use `AskUserQuestion`:
+- "Update Contract?" → Re-extract Objective, Sub-tasks, Acceptance Criteria from new body. Update `issue_content_hash`. Preserve Context Files and AI Notes (locally generated).
+- "Continue with current Contract" → proceed without changes
+- "Abort" → **STOP**
 
 ---
 
@@ -209,7 +252,15 @@ Check for:
 
 Fix any issues found.
 
-### 4d: Update Contract AI Notes
+### 4d: Post completion comment to Issue
+
+```bash
+gh issue comment {issue} --body "✅ All sub-tasks complete — ready for review. Branch: \`{branch}\`"
+```
+
+Non-fatal: if comment fails, warn but continue.
+
+### 4e: Update Contract AI Notes
 Add execution notes to the Contract's **AI Notes** section:
 ```markdown
 ## AI Notes

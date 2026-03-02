@@ -1,6 +1,6 @@
 ---
 description: "Create mission Issue from natural language. Try: /team-issue help"
-version: "2.2.0"
+version: "2.3.0"
 ---
 
 # /team-issue — Create Mission Contract Issue
@@ -13,7 +13,9 @@ version: "2.2.0"
 
 | Input | Action |
 |-------|--------|
-| Natural language description | AI-enrich → preview → publish |
+| Natural language description | AI-enrich → preview → publish (new Issue) |
+| `#42 <changes>` or `update #42 <changes>` | Update existing Issue with described changes |
+| `#42` or `update #42` | View and interactively edit existing Issue |
 | `help` or `-h` | Show usage guide |
 
 If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
@@ -22,20 +24,33 @@ If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
 /team-issue — Create a mission-contract Issue on GitHub
 
 USAGE:
-  /team-issue <description>    AI-enrich and publish as GitHub Issue
-  /team-issue help             Show this guide
+  /team-issue <description>           AI-enrich and publish as new GitHub Issue
+  /team-issue #42 <changes>           Update Issue #42 with described changes
+  /team-issue #42                     View and interactively edit Issue #42
+  /team-issue help                    Show this guide
 
-EXAMPLES:
+EXAMPLES (create):
   /team-issue 共享 .env 导致多个 agent 抢 session，需要配置隔离
   /team-issue add rate limiting to the upload API
   /team-issue fix: camera permission dialog not showing on iOS Safari
 
-WHAT HAPPENS:
+EXAMPLES (update):
+  /team-issue #42 增加一个约束：不能修改公共 API
+  /team-issue #42 priority should be P0, add sub-task for migration
+  /team-issue #42                     (interactive edit)
+
+WHAT HAPPENS (create):
   1. AI analyzes your description
   2. Scans codebase for relevant files
   3. Generates standardized mission-contract Issue body
   4. Shows preview for your confirmation
   5. Publishes to GitHub with correct labels
+
+WHAT HAPPENS (update):
+  1. Fetches current Issue from GitHub
+  2. AI applies your described changes to the body
+  3. Shows before/after diff for confirmation
+  4. Updates Issue on GitHub
 
 NEXT: /team-claim #{N} to claim the created Issue
 ```
@@ -61,6 +76,14 @@ fi
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
 
 Read `$TEAMWORK_DIR/config.yml` → extract `team.repo`, `github.mc_label`, domain list, priority list.
+
+---
+
+## Route: Create or Update?
+
+Parse `$ARGUMENTS`:
+- If starts with `#N` or `update #N` → extract Issue number → jump to **Operation Update**
+- Otherwise → continue to **Step 1: Create** (new Issue flow)
 
 ---
 
@@ -189,6 +212,102 @@ URL:    {issue URL}
 Labels: mission-contract, priority:{Pn}, domain:{domain}, size:{size}
 
 Next: /team-claim #{N} to claim this Issue
+═══════════════════════════════════════
+```
+
+---
+
+## Operation Update — Edit Existing Issue
+
+> Triggered by `/team-issue #42 <changes>` or `/team-issue #42` (interactive).
+
+### U1: Fetch current Issue
+
+```bash
+REPO=$(grep 'repo:' $TEAMWORK_DIR/config.yml | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
+gh issue view {ISSUE_NUMBER} --repo "$REPO" --json number,title,body,labels,state
+```
+
+- If Issue not found → "Issue #{N} not found." → **STOP**
+- If Issue is closed → "Issue #{N} is closed. Reopen it first if you want to edit." → **STOP**
+
+Display current Issue summary:
+```
+CURRENT ISSUE #{N}
+──────────────────────────────────────
+Title:  {title}
+Labels: {labels}
+
+Body:
+{current body}
+──────────────────────────────────────
+```
+
+### U2: Determine changes
+
+**If user provided change description** (e.g., `/team-issue #42 增加约束`):
+- AI applies the described changes to the existing body
+- Preserve the mission-contract structure (Priority, Size, Sub-tasks, etc.)
+- Only modify sections affected by the change description
+
+**If no change description** (e.g., `/team-issue #42`):
+- Use `AskUserQuestion` to ask what to change:
+  - "Edit title"
+  - "Edit priority/size"
+  - "Edit sub-tasks"
+  - "Edit full body"
+- Apply user's selection interactively
+
+### U3: Preview changes
+
+Display the updated Issue:
+```
+ISSUE UPDATE PREVIEW
+═══════════════════════════════════════
+Issue:    #{N}
+Title:    {new title, or unchanged}
+
+Changes:
+──────────────────────────────────────
+{Show what changed — highlight modified sections}
+──────────────────────────────────────
+```
+
+Use `AskUserQuestion` to confirm:
+- "Apply changes" → proceed to U4
+- "Edit more" → return to U2
+- "Cancel" → **STOP**
+
+### U4: Apply update
+
+```bash
+gh issue edit {ISSUE_NUMBER} \
+  --repo "$REPO" \
+  --title "{new title}" \
+  --body "{updated body}"
+```
+
+If labels changed (priority, size, domain):
+```bash
+gh issue edit {ISSUE_NUMBER} --repo "$REPO" \
+  --remove-label "priority:{old}" --add-label "priority:{new}" \
+  --remove-label "size:{old}" --add-label "size:{new}"
+```
+
+### U5: Output
+
+```
+ISSUE UPDATED
+═══════════════════════════════════════
+Issue:  #{N} — {title}
+URL:    {issue URL}
+
+Changes applied:
+  {summary of what changed}
+
+Note: If this Issue is claimed, the assignee will see
+[UPDATED] on their dashboard and a freshness prompt
+when they run /team-drive.
 ═══════════════════════════════════════
 ```
 

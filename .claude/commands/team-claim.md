@@ -1,6 +1,6 @@
 ---
 description: "Claim Issue → Contract → Branch. Try: /team-claim help"
-version: "2.2.0"
+version: "2.3.0"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -166,6 +166,7 @@ branch: mission/{ISSUE_NUMBER}-{SLUG}-{GH_USER}
 milestone: "{MILESTONE or none}"
 version: "{VERSION from config, or omit if not configured}"
 claimed: {ISO_TIMESTAMP}
+issue_content_hash: "{SHA256 of ISSUE_TITLE + ISSUE_BODY at claim time}"
 ---
 
 # MISSION-{N}: {ISSUE_TITLE}
