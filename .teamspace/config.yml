@@ -54,7 +54,7 @@ tags:
 task_id:
   prefix: "T"
   format: "T-{三位数字}"  # T-001, T-042, etc.
-  next_id: 50  # 下一个可用 ID
+  next_id: 64  # 下一个可用 ID
 
 # 工作量估算
 estimation:
@@ -70,6 +70,14 @@ worktree:
   # 分支命名遵循 CONTRIBUTING.md
   branch_pattern: "{type}/{task-id}-{slug}"
   # 示例: ../vi-wt-vad-fix → bugfix/T-044-vad-signal
+
+# 版本管理
+versions:
+  current: "V0.1"
+  spec_path: ".claude/drive/v0.1-definition/v0.1-spec.md"
+  # 当版本内所有任务 Done → 进入 QA 环节
+  # QA 通过 → git tag v0.1.0
+  lifecycle: [dev, qa, released]
 
 # Drive Mode 集成
 drive:
