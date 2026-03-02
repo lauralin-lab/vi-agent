@@ -15,7 +15,6 @@ version: "2.1.1"
 |-------|--------|
 | `#42` or `42` | Claim specific Issue |
 | `list` | Browse available mission Issues |
-| `create "title"` | Create new Issue from mission template |
 | `help` or `-h` | Show usage guide |
 | (empty) | Auto-select next unassigned Issue by priority (P0 > P1 > P2 > P3) |
 
@@ -28,7 +27,6 @@ USAGE:
   /team-claim           Auto-pick highest priority unassigned Issue
   /team-claim #42       Claim specific Issue
   /team-claim list      Browse available missions
-  /team-claim create "title"   Create new Issue from template
 
 WHAT HAPPENS:
   1. Fetches Issue from GitHub
@@ -37,6 +35,8 @@ WHAT HAPPENS:
   3. Creates branch: mission/{issue}-{slug}-{user}
   4. Assigns you on GitHub + posts claim comment
   5. Labels Issue: status:wip
+
+CREATE NEW ISSUES: Use /team-issue <description> instead
 
 NEXT: /team-drive to start executing
 ```
@@ -112,20 +112,6 @@ Available missions:
 
 Use `AskUserQuestion` to let user pick one, then proceed to Step 3 with the selected Issue number.
 
-### If `create "title"`:
-
-```bash
-gh issue create --title "{title}" --label "$MISSION_LABEL" --template mission.yml
-```
-
-If the Issue template prompts are not filled, open the browser:
-```bash
-gh issue create --title "{title}" --label "$MISSION_LABEL" --web
-```
-
-Output the created Issue number and suggest: "Issue created. Run `/team-claim #{N}` to claim it."
-→ **STOP** (user should fill in the Issue body via GitHub, then claim)
-
 ### If `#N` or number:
 
 Extract Issue number. Proceed to Step 3.
@@ -137,7 +123,7 @@ gh issue list --label "$MISSION_LABEL" --state open --assignee "" --json number,
 ```
 
 Sort by priority (P0 first, then P1, P2, P3). Pick the first one.
-If no unassigned Issues → "No available missions. Create one with `/team-claim create \"title\"`." → **STOP**
+If no unassigned Issues → "No available missions. Create one with `/team-issue <description>`." → **STOP**
 
 Proceed to Step 3 with the auto-selected Issue number.
 
