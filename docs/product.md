@@ -1,8 +1,6 @@
 # VI-Agent Frontend — Product Documentation
 
-> **Version:** V3 Frontend (Live Mode)
 > **Last Updated:** March 2026
-> **Status:** Live mode connected via LiveKit. Demo mode removed.
 
 ---
 
@@ -40,7 +38,7 @@ The central product innovation is the **Talking Camera** — a camera that sees,
 
 ### Why It Matters
 
-The V1.0 bottleneck was the **Intention Phase** — the only moment requiring the user to actively think and choose. The Talking Camera eliminates this by:
+The bottleneck in visual AI is the **Intention Phase** — the only moment requiring the user to actively think and choose. The Talking Camera eliminates this by:
 
 | Problem | Talking Camera Solution |
 |---|---|
@@ -118,37 +116,34 @@ Time, location, past sessions, and visual context are all free signals that redu
 
 ## 4. User Journey
 
-The complete user journey flows through four screens:
+The user journey flows through four views:
 
-```mermaid
-graph LR
-    A["📷 Camera View"] -->|"Tap shutter + confirm"| B["📋 Session View"]
-    B -->|"Back"| A
-    A -->|"Back / ←"| C["🏠 History"]
-    C -->|"Tap card"| B
-    C -->|"Camera FAB"| A
+```
+Camera View → Session View → History
+                               ↓
+                           Memory View
 ```
 
 ---
 
 ### 4.1 Camera View — The Talking Camera
 
-The primary interface. The user points the camera at something and the AI immediately begins analyzing.
+**Component:** `LiveCameraView.jsx`
 
+The primary interface. The user points the camera at something and the AI immediately begins analyzing via LiveKit.
 
 #### Layout (top to bottom)
 
 | Element | Description |
 |---|---|
-| **Back Arrow** (←) | Navigate to History/Home |
-| **Signal Indicator** (WiFi icon) | Connection status: Connecting → Connected → Weak → Disconnected |
+| **Back Arrow** | Navigate to History |
+| **Signal Indicator** | Real connection states: Connecting / Connected / Weak / Disconnected |
 | **Flash Toggle** | OFF / ON flashlight control |
-| **Reload** (↻) | Cycle to next demo use case |
-| **Viewfinder** | Full-bleed camera feed (or demo background image) |
-| **AI Status** | Cyan "AI VIEWING..." label with eye icon |
+| **Viewfinder** | Full-bleed real camera feed via LiveKit |
+| **AI Status** | "AI VIEWING..." label with eye icon |
 | **Observation Card** | Floating text showing the AI's real-time prediction |
-| **Mic Button** | Left of shutter — muted mic with purple accent |
-| **Shutter Button** | Center — tap for photo, long-press for video |
+| **Mic Button** | Left of shutter — real audio capture with purple accent |
+| **Shutter Button** | Center — tap for photo |
 | **Done Button** | Right of shutter — green checkmark (appears after capture) |
 
 #### The Observation Card
@@ -161,76 +156,68 @@ The floating card is the core innovation. It displays:
 
 #### Capture Flow
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Camera
-    participant S as Session
-
-    U->>C: Point camera at object
-    C->>C: AI VIEWING... (observation card appears)
-    U->>C: Tap shutter (photo) or long-press (video)
-    C->>C: Capture animation + media added to stack
-    U->>C: Tap ✓ (Done)
-    C->>S: Navigate to Session with photos + intention
+```
+User points camera → AI VIEWING... (observation card appears)
+  → User taps shutter (photo captured, added to media stack)
+  → User taps Done (✓)
+  → Navigate to Session View with photos + intention
 ```
 
 #### Media Stack
 
-- Captured photos/videos stack as thumbnails above the shutter
+- Captured photos stack as thumbnails above the shutter
 - Show count badge ("1 items", "3 items")
 - Supports gallery view with delete/clear-all
 
----
+#### Camera Controls
 
-### 4.2 Session View — Processing & Delivery
-
-After confirming, the user sees a structured breakdown of the AI's work.
-
-
-#### Layout (top to bottom)
-
-| Section | Description |
-|---|---|
-| **Header** | Title in "Input → Output" format (e.g., "Receipt → Tax Report") |
-| **Image Carousel** | Horizontal scroll of captured photos with dot pagination |
-| **WHAT I CAUGHT** | Two cards: Visual (what AI detected) + Voice (interpreted intent) |
-| **MY WORK PLAN** | Expandable checklist of execution steps with ✓ completion |
-| **HERE'S WHAT I MADE** | The final Artifact — a rich, interactive card |
-| **Chat Input** | "Follow up..." text field with + button and purple send |
-
-#### WHAT I CAUGHT Section
-
-Two message-style cards:
-
-1. **Visual card** (with thumbnail): "I see 3 receipts and invoices — a restaurant bill ($127.50), an office supply receipt ($84.32), and a hotel invoice ($459.00)."
-2. **Voice card** (with waveform icon): "You need these recorded for tax filing. I'll extract every line item, categorize by IRS Schedule C, and prepare export-ready data."
-
-#### Work Plan (Todos)
-
-Each todo shows:
-
-- Completion status (✓ green check or ○ pending)
-- Task name (e.g., "Business Card OCR & Data Extraction")
-- Substep detail (e.g., "ICS file ready — tap to add directly to iPhone Calendar")
-
-#### Artifact Display
-
-The "HERE'S WHAT I MADE" section contains the final output — a rich, interactive card specific to the use case type. Example for Card → Meeting:
-
-
-This artifact includes:
-
-- **Calendar Event**: "Meeting with Sarah Chen" with date/time
-- **Contact Extracted**: Full vCard (name, title, company, email, phone, LinkedIn)
-- **AI Action Item**: "Follow-up Coffee Chat" with suggested time and location
+- Zoom (pinch or slider)
+- Front/back camera switch
+- Flash toggle
 
 ---
 
-### 4.3 History View — Memory & Re-engagement
+### 4.2 Session View — Canvas-First Artifact Display
+
+**Component:** `LiveSessionView.jsx`
+
+The session view uses a **canvas-first** design where agent-generated artifacts are the hero content, not conversation.
+
+#### Canvas Zone (scrollable, hero content)
+
+The main content area renders a stack of artifact blocks:
+
+- **CanvasCard** components: collapsed/expanded wrappers for each block
+- **HtmlBlock**: `ActiveHtmlBlock` (streaming via `PersistentHtmlRenderer`) or `StaticHtmlBlock`
+- **ModuleRenderer**: native React components for structured data (8 types)
+- **ImageBlock**: displayed images
+- Multiple blocks per session — each gateway task produces one block
+- Only the latest block is expanded by default
+
+#### Conversation Pill (floating, transient)
+
+- Floating pill showing the latest agent message
+- Expandable to show last 5 messages
+- Can be dismissed — conversation is secondary to artifacts
+
+#### Action Bar (bottom)
+
+- Agent-driven action options (clickable suggestions)
+- Chat input with photo attachment and send
+- Voice input capability
+
+#### Session Caching
+
+- Up to 10 session entries cached
+- Preserves state across navigation (back to camera and return)
+
+---
+
+### 4.3 History View
+
+**Component:** `HistoryView.jsx`
 
 The home screen showing all past sessions as a visual gallery.
-
 
 #### Layout
 
@@ -254,20 +241,15 @@ Tapping a card opens the full Session View with expanded artifact.
 
 ---
 
-### 4.4 Live Mode — Real-Time AI
+### 4.4 Memory View
 
-When accessed without `?demo`, the app connects to a LiveKit server for real-time visual AI processing.
+**Component:** `MemoryView.jsx`
 
+Memory management interface for viewing, editing, and deleting memories organized by layer:
 
-#### Differences from Demo Mode
-
-| Feature | Demo Mode | Live Mode |
-|---|---|---|
-| Camera feed | Static background image per use case | Real device camera via LiveKit |
-| AI processing | Pre-scripted responses (removed) | Real-time AI via LiveKit Agent |
-| Connection | Always "connected" | Real connection states |
-| Mic | Visual only | Actual audio capture + transmission |
-| Status badge | None | "AI OFFLINE" / "AI ONLINE" |
+- **Identity**: Who the user is (preferences, profile)
+- **Semantic**: Facts and knowledge accumulated over time
+- **Episodic**: Specific past interactions and events
 
 ---
 
@@ -278,7 +260,7 @@ When accessed without `?demo`, the app connects to a LiveKit server for real-tim
 | Layer | Technology |
 |---|---|
 | Framework | Vite + React |
-| Styling | Vanilla CSS |
+| Styling | Vanilla CSS + Glassmorphism Design System |
 | Animation | Framer Motion |
 | Real-time | LiveKit Client SDK |
 | Icons | Lucide React |
@@ -286,42 +268,123 @@ When accessed without `?demo`, the app connects to a LiveKit server for real-tim
 
 ### Component Map
 
-```mermaid
-graph TD
-    App["App.jsx<br/>(Router + State)"]
-
-    subgraph Live["Live Mode"]
-        LCV["LiveCameraView.jsx"]
-        LSV["LiveSessionView.jsx"]
-    end
-
-    HV["HistoryView.jsx"]
-    MV["MemoryView.jsx"]
-    SL["SoundLibrary.js"]
-
-    App --> Live
-    App --> HV
-    App --> MV
+```
+App.jsx (Router + State + Auth + Notifications)
+├── LiveCameraView.jsx (LiveKit camera + capture + observation)
+├── LiveSessionView.jsx (Canvas-first artifact display)
+│   ├── PersistentHtmlRenderer.jsx (Streaming HTML iframe)
+│   └── modules/
+│       ├── ModuleRenderer.jsx (Dispatcher)
+│       ├── shared.jsx (Glassmorphism primitives)
+│       ├── PlaceCardModule.jsx
+│       ├── WeatherModule.jsx
+│       ├── ChecklistModule.jsx
+│       ├── ComparisonModule.jsx
+│       ├── RecipeModule.jsx
+│       ├── StepsGuideModule.jsx
+│       ├── InfoCardModule.jsx
+│       └── ImageGalleryModule.jsx
+├── HistoryView.jsx (Session grid + search)
+├── MemoryView.jsx (Memory management)
+└── hooks/
+    └── useAgentProtocol.js (LiveKit RPC + DataChannel protocol)
 ```
 
-### Routing Logic
+### Routing
 
 ```javascript
-// View states
-'camera'       → LiveCameraView
-'session'      → LiveSessionView
-'history'      → HistoryView
+'camera'         → LiveCameraView
+'live-session'   → LiveSessionView
+'home'/'history' → HistoryView
+'memory'         → MemoryView
 ```
 
 ---
 
-## 6. Artifacts
+## 6. Artifact System
 
-In live mode, the agent generates HTML artifacts dynamically via the gateway. These are rendered by `PersistentHtmlRenderer.jsx` within `LiveSessionView.jsx`.
+The agent generates rich content through two rendering paths:
+
+### 6.1 HTML Artifacts — PersistentHtmlRenderer
+
+Streaming HTML rendered inside a managed iframe:
+
+- **Single pre-warmed iframe** per session — never recreated during a session
+- **Tailwind CDN** loaded once at iframe creation
+- **postMessage bridge** for O(1) HTML appending (no DOM re-parse on each chunk)
+- **ResizeObserver** for dynamic height adjustment (iframe grows to fit content)
+- **iframeDesignSystem.js** injects shared CSS tokens into the iframe
+
+This path handles freeform, visually rich content that the agent generates as HTML/Tailwind markup.
+
+### 6.2 Native Modules — ModuleRenderer
+
+Eight structured data types rendered as native React components:
+
+| Module | Purpose | Key Features |
+|---|---|---|
+| `place_card` | Restaurants / places | Rating, price, map link, hours, action buttons |
+| `weather` | Weather + forecast | Current conditions, multi-day forecast |
+| `checklist` | Interactive todos | Checkboxes with local state management |
+| `comparison` | Side-by-side compare | Feature matrix across multiple items |
+| `recipe` | Cooking instructions | Ingredients list, steps, cook time |
+| `steps_guide` | Step-by-step guides | Ordered instructions with progress |
+| `info_card` | Information cards | Icons, structured key-value data |
+| `image_gallery` | Image collections | Lazy loading, responsive grid layout |
+
+The agent chooses between HTML artifacts and native modules based on the task. Structured, interactive data (places, recipes, checklists) uses native modules. Freeform analysis, reports, and custom layouts use HTML artifacts.
+
+### 6.3 Glassmorphism Design System
+
+A shared visual language across both rendering paths:
+
+**Design Tokens:**
+- Glass effects: frosted backgrounds (`rgba(255,255,255,0.04)`), `blur(20px)`
+- Purple accent: `#a855f7` with glow effects
+- Responsive typography: `clamp()`-based sizing
+
+**React Primitives** (`shared.jsx`):
+- `GlassCard`, `GlassSection`, `GlassChip`, `GlassButton`, `GlassDivider`
+
+**CSS Utility Classes** (`iframeDesignSystem.js`) for LLM-generated HTML:
+- `.vi-card`, `.vi-section`, `.vi-chip`, `.vi-btn`
+- Ensures HTML artifacts match native module styling
 
 ---
 
-## 7. Sound Design
+## 7. Agent Protocol
+
+Communication between the frontend and agent runs over LiveKit, implemented in `useAgentProtocol.js`.
+
+### RPC Methods (agent → frontend)
+
+The agent can invoke frontend actions via LiveKit RPC:
+
+- Photo/video capture and upload
+- Chat text manipulation
+- Action card display (clickable options for the user)
+- Rich result display (modules and HTML)
+- Page navigation between views
+- Camera hardware control (zoom, switch lens)
+
+### DataChannel Topics
+
+Real-time data flows over named DataChannel topics:
+
+| Topic | Format | Purpose |
+|---|---|---|
+| `vi-agent` | JSON | Intention prediction, session plan, action suggestions |
+| `vi-gateway` | JSON | Task lifecycle: started, progress, result, error |
+| `gateway_html_stream` | Chunks | Streaming HTML artifact content |
+| `gateway_text_stream` | Chunks | Streaming text content |
+| `task_progress` | JSON | Progress updates with stage and message |
+| `task_events` | JSON | Task state history |
+| `session_header` | JSON | Session metadata (title, summary) |
+| `memory_updated` | Signal | Notification that memories changed |
+
+---
+
+## 8. Sound Design
 
 The app uses a custom `SoundLibrary.js` (`frontend/src/sounds/`) with contextual audio feedback:
 
@@ -336,25 +399,33 @@ The app uses a custom `SoundLibrary.js` (`frontend/src/sounds/`) with contextual
 
 ---
 
-## 8. Authentication
+## 9. Authentication
 
-Authentication is handled via `useAuth` hook with JWT tokens. The login/signup flow is embedded in the main app.
+Dual authentication modes:
+
+- **JWT Token**: Email/password signup and login flow, embedded in the main app
+- **Device-based Anonymous**: Automatic via `X-Device-Id` header — no signup required
+
+The `useAuth` hook manages the token lifecycle. Expired tokens trigger auto-refresh on 401 responses.
 
 ---
 
-## 9. Product Roadmap Context
+## 10. Notifications
 
-Based on the [Overall Product Strategy](../../design%20doc/Visual%20Intelligence%20Overall%20Product%20Strategy.md) and [PRD V1.2](../../design%20doc/VI%20PRD%20V1.2.md):
+Toast notifications provide feedback across the app:
 
-| Version | Focus | Status |
+| Type | Color | Trigger |
 |---|---|---|
-| **V0.9** | Base Loop with Experimental Talking Camera | ✅ Completed |
-| **V1.0** | Base Loop with Traditional Camera + Temp Artifacts | ✅ Implemented (current frontend) |
-| **V1.1** | Routine Artifacts + Plugin System | 🔜 Planned |
-| **V1.2** | Memory, Skill, Use Case Discovery | 🔜 Planned |
-| **V2.0** | Live Stream + Real-time processing | 🔜 In progress (LiveKit integration) |
+| `session_complete` | Green | Session finished successfully |
+| `session_failed` | Red | Session encountered an error |
+| `memory_update` | Purple | Memory was created or updated |
+| `agent_message` | Blue | Agent sent a message outside session |
 
-### Agent Economics
+All toasts auto-dismiss with a progress bar after 3 seconds.
+
+---
+
+## 11. Agent Economics
 
 | Item | Detail |
 |---|---|
@@ -362,18 +433,24 @@ Based on the [Overall Product Strategy](../../design%20doc/Visual%20Intelligence
 | **Bonus** | Pay for token credit, no upper limit |
 | **Cost per Loop** | ~$0.02–0.08 |
 | **Monthly (10 loops/day)** | ~$6–24 |
-| **Models** | Gemini Live (real-time), Gemini Flash (fast), Claude Opus 4.6 (high-end), Kimi K2.5 (cheap) |
+| **Models** | Gemini Live 2.5 Flash (real-time), Gemini 2.5 Flash (fast execution), Claude Sonnet 4.6 (thorough execution) |
 
 ---
 
-## 10. Key Source Files
+## 12. Key Source Files
 
 | File | Purpose |
 |---|---|
-| `frontend/src/App.jsx` | Main router — auth state, view transitions |
-| `frontend/src/components/LiveCameraView.jsx` | Live camera — LiveKit integration, real mic/camera, backend dispatch |
-| `frontend/src/components/LiveSessionView.jsx` | Live session — real-time results from LiveKit Agent |
-| `frontend/src/components/HistoryView.jsx` | History/Home — session grid, search, profile, camera FAB |
+| `frontend/src/App.jsx` | Main router, auth, view transitions, notifications |
+| `frontend/src/components/LiveCameraView.jsx` | Live camera via LiveKit, observation, capture |
+| `frontend/src/components/LiveSessionView.jsx` | Canvas-first session: artifacts + conversation + actions |
+| `frontend/src/components/PersistentHtmlRenderer.jsx` | Streaming HTML iframe renderer |
+| `frontend/src/components/iframeDesignSystem.js` | Glassmorphism CSS tokens for iframes |
+| `frontend/src/components/modules/ModuleRenderer.jsx` | Native module type dispatcher |
+| `frontend/src/components/modules/shared.jsx` | Glassmorphism design primitives |
+| `frontend/src/components/modules/*.jsx` | 8 specialized module components |
+| `frontend/src/components/HistoryView.jsx` | Session grid, search, navigation |
 | `frontend/src/components/MemoryView.jsx` | Memory management UI |
-| `frontend/src/components/PersistentHtmlRenderer.jsx` | HTML artifact renderer |
-| `frontend/src/sounds/` | Sound effects manager — contextual audio feedback |
+| `frontend/src/hooks/useAgentProtocol.js` | LiveKit RPC + DataChannel protocol |
+| `frontend/src/services/api.js` | API client, auth, S3 upload |
+| `frontend/src/sounds/` | Sound effects (SoundLibrary.js) |
