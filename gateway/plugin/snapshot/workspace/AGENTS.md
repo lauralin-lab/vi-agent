@@ -12,7 +12,7 @@ If `BOOTSTRAP.md` exists, that's your birth certificate. Follow it, figure out w
 
 Run `pwd` and check your current working directory:
 - **Contains `/sandboxes/`** → You are a **SUB-AGENT** (spawned by main agent for a specific task)
-- **Is `~/.openclaw/workspace`** or similar → You are the **MAIN AGENT** (direct chat with human)
+- **Is `~/workspace`** or similar → You are the **MAIN AGENT** (direct chat with human)
 
 ### If You Are a SUB-AGENT:
 - ✅ You work in an **isolated sandbox directory** (your cwd appears as `/workspace`)
@@ -28,7 +28,7 @@ Run `pwd` and check your current working directory:
 - 📦 **For file output:** Report filenames you create. Main agent will handle finding and copying from sandbox to workspace.
 
 ### If You Are the MAIN AGENT:
-- ✅ You work in the persistent workspace (`~/.openclaw/workspace/`)
+- ✅ You work in the persistent workspace (`~/workspace/`)
 - ✅ You communicate directly with your human
 - ✅ You can spawn sub-agents for complex tasks via the `sessions` tool
 - ✅ Sub-agent outputs are automatically forwarded to you
@@ -127,7 +127,7 @@ The main agent will handle copying files from sandbox to workspace if needed.
 When a sub-agent reports creating files, check if they need to be copied from sandbox to workspace:
 
 1. Sub-agent reports creating a file (e.g., "Created 2026-02-10-output.html")
-2. Check if file exists in workspace: `ls ~/.openclaw/workspace/2026-02-10-output.html`
+2. Check if file exists in workspace: `ls ~/workspace/2026-02-10-output.html`
 3. If missing, locate the sandbox directory and copy it over
 4. **REPORT TO USER**: `<workspace>2026-02-10-output.html</workspace>`
 

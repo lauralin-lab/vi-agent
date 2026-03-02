@@ -134,7 +134,7 @@ V2 已有                        V3 P0/P1 (Now)                     V3 P2/P3 (Wh
 | `gateway/` | 保持 → Execution Registry 的 NanoClaw + Gemini Flash Executor |
 | `api-server/` | 扩展 → Memory V2 API + agent_memories 表 |
 | `frontend/` | 修复 → 12 Bug Fixes + Memory View 扩展 |
-| `prompts/vi-openclaw-agent.md` | 提取通用部分 → Agent Core System Prompt |
+| `prompts/vi-livekit-agent.md` | 提取通用部分 → Agent Core System Prompt |
 
 ---
 
@@ -846,7 +846,7 @@ class ExecutorSelector {
                           │   User's Local Machine    │
                           │                           │
                           │  ┌─────────────────────┐  │
-                          │  │ OpenClaw Local Agent │  │
+                          │  │   VI Local Agent    │  │
                           │  │                     │  │
                           │  │ • 接收 TaskRequest  │  │
                           │  │ • 调用 claude CLI   │  │
@@ -865,16 +865,16 @@ class ExecutorSelector {
 
 ```bash
 # 1. 安装
-npm install -g @openclaw/local-agent
+npm install -g @vi-agent/local-agent
 
 # 2. 注册 (获取 agent_id + secret)
-openclaw register --user-token <your-token>
-# → Registered: local-executor-z-macbook (id: abc123)
+vi-agent register --user-token <your-token>
+# → Registered: local-executor (id: abc123)
 
 # 3. 启动 (建立隧道)
-openclaw start
-# → Connected to OpenClaw cloud via WebSocket
-# → Local executor registered: claude-code-local-z-macbook
+vi-agent start
+# → Connected to VI cloud via WebSocket
+# → Local executor registered
 # → Listening for tasks...
 
 # 4. 在任意渠道使用
@@ -909,7 +909,7 @@ interface LocalExecutorConfig {
 #### 本地 Agent 实现
 
 ```typescript
-// @openclaw/local-agent 核心实现
+// @vi-agent/local-agent 核心实现
 class LocalAgent {
   private ws: WebSocket;
   private config: LocalExecutorConfig;

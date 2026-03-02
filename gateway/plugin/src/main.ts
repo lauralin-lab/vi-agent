@@ -1,5 +1,5 @@
 /**
- * V3 Gateway Entry Point — standalone service (no OpenClaw dependency).
+ * V3 Gateway Entry Point — standalone service.
  *
  * Starts:
  *  1. GatewayService (LiveKit Room participant with Lazy Join)

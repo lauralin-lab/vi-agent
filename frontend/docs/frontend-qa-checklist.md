@@ -167,7 +167,7 @@
 
 | # | Check | Pass Criteria |
 |---|-------|---------------|
-| 12.1 | Terminal header | macOS-style dots (red/yellow/green) + "openclaw" label |
+| 12.1 | Terminal header | macOS-style dots (red/yellow/green) + "vi-agent" label |
 | 12.2 | Copy button in header | Clipboard icon in terminal header |
 | 12.3 | Terminal dark background | `bg-black/80` or similar dark terminal style |
 | 12.4 | Status line present | "Aura is ready." or similar green status text |

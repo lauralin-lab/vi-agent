@@ -3338,7 +3338,7 @@ The executing Claude Code agent MUST follow these steps in order:
 3. **Create screenshot output directory:**
    ```
    Tool: Bash
-   Command: mkdir -p /Users/z/Desktop/building/agent_zero/vi-agent/tests/reports/screenshots
+   Command: mkdir -p ./tests/reports/screenshots
    ```
 
 4. **Record test run start time:**
