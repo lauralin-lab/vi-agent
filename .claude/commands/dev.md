@@ -6,7 +6,7 @@
 
 ## 配置
 
-- **服务器 IP**: `34.56.23.173`
+- **服务器 IP**: `34.172.9.61`
 - **服务器用户**: `liyasong`（所有人都通过此账户 SSH）
 - **GCP Project**: `excellent-nexus-488404-c8`
 - **GCP Zone**: `us-central1-c`
@@ -30,7 +30,7 @@
 gcloud compute instances add-metadata vi-agent --zone=us-central1-c \
   --metadata-from-file ssh-keys=/tmp/updated-ssh-keys.txt
 # 同时加到 authorized_keys:
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
+ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
   "echo '<USER_SSH_PUBLIC_KEY>' >> ~/.ssh/authorized_keys"
 ```
 
@@ -49,13 +49,13 @@ done
 
 **验证连接:**
 ```bash
-ssh -A -i <USER_SSH_KEY> -o ConnectTimeout=5 liyasong@34.56.23.173 "echo ok"
+ssh -A -i <USER_SSH_KEY> -o ConnectTimeout=5 liyasong@34.172.9.61 "echo ok"
 ```
 如果失败，提示：你的 SSH key 可能还没加到服务器，请联系管理员 (liyasong)。
 
 **所有后续 SSH 命令统一使用:**
 ```bash
-SSH_CMD="ssh -A -i <USER_SSH_KEY> liyasong@34.56.23.173"
+SSH_CMD="ssh -A -i <USER_SSH_KEY> liyasong@34.172.9.61"
 SCP_CMD="scp -i <USER_SSH_KEY>"
 ```
 - `-A`: Agent Forwarding，让服务器用本地的 GitHub SSH key 拉代码
@@ -127,9 +127,9 @@ done
 
 验证连接：
 ```bash
-ssh -A -i <CHOSEN_KEY> -o ConnectTimeout=5 liyasong@34.56.23.173 "echo ok" 2>&1
+ssh -A -i <CHOSEN_KEY> -o ConnectTimeout=5 liyasong@34.172.9.61 "echo ok" 2>&1
 ```
-- 成功 → 设置 `SSH_CMD="ssh -A -i <CHOSEN_KEY> liyasong@34.56.23.173"` 后续使用
+- 成功 → 设置 `SSH_CMD="ssh -A -i <CHOSEN_KEY> liyasong@34.172.9.61"` 后续使用
 - 失败 → 提示联系管理员添加 SSH key
 
 ### Step 0.6: 同步模板到服务器
@@ -138,7 +138,7 @@ ssh -A -i <CHOSEN_KEY> -o ConnectTimeout=5 liyasong@34.56.23.173 "echo ok" 2>&1
 
 ```bash
 $SCP_CMD deploy/dev-environment/*.sh deploy/dev-environment/*.tpl \
-  liyasong@34.56.23.173:/opt/vi-agent/templates/
+  liyasong@34.172.9.61:/opt/vi-agent/templates/
 $SSH_CMD "chmod +x /opt/vi-agent/templates/*.sh"
 ```
 
@@ -222,7 +222,7 @@ POSTGRES_PASSWORD=vi_dev_<DEV_NAME>
 REDIS_PASSWORD=redis_dev_<DEV_NAME>
 JWT_SECRET=$(openssl rand -hex 32)
 INTERNAL_API_TOKEN=$(openssl rand -hex 16)
-SERVER_IP=34.56.23.173
+SERVER_IP=34.172.9.61
 ```
 
 SCP 这个 .env 到服务器: `/opt/vi-agent/instances/<DEV_NAME>/.env`
@@ -296,14 +296,14 @@ $SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <C
 ✅ <DEV_NAME> 的 vi-agent 实例已部署完成！
 
 📍 访问地址:
-   Frontend:  https://34.56.23.173:<FRONTEND_HTTPS_PORT>  (HTTPS — camera works)
-   Frontend:  http://34.56.23.173:<FRONTEND_PORT>  (HTTP fallback)
-   API:       http://34.56.23.173:<API_PORT>
-   API Docs:  http://34.56.23.173:<API_PORT>/docs
-   Gateway:   http://34.56.23.173:<GATEWAY_PORT>
+   Frontend:  https://34.172.9.61:<FRONTEND_HTTPS_PORT>  (HTTPS — camera works)
+   Frontend:  http://34.172.9.61:<FRONTEND_PORT>  (HTTP fallback)
+   API:       http://34.172.9.61:<API_PORT>
+   API Docs:  http://34.172.9.61:<API_PORT>/docs
+   Gateway:   http://34.172.9.61:<GATEWAY_PORT>
 
 🔑 SSH 访问:
-   ssh -i <YOUR_SSH_KEY> liyasong@34.56.23.173
+   ssh -i <YOUR_SSH_KEY> liyasong@34.172.9.61
 
 📦 版本信息:
    Image Tag: <TAG>
