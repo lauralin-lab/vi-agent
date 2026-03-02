@@ -56,13 +56,14 @@ print(r['next_slot'])
 fi
 
 FRONTEND_PORT=$((3000 + SLOT * 100))
+FRONTEND_HTTPS_PORT=$((FRONTEND_PORT + 10))
 API_PORT=$((3000 + SLOT * 100 + 1))
 GATEWAY_PORT=$((3000 + SLOT * 100 + 2))
 REALTIME_PORT=$((3000 + SLOT * 100 + 3))
 POSTGRES_PORT=$((5432 + SLOT))
 REDIS_PORT=$((6379 + SLOT))
 
-echo "Ports: frontend=$FRONTEND_PORT, api=$API_PORT, gateway=$GATEWAY_PORT, postgres=$POSTGRES_PORT, redis=$REDIS_PORT"
+echo "Ports: frontend=$FRONTEND_PORT, https=$FRONTEND_HTTPS_PORT, api=$API_PORT, gateway=$GATEWAY_PORT, postgres=$POSTGRES_PORT, redis=$REDIS_PORT"
 
 # --- Create instance directory ---
 mkdir -p "$INSTANCE_DIR"
@@ -90,6 +91,7 @@ fi
 sed -e "s/__DEV_NAME__/$DEV_NAME/g" \
     -e "s/__SLOT__/$SLOT/g" \
     -e "s/__FRONTEND_PORT__/$FRONTEND_PORT/g" \
+    -e "s/__FRONTEND_HTTPS_PORT__/$FRONTEND_HTTPS_PORT/g" \
     -e "s/__API_PORT__/$API_PORT/g" \
     -e "s/__GATEWAY_PORT__/$GATEWAY_PORT/g" \
     -e "s/__REALTIME_PORT__/$REALTIME_PORT/g" \
@@ -156,6 +158,7 @@ r['instances']['$DEV_NAME'] = {
     'slot': $SLOT,
     'ports': {
         'frontend': $FRONTEND_PORT,
+        'frontend_https': $FRONTEND_HTTPS_PORT,
         'api': $API_PORT,
         'gateway': $GATEWAY_PORT,
         'realtime': $REALTIME_PORT,
@@ -179,7 +182,7 @@ with open('$REGISTRY','w') as f: json.dump(r,f,indent=2)
 echo ""
 echo "Running deployment tests..."
 if [ -f "$TEMPLATE_DIR/test-instance.sh" ]; then
-    bash "$TEMPLATE_DIR/test-instance.sh" "$SERVER_IP" "$FRONTEND_PORT" "$API_PORT" "$GATEWAY_PORT"
+    bash "$TEMPLATE_DIR/test-instance.sh" "$SERVER_IP" "$FRONTEND_PORT" "$API_PORT" "$GATEWAY_PORT" "$FRONTEND_HTTPS_PORT"
     TEST_EXIT=$?
     if [ $TEST_EXIT -ne 0 ]; then
         echo "WARNING: Some tests failed. Instance is running but may have issues."
@@ -191,7 +194,8 @@ fi
 echo ""
 echo "=== Instance Ready ==="
 echo "  Developer:  $DEV_NAME"
-echo "  Frontend:   http://$SERVER_IP:$FRONTEND_PORT"
+echo "  Frontend:   https://$SERVER_IP:$FRONTEND_HTTPS_PORT  (HTTPS — camera works)"
+echo "  Frontend:   http://$SERVER_IP:$FRONTEND_PORT  (HTTP fallback)"
 echo "  API:        http://$SERVER_IP:$API_PORT"
 echo "  API Docs:   http://$SERVER_IP:$API_PORT/docs"
 echo "  Gateway:    http://$SERVER_IP:$GATEWAY_PORT"

@@ -1,11 +1,12 @@
 #!/bin/bash
 # Post-deployment test suite for dev instances
-# Usage: ./test-instance.sh <server_ip> <frontend_port> <api_port> <gateway_port>
+# Usage: ./test-instance.sh <server_ip> <frontend_port> <api_port> <gateway_port> [frontend_https_port]
 #
-# Runs 3 layers of tests:
+# Runs 3-4 layers of tests:
 #   Layer 1: Smoke — services reachable
 #   Layer 2: Functional — core API works
 #   Layer 3: Connectivity — service-to-service communication
+#   Layer 4: HTTPS — SSL/TLS and secure context (if https port provided)
 #
 # Exit code: 0 if all pass, 1 if any fail
 set -o pipefail
@@ -14,9 +15,10 @@ SERVER_IP="$1"
 F_PORT="$2"
 A_PORT="$3"
 G_PORT="$4"
+HTTPS_PORT="${5:-}"
 
 if [ -z "$G_PORT" ]; then
-    echo "Usage: $0 <server_ip> <frontend_port> <api_port> <gateway_port>"
+    echo "Usage: $0 <server_ip> <frontend_port> <api_port> <gateway_port> [frontend_https_port]"
     exit 1
 fi
 
@@ -108,6 +110,24 @@ CORS_HEADER=$(curl -sI --max-time 10 \
     -H "Origin: http://$SERVER_IP:$F_PORT" \
     -H "Access-Control-Request-Method: GET" 2>/dev/null | grep -i "access-control")
 check "CORS headers present" test -n "$CORS_HEADER"
+
+# Layer 4: HTTPS (only if HTTPS port provided)
+if [ -n "$HTTPS_PORT" ]; then
+    echo ""
+    echo "=== Layer 4: HTTPS Test ==="
+
+    check "Frontend HTTPS reachable" \
+        curl -skf --max-time 10 "https://$SERVER_IP:$HTTPS_PORT/"
+
+    check "Frontend HTTPS returns HTML" \
+        bash -c "curl -sk --max-time 10 https://$SERVER_IP:$HTTPS_PORT/ | grep -q '</html>'"
+
+    check "Frontend HTTPS→API proxy (/api/config)" \
+        bash -c "curl -sk --max-time 10 https://$SERVER_IP:$HTTPS_PORT/api/config | python3 -c 'import json,sys; json.load(sys.stdin)'"
+
+    check "SSL certificate present" \
+        bash -c "echo | openssl s_client -connect $SERVER_IP:$HTTPS_PORT 2>/dev/null | grep -q 'BEGIN CERTIFICATE'"
+fi
 
 echo ""
 echo "==============================="

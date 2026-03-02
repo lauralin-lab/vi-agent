@@ -75,7 +75,7 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - API_BASE_URL=http://${SERVER_IP}:__API_PORT__
-      - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,http://localhost:__FRONTEND_PORT__
+      - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,https://${SERVER_IP}:__FRONTEND_HTTPS_PORT__,http://localhost:__FRONTEND_PORT__
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
       - IMAGE_TAG=__IMAGE_TAG__
     depends_on:
@@ -106,6 +106,7 @@ services:
     restart: unless-stopped
     ports:
       - "__FRONTEND_PORT__:80"
+      - "__FRONTEND_HTTPS_PORT__:443"
     volumes:
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:

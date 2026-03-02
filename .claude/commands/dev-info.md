@@ -60,10 +60,10 @@ REMOTE
 
 ## 📦 实例列表 ({count} 个运行中)
 
-| Name | Frontend | API | API Docs | Gateway | Status | 内存 |
-|------|----------|-----|----------|---------|--------|------|
-| liya | http://34.56.23.173:3100 | http://34.56.23.173:3101 | http://34.56.23.173:3101/docs | :3102 | ✅ all healthy | ~660M |
-| felisa | http://34.56.23.173:3200 | http://34.56.23.173:3201 | http://34.56.23.173:3201/docs | :3202 | ✅ all healthy | ~985M |
+| Name | Frontend (HTTPS) | Frontend (HTTP) | API | API Docs | Gateway | Status | 内存 |
+|------|------------------|-----------------|-----|----------|---------|--------|------|
+| liya | https://34.56.23.173:3110 | http://34.56.23.173:3100 | http://34.56.23.173:3101 | http://34.56.23.173:3101/docs | :3102 | ✅ all healthy | ~660M |
+| felisa | https://34.56.23.173:3210 | http://34.56.23.173:3200 | http://34.56.23.173:3201 | http://34.56.23.173:3201/docs | :3202 | ✅ all healthy | ~985M |
 
 ## 📊 资源详情
    每实例约 650M-1.1G 内存，realtime 服务是主要消耗者
@@ -73,11 +73,14 @@ REMOTE
    (如有异常: 内存接近 limit、服务 unhealthy、端口缺失等)
 ```
 
-**关键: 访问链接必须是完整的 `http://34.56.23.173:{port}` 格式**，包括:
-- Frontend URL
+**关键: 访问链接必须是完整的 URL 格式**，包括:
+- Frontend HTTPS URL (`https://34.56.23.173:{https_port}`) — 摄像头需要 HTTPS
+- Frontend HTTP URL (`http://34.56.23.173:{port}`)
 - API URL
 - API Docs URL (`{API_URL}/docs`)
 - Gateway URL
+
+HTTPS 端口 = Frontend 端口 + 10（如 3100 → 3110）。从 registry.json 的 `frontend_https` 字段读取。
 
 ### Step 3: 健康检查（可选）
 

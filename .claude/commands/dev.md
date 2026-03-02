@@ -202,7 +202,8 @@ $SSH_CMD "cat /opt/vi-agent/registry.json 2>/dev/null || echo '{\"instances\":{}
 
 | 服务 | 端口 |
 |------|------|
-| Frontend | 3000 + N×100 |
+| Frontend (HTTP) | 3000 + N×100 |
+| Frontend (HTTPS) | 3000 + N×100 + 10 |
 | API | 3000 + N×100 + 1 |
 | Gateway | 3000 + N×100 + 2 |
 | Realtime | 3000 + N×100 + 3 |
@@ -295,7 +296,8 @@ $SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <C
 ✅ <DEV_NAME> 的 vi-agent 实例已部署完成！
 
 📍 访问地址:
-   Frontend:  http://34.56.23.173:<FRONTEND_PORT>
+   Frontend:  https://34.56.23.173:<FRONTEND_HTTPS_PORT>  (HTTPS — camera works)
+   Frontend:  http://34.56.23.173:<FRONTEND_PORT>  (HTTP fallback)
    API:       http://34.56.23.173:<API_PORT>
    API Docs:  http://34.56.23.173:<API_PORT>/docs
    Gateway:   http://34.56.23.173:<GATEWAY_PORT>
