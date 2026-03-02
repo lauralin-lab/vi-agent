@@ -1,0 +1,37 @@
+# Dev Environment Registry — 快照
+# 本文件由 /dev skill 自动更新，反映服务器端 registry.json 的最新状态
+# 真实运行时状态以服务器端 /opt/vi-agent/registry.json 为准
+
+server:
+  ip: "34.56.23.173"
+  machine_type: e2-standard-4
+  zone: us-central1-c
+  project_id: excellent-nexus-488404-c8
+
+default_instance:
+  ports:
+    frontend: 80
+    api: 8000
+    gateway: 18789
+  branch: main
+  commit: 15eb657
+  status: running
+
+instances:
+  - name: liya
+    slot: 1
+    ports:
+      frontend: 3100
+      api: 3101
+      gateway: 3102
+      realtime: 3103
+      postgres: 5433
+      redis: 6380
+    branch: main
+    commit: 15eb657
+    deployed_at: "2026-03-02T08:33:59Z"
+    deployed_by: liya
+    status: running
+
+next_slot: 2
+last_synced: "2026-03-02T08:38:00Z"
