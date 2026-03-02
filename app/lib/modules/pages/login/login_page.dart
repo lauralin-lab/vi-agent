@@ -53,7 +53,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (LoginState.ok == result) {
         customCenterNotify('Login Success');
         App().preferences.setHasLogin(true);
-        App().router.go(RouterPaths.home);
+        const HomeRoute().go(context);
       }
     } catch (e) {
       logd(e);

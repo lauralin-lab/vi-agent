@@ -2,8 +2,8 @@ import 'package:livekit_client/livekit_client.dart';
 
 /// 视频编码
 VideoEncoding get cameraEncoding => const VideoEncoding(
-  maxBitrate: 1, //5 * 1000 * 1000,
-  maxFramerate: 350 * 1000, //30,
+  maxBitrate: 5 * 1000 * 1000,
+  maxFramerate: 30,
 );
 
 VideoEncoding get screenEncoding => const VideoEncoding(
@@ -17,7 +17,7 @@ RoomOptions get roomOptions => RoomOptions(
   dynacast: true,
   defaultAudioPublishOptions: const AudioPublishOptions(name: 'mic'),
   defaultCameraCaptureOptions: const CameraCaptureOptions(
-    maxFrameRate: 1, //30,
+    maxFrameRate: 30,
     params: VideoParameters(dimensions: VideoDimensionsPresets.h720_169),
   ),
   defaultScreenShareCaptureOptions: const ScreenShareCaptureOptions(

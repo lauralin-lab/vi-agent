@@ -216,6 +216,7 @@ class Authentication {
   /// 退出
   Future<bool> logout() async {
     try {
+      App().preferences.setHasLogin(false);
       await FirebaseAuth.instance.signOut();
     } catch (ex) {
       loge(ex);

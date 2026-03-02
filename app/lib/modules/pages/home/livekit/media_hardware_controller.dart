@@ -97,7 +97,7 @@ class MediaHardwareController {
   Future<void> toggleMute() async {
     final isMute = ref.read(muteProvider);
     logi('[MediaHW] toggleMute: ${isMute ? "muted→unmuted" : "unmuted→muted"}');
-    _room.localParticipant?.setMicrophoneEnabled(isMute);
+    _room.localParticipant?.setMicrophoneEnabled(!isMute);
     ref.read(muteProvider.notifier).state = !isMute;
   }
 
