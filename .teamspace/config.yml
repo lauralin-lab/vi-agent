@@ -8,6 +8,41 @@ team:
   name: "VI Agent"
   repo: "flair-home-stylist/vi_agent"
 
+# GitHub-native SOP: Issues = source of truth, board.md = generated view
+github:
+  source_of_truth: issues  # "issues" or "board-md"
+  label_prefix:
+    status: "status:"
+    priority: "priority:"
+    domain: "domain:"
+    version: "version:"
+    size: "size:"
+  mc_label: "mission-contract"  # label that identifies Mission Contracts
+
+# 可选角色 (domain-based)
+roles:
+  - id: lead
+    label: "Tech Lead"
+    description: "Overall technical direction and team coordination"
+  - id: backend-engineer
+    label: "Backend Engineer"
+    description: "API server, database, backend services"
+  - id: frontend-engineer
+    label: "Frontend Engineer"
+    description: "React frontend, UI/UX implementation"
+  - id: realtime-engineer
+    label: "Realtime Engineer"
+    description: "LiveKit agent, voice pipeline, realtime services"
+  - id: gateway-engineer
+    label: "Gateway Engineer"
+    description: "Gateway service, executor adapters, template system"
+  - id: infra-engineer
+    label: "Infra Engineer"
+    description: "CI/CD, deployment, DevOps, testing infrastructure"
+  - id: fullstack-engineer
+    label: "Fullstack Engineer"
+    description: "Cross-service development"
+
 members:
   - id: casey
     name: "Casey"
@@ -93,11 +128,12 @@ versions:
 
 # Drive Mode 集成
 drive:
-  # Drive 启动时读取 board.md 了解上下文
+  source: github-issues  # "github-issues" or "board-md"
+  # Drive 启动时读取 GitHub Issues 了解上下文
   read_board_on_start: true
-  # Mission 完成时自动更新 board.md
+  # Mission 完成时通过 gh 更新 Issue 状态
   update_board_on_complete: true
-  # state.md 中记录关联的 teamspace task ID
+  # state.md 中记录关联的 GitHub Issue number
   track_task_id: true
 
 # 归档策略

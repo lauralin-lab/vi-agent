@@ -85,22 +85,23 @@ mission_count = 0
 while (self_drive == true) {
 
     // ═══ STEP 0.5: TEAMSPACE CHECK — "看板优先" ═══
-    // Before analyzing the project from scratch, check the team board.
-    // Queued tasks from the board take priority over freshly proposed tasks.
+    // Before analyzing the project from scratch, check GitHub Issues.
+    // Queued tasks from Issues take priority over freshly proposed tasks.
 
     teamspace_check:
-        if exists(.teamspace/board.md):
-          → Read .teamspace/board.md
-          → Read .teamspace/config.yml
-          → Collect all Queued tasks (sorted by priority: P0 > P1 > P2 > P3)
-          → Note any Blocked tasks (might be unblockable now)
-          → If Queued tasks exist with P0/P1 priority:
-            → These MUST appear in the top proposals (board tasks > fresh analysis)
-            → You may still propose 1 fresh task alongside board tasks
-          → If only P2/P3 tasks are queued:
-            → Include them as options but also run full analysis for potentially higher-impact work
-          → If no Queued tasks:
-            → Fall through to full project analysis below
+        → Read .teamspace/config.yml
+        → Query GitHub Issues for queued tasks:
+          gh issue list --label "mission-contract" --label "status:queued" --json number,title,labels --limit 20
+        → Sort by priority label (P0 > P1 > P2 > P3)
+        → Check for blocked tasks:
+          gh issue list --label "mission-contract" --label "status:blocked" --json number,title
+        → If queued tasks exist with P0/P1 priority:
+          → These MUST appear in the top proposals (board tasks > fresh analysis)
+          → You may still propose 1 fresh task alongside board tasks
+        → If only P2/P3 tasks are queued:
+          → Include them as options but also run full analysis for potentially higher-impact work
+        → If no queued tasks:
+          → Fall through to full project analysis below
 
     // ═══ STEP 1: PROJECT ANALYSIS — "观全局" ═══
     // Launch 3 parallel scouts to analyze the project from different angles.

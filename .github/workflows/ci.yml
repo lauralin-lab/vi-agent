@@ -103,7 +103,7 @@ jobs:
 
       - name: Lint
         working-directory: frontend
-        run: npx eslint src/ || true  # non-blocking until eslint fully configured
+        run: npx eslint src/
 
       - name: Build
         working-directory: frontend
@@ -128,7 +128,12 @@ jobs:
 
       - name: Run tests
         working-directory: realtime
-        run: uv run python -m pytest tests/ -v --tb=short || true  # non-blocking if no tests yet
+        run: |
+          if [ -n "$(find tests/ -name 'test_*.py' -o -name '*_test.py' 2>/dev/null)" ]; then
+            uv run python -m pytest tests/ -v --tb=short
+          else
+            echo "No test files found — skipping"
+          fi
 
   # Branch protection summary
   ci-summary:
@@ -141,7 +146,8 @@ jobs:
         run: |
           if [ "${{ needs.api-server.result }}" = "failure" ] || \
              [ "${{ needs.gateway.result }}" = "failure" ] || \
-             [ "${{ needs.frontend.result }}" = "failure" ]; then
+             [ "${{ needs.frontend.result }}" = "failure" ] || \
+             [ "${{ needs.realtime.result }}" = "failure" ]; then
             echo "CI failed"
             exit 1
           fi

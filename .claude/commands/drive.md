@@ -345,26 +345,27 @@ Example:
 
 ---
 
-## Teamspace Awareness — "AI-Native Agile"
+## Teamspace Awareness — "GitHub-Native Agile"
 
-Drive Mode operates within a **Teamspace** — a persistent, git-tracked team coordination layer at `.teamspace/`. This is the human team's single source of truth for who is working on what.
+Drive Mode operates within a **GitHub-native Teamspace**. **GitHub Issues** (label: `mission-contract`) are the source of truth for tasks. `.teamspace/board.md` is an auto-generated read-only view.
 
 ### On Mission Start (Phase Ω pre-step)
 
 **Before** the Essence Protocol, check for teamspace context:
 
 ```
-if exists(.teamspace/board.md):
-  → Read .teamspace/board.md — understand team-wide context
-  → Read .teamspace/config.yml — understand team conventions
-  → Note: who is working on what, what is blocked, what is queued
-  → If user specified a teamspace task ID (e.g., "drive T-044"):
-    → Extract task details from board as mission input
-    → This task ID becomes the mission's teamspace anchor
-  → If user described work that matches a Queued/Backlog task:
-    → Suggest the match: "This looks like T-044 on the board. Should I link them?"
-  → Board context informs Phase Ω's essence decomposition
-    (e.g., knowing what teammates are working on avoids conflicts)
+→ Read .teamspace/config.yml — understand team conventions and roles
+→ Query GitHub Issues for team-wide context:
+  gh issue list --label "mission-contract" --label "status:wip" --json number,title,assignees
+→ Note: who is working on what, what is blocked, what is queued
+→ If user specified a task (e.g., "drive T-044" or "drive #12"):
+  → Query: gh issue view {number} --json title,body,labels
+  → Extract Success Criteria and Sub-tasks from Issue body
+  → This Issue number becomes the mission's teamspace anchor
+→ If user described work that matches a queued Issue:
+  → Suggest the match: "This looks like #12 on the board. Should I link them?"
+→ Issue context informs Phase Ω's essence decomposition
+  (e.g., knowing what teammates are working on avoids conflicts)
 ```
 
 ### On Mission Complete
@@ -372,40 +373,46 @@ if exists(.teamspace/board.md):
 **After** final verification but **before** the debrief output:
 
 ```
-if exists(.teamspace/board.md) AND mission has teamspace task:
-  → Update board.md: move task from current status → ✅ Done
-  → Fill in: Completed date, Branch info, Drive? = ✅
+if mission has teamspace Issue number:
+  → Update Issue status: gh issue edit {N} --remove-label "status:wip" --add-label "status:done"
+  → Close Issue: gh issue close {N} --reason completed
+  → Add completion comment: gh issue comment {N} --body "✅ Completed"
   → Update .teamspace/members/{owner}.md with completion
-  → Update board Stats section
-  → Update next_id in config.yml if new tasks were discovered
-  → If mission discovered follow-up work → add to Queued or Backlog
-  → git add .teamspace/ (stage changes for next commit)
+  → Sync board: ./scripts/sync-board.sh
+  → If mission discovered follow-up work → create new Issues:
+    gh issue create --label "mission-contract,status:queued" --title "..." --body "..."
 ```
 
 ### Worktree Integration
 
 When a mission creates or uses a git worktree:
-- Record the worktree path and branch in the board's WIP table
+- The `.mission` file in worktree root links to the GitHub Issue number
 - Follow `.teamspace/config.yml` naming conventions for worktree paths and branches
-- On mission complete: note the worktree/branch in the Done table for traceability
+- On mission complete: worktree cleanup is handled by `/complete-mission done`
 
 ### Teamspace Files Reference
 
 ```
+GitHub Issues (label: mission-contract)  ← 📋 SOURCE OF TRUTH
+    ↓ synced by scripts/sync-board.sh
 .teamspace/
-├── config.yml       ← Team config: members, statuses, conventions
-├── board.md         ← 📋 Kanban board (THE canonical view)
+├── config.yml       ← Team config: members, roles, GitHub integration
+├── board.md         ← 📋 Auto-generated view (DO NOT edit manually)
 ├── members/{id}.md  ← Per-member status and work log
-└── archive/         ← Monthly archives of completed tasks
+└── archive/         ← Monthly archives
+
+.github/
+├── ISSUE_TEMPLATE/mission-contract.yml  ← Template for creating MCs
+└── workflows/ci.yml                     ← CI quality gates
 ```
 
-**Teamspace is ABOVE Drive missions in the hierarchy:**
+**Hierarchy:**
 ```
-.teamspace/board.md    (persistent, team-level, git-tracked)
-    ↓ one board task may trigger one or more drive missions
-.claude/drive/{slug}/  (ephemeral, mission-level, gitignored)
+GitHub Issues              (persistent, team-level, concurrent-safe)
+    ↓ one Issue may trigger one or more drive missions
+.claude/drive/{slug}/      (ephemeral, mission-level, gitignored)
     ↓ one mission decomposes into agent tasks
-~/.claude/tasks/       (ephemeral, agent-level, outside repo)
+~/.claude/tasks/           (ephemeral, agent-level, outside repo)
 ```
 
 ---
@@ -2858,19 +2865,21 @@ Then the debrief — structured, not rambling:
 
 ```
 TEAMSPACE SYNC:
-if exists(.teamspace/board.md) AND mission has teamspace_task_id:
-  1. Read current board.md
-  2. Move task {task_id} from its current status column → ✅ Done
-     Fill: Owner, Completed date, Branch, Drive? = ✅
-  3. Update .teamspace/members/{owner}.md:
+if mission has GitHub Issue number:
+  1. Update Issue labels:
+     gh issue edit {N} --remove-label "status:wip" --add-label "status:done"
+  2. Close Issue:
+     gh issue close {N} --reason completed
+  3. Add completion comment:
+     gh issue comment {N} --body "✅ Mission complete. Merged to main."
+  4. Update .teamspace/members/{owner}.md:
      - Move task from "当前工作" → "最近完成"
      - Clear "当前工作" if no other WIP tasks
-  4. If mission discovered new work items:
-     → Add to Queued (if concrete + prioritized) or Backlog (if exploratory)
-     → Assign next available task ID from config.yml next_id
-     → Increment next_id in config.yml
-  5. Update board Stats section (recalculate counts)
-  6. Emit: "📋 TEAMSPACE SYNCED: T-{id} → Done | Board updated"
+  5. If mission discovered new work items:
+     → Create new Issues: gh issue create --label "mission-contract,status:queued" ...
+  6. Sync board view:
+     ./scripts/sync-board.sh
+  7. Emit: "📋 TEAMSPACE SYNCED: #{N} → Done | Issue closed | Board synced"
 ```
 
 ---

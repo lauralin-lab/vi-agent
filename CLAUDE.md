@@ -3,9 +3,12 @@
 ## Three Core Concepts
 
 ### 1. Mission Contract (原子任务)
-A single task from `.teamspace/board.md`. Each Mission Contract has clear scope,
-success criteria, and is independently mergeable. A Role pulls one, executes it
-end-to-end, resolves all conflicts with main, merges, then pulls the next one.
+A single task represented as a **GitHub Issue** (label: `mission-contract`).
+Each Mission Contract has clear scope, success criteria, and is independently mergeable.
+A Role pulls one via `/get-mission`, executes it end-to-end, resolves all conflicts
+with main, creates a PR with `Closes #N`, merges, then pulls the next one.
+
+**Source of Truth: GitHub Issues** — not board.md (which is auto-generated).
 
 ### 2. Role (人 + Claude Code)
 A person paired with Claude Code forms a Role. Each Role:
@@ -26,7 +29,7 @@ The product is what's on main. Every merge makes the product better.
 Role opens Claude Code
      │
      ▼
-Agent reads board → presents next available Mission Contract
+Agent queries GitHub Issues → presents next available Mission Contract
      │
      ▼
 Role claims it → worktree + branch + isolated ports
@@ -38,7 +41,7 @@ Agent drives end-to-end implementation
 Rebase on latest main → resolve ALL conflicts
      │
      ▼
-PR → CI passes → merge to main → board updated
+PR (Closes #N) → CI passes → merge to main → Issue auto-closed
      │
      ▼
 Agent presents next Mission Contract → repeat
@@ -68,8 +71,9 @@ claude --agent feature-lead
 ### Team Member Setup
 
 1. Set git identity: `git config user.name "{name}"`
-2. Run `.claude/install.sh` (once, for hooks and notifications)
-3. Run `/set-role` to register and link to teamspace
+2. Authenticate GitHub CLI: `gh auth login` (use your org account)
+3. Run `.claude/install.sh` (once, for hooks and notifications)
+4. Run `/set-role` to register, verify GitHub auth, and choose your domain role
 
 ---
 
@@ -77,12 +81,17 @@ claude --agent feature-lead
 
 | File | Purpose |
 |------|---------|
-| `.teamspace/board.md` | Mission Contracts queue — the work to be done |
-| `.teamspace/config.yml` | Team config, members, conventions |
+| **GitHub Issues** | Mission Contracts — source of truth (label: `mission-contract`) |
+| `.teamspace/board.md` | Auto-generated board view (`scripts/sync-board.sh`) |
+| `.teamspace/config.yml` | Team config, members, roles, GitHub integration |
+| `.github/ISSUE_TEMPLATE/mission-contract.yml` | Issue template for creating MCs |
 | `.claude/agents/feature-lead.md` | The Role agent — `claude --agent feature-lead` |
 | `.claude/agents/code-reviewer.md` | Auto PR reviewer |
 | `.claude/drive/v0.1-definition/v0.1-spec.md` | Current version quality gates |
 | `scripts/setup-worktree.sh` | One-click isolated dev environment |
+| `scripts/setup-github-labels.sh` | Create label taxonomy (run once) |
+| `scripts/sync-board.sh` | Generate board.md from GitHub Issues |
+| `scripts/migrate-board-to-issues.sh` | One-time migration of existing tasks |
 
 ## Port Isolation (parallel development)
 

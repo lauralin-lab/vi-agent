@@ -37,43 +37,86 @@ description: 设置角色身份。每个成员第一次进来先 /set-role 注�
      .claude/install.sh
   ```
   用 AskUserQuestion 让用户选择是否立即安装。
-- `status=outdated` → skill 版本落后于 repo（git pull 后 skill 文件更新了但 fingerprint 没刷新），输出：
+- `status=outdated` → skill 版本落后于 repo，输出：
   ```
   ⚠️  你的 skill 版本落后于仓库最新版本。请重新安装：
      .claude/install.sh
   ```
   用 AskUserQuestion 让用户选择是否立即安装。
 
-### Step 2: 识别身份
+### Step 2: 验证 GitHub 认证
+
+**检查 `gh` CLI 是否已认证，这是 GitHub-native 工作流的前提。**
+
+```bash
+gh auth status
+```
+
+- ✅ 已认证 → 继续，记录 GitHub username：
+  ```bash
+  gh api user --jq '.login'
+  ```
+- ❌ 未认证 → 输出：
+  ```
+  ❌ GitHub CLI 未认证。请先运行：
+     gh auth login
+
+     选择 GitHub.com → HTTPS → Login with a web browser
+     确保登录的账号有本 repo 的访问权限。
+  ```
+  **停止执行。**
+
+验证 repo 访问权限：
+```bash
+gh repo view --json nameWithOwner --jq '.nameWithOwner'
+```
+
+- ✅ 成功 → 继续
+- ❌ 失败 → 输出：
+  ```
+  ❌ 当前 GitHub 账号无法访问本仓库。
+     请确认：
+     1. 你的 GitHub 账号已被添加为 repo collaborator
+     2. 运行 gh auth login 登录正确的账号
+  ```
+
+### Step 3: 识别身份
 
 ```bash
 git config user.name
 ```
 
-读取 `.teamspace/config.yml`，在 `members` 列表中匹配。
+读取 `.teamspace/config.yml`，在 `members` 列表中匹配（按 `id` 或 `github` 字段匹配 gh username）。
 
-### Step 3: 分支 — 已有成员 vs 新成员
+### Step 4: 分支 — 已有成员 vs 新成员
 
 #### 已有成员
 
 1. 读取 `.teamspace/members/{id}.md`
-2. 读取 `.teamspace/board.md`，找到该成员的 WIP 任务和 merge count
+2. 查询 GitHub Issues 获取统计：
+   ```bash
+   # WIP 任务
+   gh issue list --assignee @me --label "mission-contract" --label "status:wip" --json number,title --jq 'length'
+   # 已完成
+   gh issue list --assignee @me --label "mission-contract" --label "status:done" --state closed --json number --jq 'length'
+   # 总分配
+   gh issue list --assignee @me --label "mission-contract" --state all --json number --jq 'length'
+   ```
 3. 展示角色卡片：
 
 ```
 ╔══════════════════════════════════════════════╗
 ║  ROLE CARD                                   ║
 ╠══════════════════════════════════════════════╣
-║  Name:   {name}                              ║
-║  Role:   {role}                              ║
-║  GitHub: @{github}                           ║
+║  Name:     {name}                            ║
+║  Role:     {role label}                      ║
+║  GitHub:   @{github} ✅                      ║
 ║                                              ║
-║  Merge Count: {N}                            ║
-║  Current MC:  {T-xxx title / 无}             ║
-║  Status:      {Active / Blocked}             ║
+║  Missions: {total assigned}                  ║
+║    WIP:    {wip count}                       ║
+║    Done:   {done count}                      ║
 ║                                              ║
 ║  Version: {current version} ({status})       ║
-║  V Progress: {done}/{total} MCs              ║
 ╚══════════════════════════════════════════════╝
 ```
 
@@ -81,17 +124,25 @@ git config user.name
 
 AskUserQuestion:
 - "领取任务" → 提示用 `/get-mission`
-- "继续当前任务" → 提示用 `/drive T-{xxx}`（如果有 WIP）
+- "继续当前任务" → 提示用 `/drive`（如果有 WIP）
 - "提交完成" → 提示用 `/complete-mission`（如果有待提交的工作）
 - "我就看看"
 
 #### 新成员
 
-如果 `$ARGUMENTS` 包含名字和 GitHub 用户名（如 `/set-role alice alice-gh`），
+如果 `$ARGUMENTS` 包含名字和 GitHub 用户名（如 `/set-role alice`），
 直接使用。否则用 AskUserQuestion 收集：
 
 1. **名字**（英文，小写，用作 id）
-2. **GitHub 用户名**
+
+然后获取 GitHub username（已在 Step 2 获取）。
+
+**选择角色**：
+读取 `.teamspace/config.yml` → `roles` 列表，用 AskUserQuestion 让成员选择自己的 domain 角色：
+
+AskUserQuestion:
+- 列出所有可用角色（从 config.yml 的 `roles` 读取）
+- 每个选项的 label = role label, description = role description
 
 然后执行 onboard：
 
@@ -99,8 +150,8 @@ AskUserQuestion:
    ```yaml
    - id: {id}
      name: "{Name}"
-     role: contributor
-     github: {github-username}
+     role: {selected-role-id}
+     github: {gh-username}
    ```
 
 2. 创建 `.teamspace/members/{id}.md`：
@@ -131,23 +182,20 @@ AskUserQuestion:
    ## 笔记
 
    - Joined the team on {date}
+   - Role: {role label}
+   - GitHub: @{github}
    ```
 
-3. 编辑 `.teamspace/board.md` → 在 Merge Count 表中添加：
-   ```
-   | {name} | 0 | — |
-   ```
-
-4. 输出：
+3. 输出：
    ```
    ✅ Welcome to the team, {Name}! (@{github})
 
+      Role:        {role label}
       Member file: .teamspace/members/{id}.md
-      Merge count: initialized at 0
+      GitHub:      ✅ authenticated, repo access confirmed
 
       Next steps:
-      1. git config user.name "{name}"
-      2. /get-mission  ← 领取你的第一个 Mission Contract
+      1. /get-mission  ← 领取你的第一个 Mission Contract
    ```
 
 ---
@@ -155,5 +203,6 @@ AskUserQuestion:
 ## 行为规则
 
 1. **幂等**：如果成员已存在，不重复创建，直接展示角色卡片
-2. **原子编辑**：编辑 config.yml 和 board.md 时，先读后改，最小改动
+2. **原子编辑**：编辑 config.yml 时，先读后改，最小改动
 3. **不修改他人数据**：只添加新行，不碰已有成员的行
+4. **GitHub 验证优先**：没有 `gh auth` 就不能继续——这是整个工作流的前提
