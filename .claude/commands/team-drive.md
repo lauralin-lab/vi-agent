@@ -1,5 +1,6 @@
 ---
-description: "Execute your claimed mission using drive methodology. Reads your Mission Contract and enters execution mode."
+description: "Execute mission from Contract. Try: /team-drive help"
+version: "2.1.1"
 ---
 
 # /team-drive — Execute Mission
@@ -7,6 +8,29 @@ description: "Execute your claimed mission using drive methodology. Reads your M
 > Read your Mission Contract, enter drive-like execution, and work through sub-tasks systematically.
 
 **User input**: $ARGUMENTS
+
+If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
+
+```
+/team-drive — Execute your claimed mission
+
+USAGE:
+  /team-drive           Read Contract, execute sub-tasks with verify loop
+
+WHAT HAPPENS:
+  1. Reads your Mission Contract (.teamwork/active/MISSION-N.md)
+  2. Verifies you're on the correct branch
+  3. For each unchecked sub-task:
+     — Read context files → implement → run tests → commit
+     — Checks off sub-task in Contract with timestamp
+  4. After all sub-tasks: verify acceptance criteria + self-review
+  5. Can be interrupted — progress saved via checkboxes
+
+PREREQUISITES:
+  Run /team-claim first to generate a Contract.
+
+NEXT: /team-ship to deliver via PR
+```
 
 ---
 
@@ -31,6 +55,7 @@ fi
 
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
 - If in worktree mode (`WORKTREE_MODE=true`) → no branch switching needed in Step 1.
+- **Worktree note**: Contract should be in `$TEAMWORK_DIR/active/` within the worktree (copied during `/team-claim`). If not found but `.mission` exists, look for the Contract in the main repo parent directory as fallback.
 
 ```bash
 ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
@@ -132,7 +157,8 @@ After completing a sub-task, update the Contract file:
 
 ### 3f: Commit
 ```bash
-git add -A
+# Stage only files modified for this sub-task (avoid git add -A which stages everything)
+git add {specific files changed for this sub-task}
 git commit -m "{type}({scope}): {description} | Mission: #{issue}"
 ```
 
@@ -169,8 +195,10 @@ All tests must pass.
 ### 4c: Self-review
 Read through all changes made during this session:
 ```bash
-git log --oneline mission/{issue}..HEAD
-git diff main...HEAD --stat
+# Use the branch name from Contract frontmatter (not hardcoded)
+BASE_BRANCH=$(grep 'base_branch:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' || echo "main")
+git log --oneline ${BASE_BRANCH}..HEAD
+git diff ${BASE_BRANCH}...HEAD --stat
 ```
 
 Check for:

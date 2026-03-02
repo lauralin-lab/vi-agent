@@ -1,5 +1,6 @@
 ---
-description: "Claim a GitHub Issue as your mission. Generates AI execution contract, creates branch, assigns you."
+description: "Claim Issue → Contract → Branch. Try: /team-claim help"
+version: "2.1.1"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -15,7 +16,30 @@ description: "Claim a GitHub Issue as your mission. Generates AI execution contr
 | `#42` or `42` | Claim specific Issue |
 | `list` | Browse available mission Issues |
 | `create "title"` | Create new Issue from mission template |
+| `help` or `-h` | Show usage guide |
 | (empty) | Auto-select next unassigned Issue by priority (P0 > P1 > P2 > P3) |
+
+If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
+
+```
+/team-claim — Claim a GitHub Issue as your mission
+
+USAGE:
+  /team-claim           Auto-pick highest priority unassigned Issue
+  /team-claim #42       Claim specific Issue
+  /team-claim list      Browse available missions
+  /team-claim create "title"   Create new Issue from template
+
+WHAT HAPPENS:
+  1. Fetches Issue from GitHub
+  2. Generates AI-enriched Mission Contract (.teamwork/active/MISSION-N.md)
+     — scans project to discover relevant files (Context Files)
+  3. Creates branch: mission/{issue}-{slug}-{user}
+  4. Assigns you on GitHub + posts claim comment
+  5. Labels Issue: status:wip
+
+NEXT: /team-drive to start executing
+```
 
 ---
 
@@ -45,11 +69,12 @@ Read `$TEAMWORK_DIR/config.yml` → extract team roster, conventions, project se
 
 ```bash
 # Read mission label from config (teamspace uses mc_label, teamwork v2 defaults to "mission")
-MISSION_LABEL=$(grep 'mc_label:' $TEAMWORK_DIR/config.yml | sed 's/.*mc_label: *//' | sed 's/ *#.*//' | tr -d '"' || echo "mission")
+MISSION_LABEL=$(grep 'mc_label:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"' || echo "mission")
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
 ```
 
-Verify `GH_USER` is in the team roster. If not → "You ({GH_USER}) are not in the team roster. Add yourself to `$TEAMWORK_DIR/config.yml` first." → **STOP**
+Verify `GH_USER` is in the team roster (check both `team:` and `members:` sections).
+If not → "You ({GH_USER}) are not in the team roster. Run `/team` to join — it will ask your role and add you." → **STOP**
 
 ---
 
@@ -191,14 +216,22 @@ Use `Glob` and `Grep` with keywords from the Issue title and objective to discov
 
 ## Step 5: Create Branch (+ optional worktree)
 
-Read branch pattern from config: `conventions.branch_pattern`
-Read `worktree.enabled` from config (default: false).
+Read branch pattern from config: `conventions.branch_pattern` (or `worktree.branch_pattern` for `.teamspace` configs).
+Default: `"mission/{issue}-{slug}-{user}"`.
+
+Read worktree config: if `worktree:` section exists in config → treat as enabled (unless `worktree.enabled` is explicitly `false`). If no `worktree:` section → disabled.
 
 Generate branch name:
 ```bash
 # Slugify the title: lowercase, replace spaces with hyphens, remove special chars, truncate
 SLUG=$(echo "{ISSUE_TITLE}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 30)
-BRANCH="mission/{ISSUE_NUMBER}-${SLUG}-${GH_USER}"
+
+# Read branch pattern from config (check conventions.branch_pattern, then worktree.branch_pattern)
+BRANCH_PATTERN=$(grep 'branch_pattern:' $TEAMWORK_DIR/config.yml | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
+[ -z "$BRANCH_PATTERN" ] && BRANCH_PATTERN="mission/{issue}-{slug}-{user}"
+
+# Substitute placeholders: {issue}→ISSUE_NUMBER, {slug}→SLUG, {user}→GH_USER, {type}→"mission"
+BRANCH=$(echo "$BRANCH_PATTERN" | sed "s/{issue}/$ISSUE_NUMBER/;s/{slug}/$SLUG/;s/{user}/$GH_USER/;s/{type}/mission/;s/{task-id}/$ISSUE_NUMBER/")
 ```
 
 **If worktree enabled:**
@@ -207,6 +240,10 @@ REPO_NAME=$(basename $(pwd))
 WORKTREE_PATH="../${REPO_NAME}-wt-${SLUG}"
 git worktree add -b "$BRANCH" "$WORKTREE_PATH"
 echo "{ISSUE_NUMBER}" > "$WORKTREE_PATH/.mission"
+
+# Contract is gitignored (active/), so copy it into the worktree
+mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR/active"
+cp "$TEAMWORK_DIR/active/MISSION-${ISSUE_NUMBER}.md" "$WORKTREE_PATH/$TEAMWORK_DIR/active/"
 ```
 
 **If worktree disabled (default):**
