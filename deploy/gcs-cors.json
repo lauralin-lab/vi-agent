@@ -1,8 +1,0 @@
-[
-  {
-    "origin": ["*"],
-    "method": ["PUT", "GET"],
-    "responseHeader": ["Content-Type", "Content-Length", "ETag"],
-    "maxAgeSeconds": 3600
-  }
-]
