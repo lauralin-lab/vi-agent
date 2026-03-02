@@ -1,14 +1,14 @@
 #!/bin/bash
 # Build Docker images on server and push to Docker Hub
-# Usage: ./build-and-push.sh <tag>
+# Usage: REPO_DIR=~/vi-agent-repos/<name> ./build-and-push.sh <tag>
 #
 # Runs ON the server. Expects:
-#   - Git repo at /opt/vi-agent/repo
+#   - Git repo at $REPO_DIR (default: ~/vi-agent-repo)
 #   - Docker Hub login already done (docker login)
 #   - Tag exists in the git repo
 #
 # Example:
-#   ./build-and-push.sh dev-20260302-abc1234
+#   REPO_DIR=~/vi-agent-repos/casey ./build-and-push.sh dev-20260302-abc1234
 set -e
 
 TAG="$1"
