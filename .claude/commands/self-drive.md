@@ -84,9 +84,28 @@ mission_count = 0
 
 while (self_drive == true) {
 
+    // ═══ STEP 0.5: TEAMSPACE CHECK — "看板优先" ═══
+    // Before analyzing the project from scratch, check the team board.
+    // Queued tasks from the board take priority over freshly proposed tasks.
+
+    teamspace_check:
+        if exists(.teamspace/board.md):
+          → Read .teamspace/board.md
+          → Read .teamspace/config.yml
+          → Collect all Queued tasks (sorted by priority: P0 > P1 > P2 > P3)
+          → Note any Blocked tasks (might be unblockable now)
+          → If Queued tasks exist with P0/P1 priority:
+            → These MUST appear in the top proposals (board tasks > fresh analysis)
+            → You may still propose 1 fresh task alongside board tasks
+          → If only P2/P3 tasks are queued:
+            → Include them as options but also run full analysis for potentially higher-impact work
+          → If no Queued tasks:
+            → Fall through to full project analysis below
+
     // ═══ STEP 1: PROJECT ANALYSIS — "观全局" ═══
     // Launch 3 parallel scouts to analyze the project from different angles.
     // This is NOT optional — you MUST actually scan the project, not guess.
+    // If teamspace had P0/P1 Queued tasks, analysis supplements (not replaces) them.
 
     analyze_project:
         📡 PARALLEL DISPATCH (Self-Drive Recon):
@@ -167,10 +186,13 @@ while (self_drive == true) {
     parse_and_execute:
         → If reply is "1", "2", or "3":
               → Select the corresponding proposed task
-              → Send Slack: "🚀 Starting: {task title}"
+              → If task came from .teamspace/board.md → note its task ID (e.g., T-044)
+              → Send Slack: "🚀 Starting: {task title}" (+ "📋 Board: T-{id}" if from board)
               → mission_count += 1
               → Execute using /drive skill with the task as argument
-              → On /drive completion → send condensed debrief to Slack → loop to STEP 1
+              → On /drive completion:
+                → If task had a teamspace ID → board.md is already updated by drive's Teamspace Sync
+                → Send condensed debrief to Slack → loop to STEP 0.5 (teamspace check)
 
         → If reply is "stop", "exit", "done", "停", or "结束":
               → Send Slack: "🛑 Self-Drive stopped. {mission_count} missions completed this session."

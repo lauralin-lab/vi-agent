@@ -19,6 +19,51 @@ enhance/E001-alembic-migration    # 增强
 
 ---
 
+## Teamspace — 团队协作看板
+
+项目使用 `.teamspace/` 目录作为团队级任务看板（AI-Native Agile）。
+
+### 核心文件
+
+| 文件 | 用途 |
+|------|------|
+| `.teamspace/config.yml` | 团队配置：成员、状态定义、约定 |
+| `.teamspace/board.md` | 📋 Kanban 主看板 — 打开就能看到所有人在做什么 |
+| `.teamspace/members/{id}.md` | 个人状态和工作日志 |
+| `.teamspace/archive/` | 按月归档已完成任务 |
+
+### 工作流
+
+```bash
+# 1. 查看 board，选择一个 Queued 任务
+cat .teamspace/board.md
+
+# 2. 认领任务：编辑 board.md
+#    把任务从 Queued 移到 In Progress
+#    填写 Owner, Branch, Worktree, Started
+
+# 3. 创建 worktree + 分支（见下节）
+git worktree add ../vi-wt-{slug} -b {type}/T-{id}-{slug}
+
+# 4. 开发（可选用 /drive 模式）
+cd ../vi-wt-{slug}
+
+# 5. 完成后更新 board.md：WIP → Done
+```
+
+### 与 Drive Mode 集成
+
+- `/drive T-044` — 自动从 board 拉取任务详情并关联
+- Mission 完成时自动更新 board.md 和 members/ 文件
+- `/self-drive` — 优先从 board 的 Queued 任务中提取，而非纯分析生成
+
+### 任务 ID 约定
+
+- 格式: `T-{三位数字}` (如 `T-042`)
+- 递增分配，下一个可用 ID 在 `config.yml` 的 `next_id` 字段
+
+---
+
 ## Worktree 工作流
 
 推荐使用 git worktree 并行开发，避免频繁 stash/切换分支。

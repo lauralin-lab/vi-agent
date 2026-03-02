@@ -5,6 +5,29 @@ All notable changes to the Drive Skill will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-03-02
+
+### Added
+- **Teamspace System** — `.teamspace/` directory as AI-Native Agile Operating System
+  - `config.yml` — team configuration: members, statuses, priorities, tags, worktree conventions
+  - `board.md` — Kanban board: Blocked → WIP → In Review → Queued → Backlog → Done
+  - `members/{id}.md` — per-member status and work log
+  - `archive/` — monthly archives of completed tasks
+- **Drive Mode Teamspace Integration** — new "Teamspace Awareness" section in drive.md
+  - Phase Ω pre-step: read board.md for team context before essence decomposition
+  - Task ID linking: `drive T-044` auto-pulls task details from board
+  - Mission Complete: automatic board sync (move task → Done, update members/)
+  - Worktree binding: record worktree/branch info in board's WIP table
+- **Self-Drive Teamspace Integration** — Step 0.5 "Teamspace Check" before project analysis
+  - Queued tasks from board take priority over freshly generated proposals
+  - P0/P1 tasks MUST appear in proposals
+  - Post-mission loop returns to board check (Step 0.5) instead of full analysis
+- **Three-layer task hierarchy** documented:
+  - `.teamspace/board.md` (persistent, team-level, git-tracked)
+  - `.claude/drive/{slug}/` (ephemeral, mission-level, gitignored)
+  - `~/.claude/tasks/` (ephemeral, agent-level, outside repo)
+- **CONTRIBUTING.md** — added Teamspace section with workflow, conventions, and drive integration
+
 ## [3.1.0] - 2026-03-01
 
 ### Added

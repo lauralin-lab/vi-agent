@@ -345,6 +345,71 @@ Example:
 
 ---
 
+## Teamspace Awareness — "AI-Native Agile"
+
+Drive Mode operates within a **Teamspace** — a persistent, git-tracked team coordination layer at `.teamspace/`. This is the human team's single source of truth for who is working on what.
+
+### On Mission Start (Phase Ω pre-step)
+
+**Before** the Essence Protocol, check for teamspace context:
+
+```
+if exists(.teamspace/board.md):
+  → Read .teamspace/board.md — understand team-wide context
+  → Read .teamspace/config.yml — understand team conventions
+  → Note: who is working on what, what is blocked, what is queued
+  → If user specified a teamspace task ID (e.g., "drive T-044"):
+    → Extract task details from board as mission input
+    → This task ID becomes the mission's teamspace anchor
+  → If user described work that matches a Queued/Backlog task:
+    → Suggest the match: "This looks like T-044 on the board. Should I link them?"
+  → Board context informs Phase Ω's essence decomposition
+    (e.g., knowing what teammates are working on avoids conflicts)
+```
+
+### On Mission Complete
+
+**After** final verification but **before** the debrief output:
+
+```
+if exists(.teamspace/board.md) AND mission has teamspace task:
+  → Update board.md: move task from current status → ✅ Done
+  → Fill in: Completed date, Branch info, Drive? = ✅
+  → Update .teamspace/members/{owner}.md with completion
+  → Update board Stats section
+  → Update next_id in config.yml if new tasks were discovered
+  → If mission discovered follow-up work → add to Queued or Backlog
+  → git add .teamspace/ (stage changes for next commit)
+```
+
+### Worktree Integration
+
+When a mission creates or uses a git worktree:
+- Record the worktree path and branch in the board's WIP table
+- Follow `.teamspace/config.yml` naming conventions for worktree paths and branches
+- On mission complete: note the worktree/branch in the Done table for traceability
+
+### Teamspace Files Reference
+
+```
+.teamspace/
+├── config.yml       ← Team config: members, statuses, conventions
+├── board.md         ← 📋 Kanban board (THE canonical view)
+├── members/{id}.md  ← Per-member status and work log
+└── archive/         ← Monthly archives of completed tasks
+```
+
+**Teamspace is ABOVE Drive missions in the hierarchy:**
+```
+.teamspace/board.md    (persistent, team-level, git-tracked)
+    ↓ one board task may trigger one or more drive missions
+.claude/drive/{slug}/  (ephemeral, mission-level, gitignored)
+    ↓ one mission decomposes into agent tasks
+~/.claude/tasks/       (ephemeral, agent-level, outside repo)
+```
+
+---
+
 ## Phase Ω: 本质洞察 — "先见森林，再看树木"
 
 **This is the VERY FIRST thing that happens when a request arrives.** Before reconnaissance, before questions, before teams. The sage pauses to truly see.
@@ -353,7 +418,7 @@ Example:
 
 ### The Essence Protocol — "穿透表面，看到骨架"
 
-When the user's request arrives, **STOP.** Do not spawn agents. Do not start Phase 0. First, **think from first principles.**
+When the user's request arrives, **STOP.** Do not spawn agents. Do not start Phase 0. First, **load teamspace context (if available), then think from first principles.**
 
 > 不要分类，要理解。分类是把未知装进已知的盒子；理解是从零开始看清这件事本身。
 
@@ -2786,6 +2851,27 @@ Then the debrief — structured, not rambling:
 ```
 
 **Note: There is NO "Suggested Follow-ups" section.** If it was worth suggesting, it was worth doing. If you didn't do it, it's because it genuinely requires different requirements, different access, or is truly unrelated to this mission — and you've stated which reason applies for each limitation. If your Known Limitations list has more than 3 items, you are probably being lazy. Re-examine each one.
+
+### Teamspace Sync (mandatory if teamspace exists)
+
+**Immediately after the debrief, before ecosystem scan:**
+
+```
+TEAMSPACE SYNC:
+if exists(.teamspace/board.md) AND mission has teamspace_task_id:
+  1. Read current board.md
+  2. Move task {task_id} from its current status column → ✅ Done
+     Fill: Owner, Completed date, Branch, Drive? = ✅
+  3. Update .teamspace/members/{owner}.md:
+     - Move task from "当前工作" → "最近完成"
+     - Clear "当前工作" if no other WIP tasks
+  4. If mission discovered new work items:
+     → Add to Queued (if concrete + prioritized) or Backlog (if exploratory)
+     → Assign next available task ID from config.yml next_id
+     → Increment next_id in config.yml
+  5. Update board Stats section (recalculate counts)
+  6. Emit: "📋 TEAMSPACE SYNCED: T-{id} → Done | Board updated"
+```
 
 ---
 

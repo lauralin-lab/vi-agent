@@ -1,0 +1,92 @@
+# .teamspace/config.yml
+# AI-Native Agile Operating System — 团队配置
+#
+# 这个文件定义了团队成员、任务状态模型、和工作流约定。
+# 是整个 teamspace 系统的 schema 定义。
+
+team:
+  name: "VI Agent"
+  repo: "flair-home-stylist/vi_agent"
+
+members:
+  - id: casey
+    name: "Casey"
+    role: lead
+    github: caseyz-vv
+
+# Kanban 状态定义（顺序即流转方向）
+# Backlog → Queued → WIP → Blocked / In Review → Done → Archive
+statuses:
+  - id: backlog
+    label: "💡 Backlog"
+    description: "想法池，未排期"
+  - id: queued
+    label: "📋 Queued"
+    description: "已排期，准备开始"
+  - id: wip
+    label: "🟡 In Progress"
+    description: "正在进行中"
+  - id: blocked
+    label: "🔴 Blocked"
+    description: "被阻塞，需要解除"
+  - id: review
+    label: "🔵 In Review"
+    description: "等待 review / 测试"
+  - id: done
+    label: "✅ Done"
+    description: "完成"
+
+# 任务优先级
+priorities:
+  - P0  # 🔥 紧急 — 立刻处理
+  - P1  # ⚡ 高优 — 当前 sprint 必须完成
+  - P2  # 📌 正常 — 排入计划
+  - P3  # 💤 低优 — 有空再做
+
+# 标签系统
+tags:
+  # 按服务/模块
+  services: [api-server, frontend, realtime, gateway, global, claude-skills]
+  # 按类型
+  types: [feature, bugfix, refactor, infra, enhance, docs, test]
+
+# 任务 ID 约定
+task_id:
+  prefix: "T"
+  format: "T-{三位数字}"  # T-001, T-042, etc.
+  next_id: 50  # 下一个可用 ID
+
+# 工作量估算
+estimation:
+  S: "1-2 小时"
+  M: "半天到 1 天"
+  L: "2-3 天"
+  XL: "需要拆分成多个任务"
+
+# Worktree 约定
+worktree:
+  # worktree 创建在项目的兄弟目录
+  path_pattern: "../vi-wt-{task-slug}"
+  # 分支命名遵循 CONTRIBUTING.md
+  branch_pattern: "{type}/{task-id}-{slug}"
+  # 示例: ../vi-wt-vad-fix → bugfix/T-044-vad-signal
+
+# Drive Mode 集成
+drive:
+  # Drive 启动时读取 board.md 了解上下文
+  read_board_on_start: true
+  # Mission 完成时自动更新 board.md
+  update_board_on_complete: true
+  # state.md 中记录关联的 teamspace task ID
+  track_task_id: true
+
+# 归档策略
+archive:
+  auto_archive_after_days: 30
+  archive_by: month  # 按月归档到 archive/YYYY-MM.md
+
+# 更新约定
+conventions:
+  update_frequency: "每人每天至少更新一次自己的任务状态"
+  board_ownership: "每人只修改自己 Owner 的行，减少 merge conflict"
+  drive_marks: "通过 /drive 执行的任务在 Drive? 列标记 ✅"
