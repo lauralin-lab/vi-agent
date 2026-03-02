@@ -14,6 +14,42 @@
 - **Docker Hub**: `collov` (org name)
 - **镜像名称**: `collov/vi-agent-{api-server,frontend,gateway,realtime}`
 
+## 谁来运行 /dev？
+
+**只有管理员 (liyasong) 运行 `/dev`**。团队成员不需要安装任何工具，只需提供两样东西：
+
+### 团队成员需要准备的
+
+1. **名字** — 用作命名空间的英文名（小写，如 casey, alice, bob）
+2. **SSH Public Key** — 用于登录服务器
+
+如果没有 SSH key，先生成一个：
+```bash
+ssh-keygen -t ed25519 -C "yourname@collov.com"
+# 然后把公钥发给管理员:
+cat ~/.ssh/id_ed25519.pub
+```
+
+3. **本地 `.env`** — 复制管理员发的 `.env` 文件到项目根目录 `vi_agent/.env`（包含共享的 API keys）
+
+### 流程
+
+```
+团队成员                             管理员 (liyasong)
+────────                             ────────────────
+1. 生成 SSH key (如果没有)
+2. 发送公钥 + 名字给 liyasong ──→    3. 运行 /dev
+                                        - 输入成员名字
+                                        - 粘贴成员的 SSH public key
+                                        - 选择版本
+                                        - 自动部署隔离实例
+4. 收到访问信息             ←──      5. 发送给成员:
+   - ssh casey@34.56.23.173             - 服务器 IP + 端口
+   - http://34.56.23.173:3200           - .env 文件 (如果还没发)
+```
+
+---
+
 ## 执行流程
 
 ### Step 1: 收集信息
