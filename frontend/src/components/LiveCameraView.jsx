@@ -1,0 +1,1068 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowLeft, Mic, MicOff, Wifi, WifiOff,
+  Loader2, Upload, Check, ScanLine, CheckCircle2, X, Edit3,
+  Search, Languages, Eye, Sparkles, Receipt, ShoppingBag,
+  Zap, RefreshCw
+} from 'lucide-react';
+
+// Map detected intent → icon component for dynamic shutter
+const INTENT_ICONS = {
+  search: Search,
+  analyze: Search,
+  scan: ScanLine,
+  create: Sparkles,
+  shop: ShoppingBag,
+  identify: Eye,
+  translate: Languages,
+  receipt: Receipt,
+};
+
+// Map detected intent → color classes for shutter glow
+const INTENT_COLORS = {
+  search: 'text-blue-400',
+  analyze: 'text-blue-400',
+  scan: 'text-cyan-400',
+  create: 'text-purple-400',
+  shop: 'text-yellow-400',
+  identify: 'text-emerald-400',
+  translate: 'text-indigo-400',
+  receipt: 'text-orange-400',
+};
+
+// Map agent action → border color + glow for shutter ring
+const ACTION_GLOW = {
+  dispatch: { border: 'border-green-400/60', shadow: '0 0 25px rgba(34,197,94,0.4)' },
+  ready: { border: 'border-green-400/60', shadow: '0 0 25px rgba(34,197,94,0.4)' },
+  done: { border: 'border-green-400/60', shadow: '0 0 25px rgba(34,197,94,0.4)' },
+  capture: { border: 'border-cyan-400/60', shadow: '0 0 25px rgba(34,211,238,0.4)' },
+  scan: { border: 'border-cyan-400/60', shadow: '0 0 25px rgba(34,211,238,0.4)' },
+  search: { border: 'border-blue-400/60', shadow: '0 0 25px rgba(96,165,250,0.4)' },
+};
+import Card, { computeAgentStatus } from './Card';
+import GalleryView from './GalleryView';
+import useSound from '../hooks/useSound';
+import { api } from '../services/api';
+
+export default function LiveCameraView({
+  livekit,
+  onOpenHistory,
+  onViewResult,
+}) {
+  const { play } = useSound();
+  const videoRef = useRef(null);
+
+  // Card state — driven by agent transcripts
+  const [showCard, setShowCard] = useState(true);
+  const [cardText, setCardText] = useState("Connecting to AI...");
+  const [isMicOn, setIsMicOn] = useState(livekit.isMicEnabled !== false);
+
+  // Intention Card state — editable user intention
+  const [editedIntention, setEditedIntention] = useState('');
+  const [isIntentionEdited, setIsIntentionEdited] = useState(false);
+  const intentionInputRef = useRef(null);
+
+  // Clear intention on camera re-entry (component mount)
+  useEffect(() => {
+    livekit.clearIntention?.();
+    setEditedIntention('');
+    setIsIntentionEdited(false);
+  }, []);
+
+  // Sync agent intention to editedIntention (only when user hasn't manually edited)
+  useEffect(() => {
+    if (livekit.intentionText && !isIntentionEdited) {
+      setEditedIntention(livekit.intentionText);
+    }
+  }, [livekit.intentionText, isIntentionEdited]);
+
+  // Keep local mic state in sync with LiveKit (fixes mic state after returning from other views)
+  useEffect(() => {
+    setIsMicOn(livekit.isMicEnabled !== false);
+  }, [livekit.isMicEnabled]);
+
+  // Media capture state
+  const [capturedMedia, setCapturedMedia] = useState([]);
+  const capturedMediaRef = useRef(capturedMedia);
+  capturedMediaRef.current = capturedMedia;
+  const [showGallery, setShowGallery] = useState(false);
+  const [isStackExpanded, setIsStackExpanded] = useState(false);
+  const stackLongPressRef = useRef(null);
+
+  // ── Agent Status State Machine ──
+  const agentComputedStatus = computeAgentStatus({
+    agentIdentity: livekit.agentIdentity,
+    greetingReceived: livekit.greetingReceived,
+    userSpeaking: false, // TODO: wire up actual VAD signal; isMicOn is mic-enabled, not speaking
+    agentGenerating: livekit.isHtmlStreaming || livekit.isTextStreaming || !!livekit.taskProgress,
+    cameraActive: !!livekit.localVideoTrack,
+    connectionQuality: livekit.connectionQuality,
+  });
+
+  // Connection icon — derived from computed status for top bar
+  const connectionIcon = (() => {
+    const state = livekit.connectionState;
+    if (state === 'disconnected' || state === 'error') return 'offline';
+    if (state === 'reconnecting') return 'weak';
+    if (agentComputedStatus === 'offline') return 'offline';
+    if (agentComputedStatus === 'weak_connection') return 'weak';
+    if (agentComputedStatus === 'connecting') return 'connecting';
+    return 'connected';
+  })();
+
+  // Shutter & recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const recordingTimerRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const isLongPressRef = useRef(false);
+  const justStartedRecordingRef = useRef(false);
+  const pointerCapturedRef = useRef(false); // Track if onPointerUp already triggered photo capture
+
+  // MediaRecorder for real video capture
+  const mediaRecorderRef = useRef(null);
+  const videoChunksRef = useRef([]);
+  const autoStopTimerRef = useRef(null);
+  const recordedMimeRef = useRef('video/webm');
+
+  // Capture animation
+  const [showCaptureAnim, setShowCaptureAnim] = useState(false);
+
+  // Stack status animation
+  const [stackStatus, setStackStatus] = useState('IDLE');
+
+  // Scanning effect
+  const [isScanning, setIsScanning] = useState(false);
+  const scanTimerRef = useRef(null);
+
+  // Agent-driven viewfinder overlays
+  const [emojiRain, setEmojiRain] = useState(null); // {emojis: [...], duration: 3000}
+  const [uiBadge, setUiBadge] = useState(null);     // {text, position, color, duration}
+  const overlayTimerRef = useRef(null);
+
+  // Pre-compute emoji rain positions/sizes once per rain trigger (avoids re-randomizing on re-render)
+  const emojiRainParticles = useRef([]);
+  useEffect(() => {
+    if (emojiRain) {
+      emojiRainParticles.current = Array.from({ length: 25 }, (_, i) => ({
+        x: Math.random() * 90 + 5,
+        scale: 0.5 + Math.random(),
+        fontSize: 20 + Math.random() * 20,
+        delay: Math.random() * 1.5,
+        duration: 2 + Math.random() * 2,
+        rotate: Math.random() * 360,
+        emojiIndex: i % emojiRain.emojis.length,
+      }));
+    }
+  }, [emojiRain]);
+
+  // Track the latest card text for dispatch
+  const lastCardTextRef = useRef('');
+  useEffect(() => { lastCardTextRef.current = cardText; }, [cardText]);
+
+  // ── Attach LiveKit video track to video element ──
+  useEffect(() => {
+    if (livekit.localVideoTrack && videoRef.current) {
+      const videoEl = videoRef.current;
+      livekit.localVideoTrack.attach(videoEl);
+      return () => {
+        livekit.localVideoTrack.detach(videoEl);
+      };
+    }
+  }, [livekit.localVideoTrack]);
+
+  // ── Handle LiveKit connection state → card text + scan effect ──
+  useEffect(() => {
+    switch (livekit.connectionState) {
+      case 'connected':
+        setIsScanning(true);
+        scanTimerRef.current = setTimeout(() => setIsScanning(false), 2000);
+        break;
+      case 'connecting':
+        if (!livekit.lastAgentText) {
+          setCardText("Connecting to AI...");
+        }
+        break;
+      case 'error':
+      case 'disconnected':
+        setCardText("Offline. Tap to reconnect.");
+        break;
+    }
+  }, [livekit.connectionState]);
+
+  // ── Show status when agent joins/leaves ──
+  useEffect(() => {
+    if (livekit.connectionState === 'connected' && !livekit.agentIdentity) {
+      if (!livekit.lastAgentText) {
+        setCardText("Waiting for AI agent...");
+      }
+    }
+  }, [livekit.agentIdentity, livekit.connectionState, livekit.lastAgentText]);
+
+  // ── Show initial greeting when agent joins and is ready ──
+  useEffect(() => {
+    if (livekit.agentIdentity && livekit.connectionState === 'connected' && !livekit.lastAgentText) {
+      setCardText("Point your camera at anything");
+      setShowCard(true);
+    }
+  }, [livekit.agentIdentity, livekit.connectionState, livekit.lastAgentText]);
+
+  // ── Handle agent transcripts → update card text ──
+  useEffect(() => {
+    if (livekit.lastAgentText) {
+      setCardText(livekit.lastAgentText);
+      setShowCard(true);
+    }
+  }, [livekit.lastAgentText]);
+
+
+  // Results are now handled in LiveSessionView (user navigates there immediately on Done)
+
+  // ── Handle agent-driven viewfinder overlays ──
+  useEffect(() => {
+    if (!livekit.viewfinderOverlay) return;
+    const overlay = livekit.viewfinderOverlay;
+
+    if (overlay.overlay_type === 'scan') {
+      setIsScanning(true);
+      scanTimerRef.current = setTimeout(() => setIsScanning(false), overlay.duration || 2000);
+    }
+    else if (overlay.overlay_type === 'emoji_rain') {
+      setEmojiRain({ emojis: overlay.emojis || ['✨'], duration: overlay.duration || 3000 });
+      overlayTimerRef.current = setTimeout(() => setEmojiRain(null), overlay.duration || 3000);
+    }
+    else if (overlay.overlay_type === 'ui_badge') {
+      setUiBadge({ text: overlay.text, position: overlay.position || 'top-center', color: overlay.color || 'blue' });
+      overlayTimerRef.current = setTimeout(() => setUiBadge(null), overlay.duration || 3000);
+    }
+    return () => {
+      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    };
+  }, [livekit.viewfinderOverlay]);
+
+  // ── Recording timer ──
+  useEffect(() => {
+    if (isRecording) {
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(recordingTimerRef.current);
+    }
+    return () => clearInterval(recordingTimerRef.current);
+  }, [isRecording]);
+
+  // Cleanup MediaRecorder and timers on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(autoStopTimerRef.current);
+      clearTimeout(scanTimerRef.current);
+      clearTimeout(overlayTimerRef.current);
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
+
+  // ── Upload photo to S3 and update media entry with public URL ──
+  const uploadToS3 = useCallback(async (dataUrl) => {
+    try {
+      setStackStatus('UPLOADING');
+      const publicUrl = await api.uploadDataUrl(dataUrl);
+      // Update the media entry matching this src with the S3 URL
+      setCapturedMedia(prev => prev.map(item =>
+        item.src === dataUrl ? { ...item, s3Url: publicUrl } : item
+      ));
+      setStackStatus('ANALYZING');
+      setTimeout(() => {
+        setStackStatus('READY');
+        setTimeout(() => setStackStatus('IDLE'), 1500);
+      }, 1200);
+      console.log('[S3] Photo uploaded:', publicUrl);
+      return publicUrl;
+    } catch (err) {
+      console.error('[S3] Upload failed:', err);
+      setStackStatus('READY');
+      setTimeout(() => setStackStatus('IDLE'), 1500);
+      return null;
+    }
+  }, []);
+
+  // ── Upload video blob to S3 ──
+  const uploadVideoToS3 = useCallback(async (blob, ext, thumbnailSrc) => {
+    try {
+      setStackStatus('UPLOADING');
+      const publicUrl = await api.uploadBlob(blob, ext);
+      setCapturedMedia(prev => prev.map(item =>
+        item.src === thumbnailSrc ? { ...item, s3Url: publicUrl } : item
+      ));
+      setStackStatus('ANALYZING');
+      setTimeout(() => {
+        setStackStatus('READY');
+        setTimeout(() => setStackStatus('IDLE'), 1500);
+      }, 1200);
+      console.log('[S3] Video uploaded:', publicUrl);
+      return publicUrl;
+    } catch (err) {
+      console.error('[S3] Video upload failed:', err);
+      setStackStatus('READY');
+      setTimeout(() => setStackStatus('IDLE'), 1500);
+      return null;
+    }
+  }, []);
+
+  // ── Photo capture from real video stream ──
+  const capturePhotoFromVideo = useCallback(async () => {
+    const dataUrl = await livekit.capturePhoto();
+    if (dataUrl) return dataUrl;
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth || 640;
+      canvas.height = videoRef.current.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.8);
+    }
+    return null;
+  }, [livekit]);
+
+  // ── Shutter handlers ──
+  const captureVideoThumbnail = useCallback(() => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth || 640;
+      canvas.height = videoRef.current.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.6);
+    }
+    return null;
+  }, []);
+
+  const stopVideoRecording = useCallback(() => {
+    clearTimeout(autoStopTimerRef.current);
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return null;
+
+    // Capture thumbnail from live feed before recorder stops
+    const thumbnail = captureVideoThumbnail();
+
+    return new Promise((resolve) => {
+      recorder.onstop = () => {
+        const mime = recordedMimeRef.current;
+        const blob = new Blob(videoChunksRef.current, { type: mime });
+        videoChunksRef.current = [];
+        mediaRecorderRef.current = null;
+        resolve({ blob, src: thumbnail || URL.createObjectURL(blob), ext: mime.includes('mp4') ? 'mp4' : 'webm' });
+      };
+      recorder.stop();
+    });
+  }, [captureVideoThumbnail]);
+
+  const startMediaRecorder = useCallback(() => {
+    try {
+      // Get stream from video element or livekit track
+      let stream = null;
+      if (livekit.localVideoTrack?.mediaStreamTrack) {
+        stream = new MediaStream([livekit.localVideoTrack.mediaStreamTrack]);
+      } else if (videoRef.current?.srcObject) {
+        stream = videoRef.current.srcObject;
+      } else if (videoRef.current?.captureStream) {
+        stream = videoRef.current.captureStream();
+      }
+      if (!stream || !window.MediaRecorder) return false;
+
+      // Pick best mime type
+      const mimeOptions = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
+      const mime = mimeOptions.find(m => MediaRecorder.isTypeSupported(m)) || '';
+      if (!mime) return false;
+
+      recordedMimeRef.current = mime;
+      videoChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) videoChunksRef.current.push(e.data);
+      };
+      recorder.start(500); // collect chunks every 500ms
+      mediaRecorderRef.current = recorder;
+
+      // Auto-stop at 30 seconds
+      autoStopTimerRef.current = setTimeout(async () => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          play('camera.recordStop');
+          setIsRecording(false);
+          isLongPressRef.current = false;
+          const result = await stopVideoRecording();
+          if (result) {
+            const { blob, src, ext } = result;
+            setCapturedMedia(prev => [{ type: 'video', src, blob }, ...prev].slice(0, 8));
+            uploadVideoToS3(blob, ext, src);
+          }
+        }
+      }, 30000);
+
+      return true;
+    } catch (err) {
+      console.warn('[MediaRecorder] Failed to start:', err);
+      return false;
+    }
+  }, [livekit.localVideoTrack, stopVideoRecording, play, uploadVideoToS3]);
+
+  const handleShutterDown = () => {
+    if (isRecording) return;
+    isLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      justStartedRecordingRef.current = true;
+      setIsRecording(true);
+      play('camera.recordStart');
+      startMediaRecorder();
+    }, 500);
+  };
+
+  const handleShutterUp = () => {
+    clearTimeout(longPressTimerRef.current);
+    if (isRecording) return;
+    if (!isLongPressRef.current) {
+      pointerCapturedRef.current = true; // Mark that pointer event handled the capture
+      play('camera.shutter');
+      setShowCaptureAnim(true);
+      setTimeout(async () => {
+        setShowCaptureAnim(false);
+        const photoSrc = await capturePhotoFromVideo();
+        if (photoSrc) {
+          // Use functional update to avoid stale closure over capturedMedia
+          setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
+          uploadToS3(photoSrc);
+        }
+      }, 600);
+    }
+    isLongPressRef.current = false;
+  };
+
+  const handleShutterClick = () => {
+    if (justStartedRecordingRef.current) {
+      justStartedRecordingRef.current = false;
+      return;
+    }
+    if (isRecording) {
+      play('camera.recordStop');
+      setIsRecording(false);
+      isLongPressRef.current = false;
+
+      // Stop real video recording if active
+      const videoPromise = stopVideoRecording();
+      if (videoPromise) {
+        videoPromise.then((result) => {
+          if (result) {
+            const { blob, src, ext } = result;
+            setCapturedMedia(prev => [{ type: 'video', src, blob }, ...prev].slice(0, 8));
+            uploadVideoToS3(blob, ext, src);
+          }
+        });
+      } else {
+        // Fallback: capture still frame if MediaRecorder wasn't running
+        setShowCaptureAnim(true);
+        setTimeout(async () => {
+          setShowCaptureAnim(false);
+          const photoSrc = await capturePhotoFromVideo();
+          if (photoSrc) {
+            setCapturedMedia(prev => [{ type: 'video', src: photoSrc }, ...prev].slice(0, 8));
+            uploadToS3(photoSrc);
+          }
+        }, 600);
+      }
+      return;
+    }
+    // Fallback photo capture: if onPointerUp didn't fire (some browsers/touch cases),
+    // capture here instead. pointerCapturedRef prevents double-capture.
+    if (pointerCapturedRef.current) {
+      pointerCapturedRef.current = false;
+      return;
+    }
+    // Not recording, pointer didn't capture — take a photo as fallback
+    play('camera.shutter');
+    setShowCaptureAnim(true);
+    setTimeout(async () => {
+      setShowCaptureAnim(false);
+      const photoSrc = await capturePhotoFromVideo();
+      if (photoSrc) {
+        setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
+        uploadToS3(photoSrc);
+      }
+    }, 600);
+  };
+
+  // ── Done handler: send intention + photo URLs to agent via RPC, navigate immediately ──
+  const doneClickedRef = useRef(false);
+  // Reset done guard when component mounts (returning from session view)
+  useEffect(() => {
+    doneClickedRef.current = false;
+  }, []);
+  const handleDone = () => {
+    if (doneClickedRef.current) return;
+    doneClickedRef.current = true;
+    play('camera.shutter');
+
+    // User-edited intention takes priority, then agent intention, then card text
+    const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
+
+    // Navigate to session immediately — loading happens in session view (optimistic)
+    play('session.enter');
+    onViewResult(null, capturedMedia, finalIntention);
+
+    // Collect already-uploaded S3 URLs
+    const readyUrls = capturedMedia.filter(m => m.s3Url).map(m => m.s3Url);
+    const pendingCount = capturedMedia.filter(m => !m.s3Url).length;
+
+    if (pendingCount === 0) {
+      // All uploads done — dispatch immediately
+      livekit.sendDispatch(finalIntention, readyUrls);
+    } else {
+      // Some uploads still pending — dispatch with ready URLs now,
+      // then re-dispatch with all URLs once uploads finish (max 8s wait)
+      livekit.sendDispatch(finalIntention, readyUrls);
+
+      // Poll briefly for remaining uploads to complete (use ref to avoid stale closure)
+      let attempts = 0;
+      const pollUploads = setInterval(() => {
+        attempts++;
+        const current = capturedMediaRef.current;
+        const allUrls = current.filter(m => m.s3Url).map(m => m.s3Url);
+        if (allUrls.length >= current.length || attempts >= 16) {
+          clearInterval(pollUploads);
+          // Re-dispatch only if we got more URLs
+          if (allUrls.length > readyUrls.length) {
+            livekit.sendDispatch(finalIntention, allUrls);
+          }
+        }
+      }, 500);
+    }
+  };
+
+  // ── Action card option handler ──
+  const handleActionCardOption = (option) => {
+    livekit.sendMessage(option);
+    livekit.dismissActionCard();
+  };
+
+  // ── Mic toggle ──
+  const handleMicToggle = () => {
+    livekit?.ensureAudioContext?.();
+    if (isMicOn) {
+      play('mic.off');
+      livekit.toggleMic();
+      setIsMicOn(false);
+    } else {
+      play('mic.on');
+      livekit.toggleMic();
+      setIsMicOn(true);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="relative w-full h-full flex flex-col bg-black pb-0 md:pb-4"
+    >
+      <GalleryView
+        isOpen={showGallery}
+        onClose={() => setShowGallery(false)}
+        onSelect={(photoSrc) => { setShowGallery(false); }}
+      />
+
+      {/* Fullscreen Viewfinder */}
+      <div className="absolute inset-0 bg-neutral-900 overflow-hidden">
+        {livekit.localVideoTrack ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
+            <Loader2 size={32} className="text-neutral-500 animate-spin" />
+          </div>
+        )}
+
+        {/* Image/Video Stack — collapsed */}
+        <AnimatePresence mode="wait">
+          {capturedMedia.length > 0 && !isStackExpanded && (
+            <motion.div
+              key="media-stack-collapsed"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute z-10 below-top-controls"
+              style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 52px)', right: '1.5rem' }}
+            >
+              <div
+                className="relative w-14 h-14 cursor-pointer"
+                onPointerDown={() => {
+                  stackLongPressRef.current = setTimeout(() => setIsStackExpanded(true), 500);
+                }}
+                onPointerUp={() => clearTimeout(stackLongPressRef.current)}
+                onPointerLeave={() => clearTimeout(stackLongPressRef.current)}
+              >
+                {capturedMedia.slice(0, 4).map((item, index) => (
+                  <div
+                    key={index}
+                    className="absolute w-11 h-11 rounded-lg border border-white/25 bg-black/40 backdrop-blur-md overflow-hidden shadow-md flex items-center justify-center"
+                    style={{
+                      transform: `rotate(${index * 5 - 4}deg) translate(${index * 2}px, ${index * 3}px) scale(${1 - index * 0.04})`,
+                      zIndex: 4 - index,
+                      top: 0,
+                      right: 0,
+                    }}
+                  >
+                    <img src={item.src} alt="" className="w-full h-full object-cover opacity-80 absolute inset-0" />
+                    {item.type === 'video' && (
+                      <div className="z-10 w-4 h-4 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                        <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="absolute -bottom-1.5 -right-1.5 bg-yellow-500 text-black font-bold w-5 h-5 rounded-full flex items-center justify-center z-10 shadow-sm border border-black/20" style={{ fontSize: 'var(--text-2xs)' }}>
+                  {capturedMedia.length}
+                </div>
+              </div>
+
+              <button
+                onClick={(e) => { e.stopPropagation(); play('media.delete'); setCapturedMedia([]); }}
+                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center z-30 shadow-md border border-red-400/50 transition-colors"
+              >
+                <X size={10} strokeWidth={3} className="text-white" />
+              </button>
+
+              <AnimatePresence mode="wait">
+                {stackStatus === 'UPLOADING' && (
+                  <motion.div key="uploading" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center z-20 shadow-md border border-blue-400">
+                    <Upload size={10} strokeWidth={3} className="text-white animate-bounce" />
+                  </motion.div>
+                )}
+                {stackStatus === 'ANALYZING' && (
+                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center z-20 shadow-md border border-purple-400">
+                    <ScanLine size={10} strokeWidth={3} className="text-white animate-pulse" />
+                  </motion.div>
+                )}
+                {stackStatus === 'READY' && (
+                  <motion.div key="ready" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: [1, 1.2, 1] }} exit={{ opacity: 0, scale: 0.5 }} transition={{ scale: { duration: 0.3 } }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center z-20 shadow-md border border-green-400">
+                    <Check size={10} strokeWidth={3} className="text-white" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Expanded Media Strip */}
+        <AnimatePresence>
+          {isStackExpanded && capturedMedia.length > 0 && (
+            <motion.div
+              key="media-expanded"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center"
+              onClick={() => setIsStackExpanded(false)}
+            >
+              <div className="absolute top-4 right-4 flex gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); play('media.delete'); setCapturedMedia([]); setIsStackExpanded(false); }}
+                  className="px-3 py-1.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 font-medium backdrop-blur-md hover:bg-red-500/30 transition-colors"
+                  style={{ fontSize: 'var(--text-xs)' }}
+                >
+                  Clear All
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsStackExpanded(false); }}
+                  className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-md hover:bg-white/20 transition-colors"
+                >
+                  <X size={14} className="text-white/80" />
+                </button>
+              </div>
+
+              <div className="flex gap-3 px-6 overflow-x-auto max-w-full py-4" onClick={(e) => e.stopPropagation()}>
+                {capturedMedia.map((item, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 20, scale: 0.8 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.5 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="relative shrink-0 w-20 h-20 rounded-xl border border-white/20 bg-black/40 overflow-hidden shadow-lg group"
+                  >
+                    <img src={item.src} alt="" className="w-full h-full object-cover" />
+                    {item.type === 'video' && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+                          <div className="w-0 h-0 border-t-[4px] border-t-transparent border-l-[7px] border-l-white border-b-[4px] border-b-transparent ml-0.5" />
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        play('media.delete');
+                        setCapturedMedia(prev => {
+                          const next = prev.filter((_, i) => i !== index);
+                          if (next.length === 0) setIsStackExpanded(false);
+                          return next;
+                        });
+                      }}
+                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center shadow-md transition-colors"
+                    >
+                      <X size={10} strokeWidth={3} className="text-white" />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+              <p className="text-white/40 mt-2" style={{ fontSize: 'var(--text-xs)' }}>Tap outside to close</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Recording Indicator */}
+        {isRecording && (
+          <div className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full backdrop-blur-md z-30 below-top-signal ${recordingSeconds >= 25 ? 'bg-red-900/60' : 'bg-black/50'}`} style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 48px)' }}>
+            <div className={`w-2 h-2 rounded-full bg-red-500 ${recordingSeconds >= 25 ? 'animate-[pulse_0.4s_ease-in-out_infinite]' : 'animate-pulse'}`} />
+            <span className={`font-mono ${recordingSeconds >= 25 ? 'text-red-300' : 'text-white'}`} style={{ fontSize: 'var(--text-xs)' }}>
+              {recordingSeconds >= 25
+                ? `${30 - recordingSeconds}s`
+                : `${String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:${String(recordingSeconds % 60).padStart(2, '0')}`
+              }
+            </span>
+          </div>
+        )}
+
+        {/* Status text removed — card + top icon already show connection state */}
+
+
+        {/* AI Scanning Effect */}
+        <AnimatePresence>
+          {isScanning && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-20 pointer-events-none overflow-hidden"
+            >
+              <motion.div
+                initial={{ top: '0%' }}
+                animate={{ top: '100%' }}
+                transition={{ duration: 1.8, ease: 'linear', repeat: 0 }}
+                className="absolute left-0 right-0 h-[2px]"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.7), rgba(147,197,253,1), rgba(59,130,246,0.7), transparent)',
+                  boxShadow: '0 0 30px 6px rgba(59,130,246,0.4), 0 0 80px 12px rgba(59,130,246,0.2)'
+                }}
+              />
+              <div className="absolute inset-0 bg-blue-500/[0.03]" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Emoji Rain Overlay */}
+        <AnimatePresence>
+          {emojiRain && (
+            <div className="absolute inset-0 z-[25] pointer-events-none overflow-hidden">
+              {emojiRainParticles.current.map((p, i) => (
+                <motion.div
+                  key={`emoji-${emojiRain.emojis.join('')}-${i}`}
+                  initial={{ y: -50, x: `${p.x}%`, opacity: 1, scale: p.scale }}
+                  animate={{ y: '110%', rotate: p.rotate }}
+                  transition={{ duration: p.duration, delay: p.delay, ease: 'easeIn' }}
+                  className="absolute"
+                  style={{ fontSize: `${p.fontSize}px`, willChange: 'transform' }}
+                >
+                  {emojiRain.emojis[p.emojiIndex]}
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* UI Badge Overlay */}
+        <AnimatePresence>
+          {uiBadge && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: uiBadge.position === 'bottom-center' ? 10 : -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              className={`absolute z-[25] pointer-events-none flex justify-center ${uiBadge.position === 'top-center' ? 'top-4 left-0 right-0' :
+                uiBadge.position === 'bottom-center' ? 'bottom-4 left-0 right-0' :
+                  'top-1/2 left-0 right-0 -translate-y-1/2'
+                }`}
+            >
+              <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border font-semibold tracking-wide shadow-lg ${uiBadge.color === 'purple' ? 'bg-purple-500/20 border-purple-500/40 text-purple-200 shadow-purple-500/10' :
+                uiBadge.color === 'green' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200 shadow-emerald-500/10' :
+                  uiBadge.color === 'cyan' ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-200 shadow-cyan-500/10' :
+                    'bg-blue-500/20 border-blue-500/40 text-blue-200 shadow-blue-500/10'
+                }`} style={{ fontSize: 'var(--text-sm)' }}>
+                {uiBadge.text}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Capture Genie Animation */}
+        <AnimatePresence>
+          {showCaptureAnim && (
+            <>
+              <motion.div
+                initial={{ opacity: 0.7 }}
+                animate={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 bg-white z-50 pointer-events-none"
+              />
+              <motion.div
+                initial={{
+                  top: '40%', left: '30%', width: '40%', height: '30%',
+                  borderRadius: '8px', opacity: 1,
+                }}
+                animate={{
+                  top: ['40%', '15%', '3%'],
+                  left: ['30%', '65%', '82%'],
+                  width: ['40%', '18%', '10%'],
+                  height: ['30%', '14%', '8%'],
+                  borderRadius: ['8px', '6px', '4px'],
+                  opacity: [1, 0.85, 0],
+                }}
+                transition={{
+                  duration: 0.55,
+                  ease: [0.4, 0, 0.2, 1],
+                  times: [0, 0.6, 1],
+                }}
+                className="absolute z-40 overflow-hidden shadow-2xl border border-white/30 pointer-events-none bg-neutral-800"
+              />
+            </>
+          )}
+        </AnimatePresence>
+
+
+        {/* Action Card Overlay */}
+        <AnimatePresence>
+          {livekit.actionCard && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="absolute bottom-4 left-4 right-4 z-40 bg-neutral-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-4"
+            >
+              <p className="text-white/90 font-medium mb-3" style={{ fontSize: 'var(--text-base)' }}>{livekit.actionCard.title}</p>
+              <div className="flex flex-wrap gap-2">
+                {livekit.actionCard.options.map((opt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleActionCardOption(opt)}
+                    className="px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-200 font-medium hover:bg-purple-500/30 transition-colors active:scale-95"
+                    style={{ fontSize: 'var(--text-sm)' }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => livekit.dismissActionCard()}
+                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center"
+              >
+                <X size={12} className="text-white/50" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Top Controls Area — floating glass overlay */}
+      <div className="safe-area-top absolute top-0 left-0 right-0 pb-2 px-6 flex justify-between items-center z-20 pointer-events-none">
+        <button
+          onClick={() => { play('nav.history'); onOpenHistory(); }}
+          className="p-2 rounded-full text-white/90 bg-white/10 backdrop-blur-md transition-colors pointer-events-auto active:scale-95"
+        >
+          <ArrowLeft size={22} strokeWidth={2.5} />
+        </button>
+
+        {/* AI Connection Signal — centered in top bar */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center justify-center pointer-events-auto">
+          <AnimatePresence mode="wait">
+            {connectionIcon === 'connecting' && (
+              <motion.div key="connecting" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
+                <Loader2 size={24} className="text-white animate-spin drop-shadow-md" />
+              </motion.div>
+            )}
+            {connectionIcon === 'connected' && (
+              <motion.div key="connected" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
+                <Wifi size={24} strokeWidth={2.5} className="text-green-400 drop-shadow-md" />
+              </motion.div>
+            )}
+            {connectionIcon === 'weak' && (
+              <motion.div key="weak" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
+                <Wifi size={24} strokeWidth={2.5} className="text-yellow-400 animate-pulse drop-shadow-md" />
+              </motion.div>
+            )}
+            {connectionIcon === 'offline' && (
+              <motion.div key="offline" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
+                <WifiOff size={24} strokeWidth={2.5} className="text-red-400/60 drop-shadow-md" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Flash / Flip camera controls */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Torch toggle (rear camera only) */}
+          {livekit.facingMode === 'environment' && (
+            <button
+              onClick={() => livekit.toggleTorch?.()}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                livekit.torchEnabled ? 'bg-yellow-400/20 text-yellow-300' : 'text-white/50 hover:text-white/80'
+              }`}
+            >
+              <Zap size={20} />
+            </button>
+          )}
+          {/* Camera flip */}
+          <button
+            onClick={() => livekit.switchCamera?.()}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-white/50 hover:text-white/80 transition-colors"
+          >
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Card + Bottom Controls — floating glass overlay */}
+      <div className="absolute bottom-0 left-0 right-0 z-30">
+        <div className="relative w-full flex items-start justify-center px-4 pt-1">
+          <AnimatePresence mode="wait">
+            {livekit.intentionText || editedIntention ? (
+              /* ── Intention Card: editable, replaces Card when agent sends intention ── */
+              <motion.div
+                key="intention-card"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                className="w-full max-w-[90%]"
+              >
+                <div className="bg-black/30 backdrop-blur-2xl rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Edit3 size={12} className="text-purple-400" />
+                    <span className="text-purple-400/80 font-medium tracking-wide uppercase" style={{ fontSize: 'var(--text-xs)' }}>
+                      Intention
+                    </span>
+                  </div>
+                  <textarea
+                    ref={intentionInputRef}
+                    value={editedIntention}
+                    onChange={(e) => {
+                      setEditedIntention(e.target.value);
+                      setIsIntentionEdited(true);
+                    }}
+                    placeholder="What should VI do with your photos?"
+                    rows={2}
+                    className="w-full bg-transparent text-white/90 font-medium leading-relaxed resize-none outline-none placeholder:text-white/30"
+                    style={{
+                      fontSize: 'var(--text-base)',
+                      textShadow: '0 1px 8px rgba(0,0,0,0.8)',
+                    }}
+                  />
+                </div>
+              </motion.div>
+            ) : (
+              /* ── Default Card: connection/agent status ── */
+              <motion.div key="status-card" className="h-28 flex items-start justify-center w-full">
+                <Card
+                  isVisible={showCard}
+                  text={cardText}
+                  isMicOn={isMicOn}
+                  agentStatus={livekit.infoBar?.status}
+                  hasAgent={!!livekit.agentIdentity}
+                  computedStatus={agentComputedStatus}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="w-full flex items-center justify-center px-6 py-4 gap-6">
+          {/* Mic Toggle */}
+          <button
+            onClick={handleMicToggle}
+            className={`w-14 h-14 rounded-full transition-all border flex items-center justify-center backdrop-blur-md active:scale-95 ${isMicOn
+              ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+              : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70 border-white/5'
+              }`}
+          >
+            {isMicOn ? <Mic size={22} strokeWidth={1.5} /> : <MicOff size={22} strokeWidth={1.5} />}
+          </button>
+
+          {/* Unified Shutter / Go Button */}
+          {(() => {
+            const hasMedia = capturedMedia.length > 0;
+            const agentAction = livekit.actionSuggestion?.action;
+            const glowAction = (agentAction && agentAction !== 'dispatch' && agentAction !== 'ready' && agentAction !== 'done') ? agentAction : null;
+            const glow = hasMedia ? ACTION_GLOW['dispatch'] : (ACTION_GLOW[glowAction] || null);
+            const glowBorder = glow ? glow.border : 'border-white/40';
+            const glowShadow = glow ? glow.shadow : 'none';
+            const ShutterIcon = hasMedia ? CheckCircle2 : ((glowAction && INTENT_ICONS[glowAction]) || ScanLine);
+
+            return (
+              <div className="relative">
+                <button
+                  onClick={hasMedia ? handleDone : handleShutterClick}
+                  onPointerDown={hasMedia ? undefined : handleShutterDown}
+                  onPointerUp={hasMedia ? undefined : handleShutterUp}
+                  onPointerLeave={() => { if (!isRecording) clearTimeout(longPressTimerRef.current); }}
+                  disabled={connectionIcon === 'offline' && !livekit.localVideoTrack}
+                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${
+                    isRecording ? 'border-red-500/50 scale-110' :
+                    hasMedia ? 'border-green-400/60' : glowBorder
+                  } active:scale-95 select-none touch-none disabled:opacity-30`}
+                  style={{ boxShadow: isRecording ? 'none' : glowShadow }}
+                >
+                  {isRecording ? (
+                    <div className="w-7 h-7 rounded-md bg-red-500 animate-pulse transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
+                  ) : (
+                    <div className={`w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] ${
+                      hasMedia ? 'bg-green-500' : 'bg-white'
+                    }`}>
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={hasMedia ? 'go' : (ShutterIcon.displayName || ShutterIcon.name || 'icon')}
+                          initial={{ opacity: 0, scale: 0.7 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.7 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <ShutterIcon
+                            size={28}
+                            strokeWidth={2}
+                            className={hasMedia ? 'text-white drop-shadow-sm' : 'text-black/70 drop-shadow-sm'}
+                          />
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Spacer — replaces old Done button slot */}
+          <div className="w-14 h-14" />
+        </div>
+        <div className="w-full h-2 md:h-8 shrink-0" />
+      </div>
+    </motion.div>
+  );
+}

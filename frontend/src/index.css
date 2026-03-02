@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --color-glass-bg: rgba(255, 255, 255, 0.1);
+  --color-glass-border: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Unified Typography System ── */
+:root {
+  /* Font Family */
+  --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* Font Size Scale */
+  --text-2xs: 9px;
+  /* badge counts */
+  --text-xs: 10px;
+  /* status labels, timestamps, meta */
+  --text-sm: 12px;
+  /* captions, small buttons */
+  --text-base: 14px;
+  /* body text, card content, inputs */
+  --text-lg: 16px;
+  /* card titles, sub-headings */
+  --text-xl: 18px;
+  /* secondary headings */
+  --text-2xl: 24px;
+  /* page headers */
+  --text-3xl: 32px;
+  /* main titles */
+
+  /* Letter Spacing */
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.01em;
+  --tracking-wider: 0.05em;
+
+  /* Line Height */
+  --leading-tight: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.8;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: #000;
+  color: white;
+  font-family: var(--font-primary);
+  font-size: var(--text-base);
+  letter-spacing: var(--tracking-wide);
+  line-height: var(--leading-normal);
+  /* Prevent iOS rubber-band scrolling */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
+}
+
+#root {
+  width: 100%;
+  height: 100dvh;
+  /* dynamic viewport: excludes Safari toolbars */
+  overflow: hidden;
+}
+
+/* Dynamic safe-area top padding — adapts to notch / Dynamic Island */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0.75rem);
+}
+
+@media (min-width: 768px) {
+  .safe-area-top {
+    padding-top: 3.5rem;
+    /* 56px — clears desktop phone simulator's Dynamic Island */
+  }
+
+  .below-top-controls {
+    top: calc(3.5rem + 52px) !important;
+  }
+
+  .below-top-signal {
+    top: calc(3.5rem + 48px) !important;
+  }
+}

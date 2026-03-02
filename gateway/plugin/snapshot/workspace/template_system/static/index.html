@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Output Components Demo</title>
+    <meta name="description" content="Interactive showcase of reusable output components">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/components.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: 'hsl(0 0% 100%)',
+                        foreground: 'hsl(222.2 84% 4.9%)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div class="text-center mb-16">
+            <h1 class="text-5xl font-bold text-gray-900 dark:text-white mb-4">Component Library Showcase</h1>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">Live examples of all available components from components.js</p>
+        </div>
+        <div id="showcase" class="space-y-12"></div>
+    </div>
+    <script>
+        const showcase = document.getElementById('showcase');
+        
+        // Section helper
+        function addSection(title, description) {
+            const section = document.createElement('div');
+            section.className = 'space-y-4';
+            const header = document.createElement('div');
+            header.className = 'border-b border-gray-300 dark:border-gray-700 pb-4 mb-6';
+            header.innerHTML = `
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">${title}</h2>
+                <p class="text-gray-600 dark:text-gray-400">${description}</p>
+            `;
+            section.appendChild(header);
+            showcase.appendChild(section);
+            return section;
+        }
+        
+        // 1. HEADER COMPONENT
+        let section = addSection('1. Header Component', 'Page headers with title and optional subtitle');
+        section.appendChild(Components.header('Welcome to the Dashboard', 'View your analytics and insights'));
+        section.appendChild(Components.header('Simple Header', ''));
+        
+        // 2. TEXT COMPONENT
+        section = addSection('2. Text Component', 'Display formatted text with optional markdown support');
+        section.appendChild(Components.text('This is a simple text component displaying regular content.'));
+        section.appendChild(Components.text('## Markdown Support\n\nYou can use **bold text**, *italic text*, and other markdown features.\n\n- List item 1\n- List item 2\n- List item 3', true));
+        
+        // 3. ALERT COMPONENT
+        section = addSection('3. Alert Component', 'Show notifications and messages with different types');
+        section.appendChild(Components.alert('This is an informational message', 'info'));
+        section.appendChild(Components.alert('Operation completed successfully!', 'success'));
+        section.appendChild(Components.alert('Please review this warning', 'warning'));
+        section.appendChild(Components.alert('An error occurred during processing', 'error'));
+        
+        // 4. CODE COMPONENT
+        section = addSection('4. Code Component', 'Display syntax-highlighted code with copy functionality');
+        section.appendChild(Components.code('python', 'def hello_world():\n    print("Hello, World!")\n    return True', true));
+        section.appendChild(Components.code('javascript', 'const greeting = "Hello";\nconsole.log(greeting + " World");', false));
+        
+        // 5. OPTION COMPONENT
+        section = addSection('5. Option Component', 'Selectable cards for choices and preferences');
+        section.appendChild(Components.option('option1', 'Basic Plan', '$9.99/month - Essential features for individuals', {price: 9.99, tier: 'basic'}));
+        section.appendChild(Components.option('option2', 'Pro Plan', '$19.99/month - Advanced features for professionals', {price: 19.99, tier: 'pro'}));
+        section.appendChild(Components.option('option3', 'Enterprise Plan', '$49.99/month - Full suite with priority support', {price: 49.99, tier: 'enterprise'}));
+        
+        // 6. BUTTON COMPONENT
+        section = addSection('6. Button Component', 'Action buttons with different variants');
+        const btnGroup1 = document.createElement('div');
+        btnGroup1.className = 'flex flex-wrap gap-3';
+        btnGroup1.appendChild(Components.button('Primary Button', 'primary_action', 'primary'));
+        btnGroup1.appendChild(Components.button('Secondary Button', 'secondary_action', 'secondary'));
+        btnGroup1.appendChild(Components.button('Outline Button', 'outline_action', 'outline'));
+        section.appendChild(btnGroup1);
+        
+        // 7. INPUT COMPONENT
+        section = addSection('7. Input Component', 'Form inputs with automatic callback handling');
+        section.appendChild(Components.input('name', 'Full Name', 'text', 'John Doe'));
+        section.appendChild(Components.input('email', 'Email Address', 'email', 'john@example.com'));
+        section.appendChild(Components.input('password', 'Password', 'password', ''));
+        section.appendChild(Components.input('age', 'Age', 'number', '0'));
+        
+        // 8. TABLE COMPONENT
+        section = addSection('8. Table Component', 'Display tabular data with columns and rows');
+        section.appendChild(Components.table(
+            [
+                {header: 'Product', key: 'product'},
+                {header: 'Category', key: 'category'},
+                {header: 'Price', key: 'price'},
+                {header: 'Stock', key: 'stock'}
+            ],
+            [
+                {product: 'Laptop', category: 'Electronics', price: '$999', stock: '15'},
+                {product: 'Mouse', category: 'Accessories', price: '$29', stock: '150'},
+                {product: 'Keyboard', category: 'Accessories', price: '$79', stock: '87'},
+                {product: 'Monitor', category: 'Electronics', price: '$349', stock: '42'}
+            ]
+        ));
+        
+        // 9. PRODUCT CARD COMPONENT
+        section = addSection('9. Product Card Component', 'Display products with images and details');
+        const productGrid = document.createElement('div');
+        productGrid.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6';
+        productGrid.appendChild(Components.productCard({
+            id: 'prod1',
+            name: 'Premium Headphones',
+            price: '$199.99',
+            image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=300&fit=crop',
+            description: 'High-quality wireless headphones with noise cancellation'
+        }));
+        productGrid.appendChild(Components.productCard({
+            id: 'prod2',
+            name: 'Smart Watch',
+            price: '$299.99',
+            image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=300&fit=crop',
+            description: 'Fitness tracking and notifications on your wrist'
+        }));
+        productGrid.appendChild(Components.productCard({
+            id: 'prod3',
+            name: 'Camera',
+            price: '$799.99',
+            image: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400&h=300&fit=crop',
+            description: 'Professional mirrorless camera with 4K video'
+        }));
+        section.appendChild(productGrid);
+        
+        // 10. LOADING COMPONENT
+        section = addSection('10. Loading Component', 'Show loading states with animated spinner');
+        section.appendChild(Components.loading('Loading data...'));
+        section.appendChild(Components.loading('Please wait while we process your request'));
+        
+        // 11. COMBINED EXAMPLE
+        section = addSection('11. Combined Example', 'Real-world scenario using multiple components');
+        section.appendChild(Components.header('Order Confirmation', 'Review your order details'));
+        section.appendChild(Components.alert('Your order has been received and is being processed', 'success'));
+        section.appendChild(Components.text('**Order Summary:**\n\nThank you for your purchase. Below are the details of your order.', true));
+        section.appendChild(Components.table(
+            [{header: 'Item', key: 'item'}, {header: 'Quantity', key: 'qty'}, {header: 'Total', key: 'total'}],
+            [{item: 'Product A', qty: '2', total: '$40'}, {item: 'Product B', qty: '1', total: '$25'}]
+        ));
+        const finalActions = document.createElement('div');
+        finalActions.className = 'flex gap-3 mt-6';
+        finalActions.appendChild(Components.button('Track Order', 'track_order', 'primary'));
+        finalActions.appendChild(Components.button('Continue Shopping', 'continue_shopping', 'outline'));
+        section.appendChild(finalActions);
+        
+        // Footer
+        const footer = document.createElement('div');
+        footer.className = 'mt-16 pt-8 border-t border-gray-200 dark:border-gray-700 text-center';
+        footer.innerHTML = `
+            <p class="text-gray-600 dark:text-gray-400 mb-2">
+                All components use the <code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded">components.js</code> library
+            </p>
+            <p class="text-sm text-gray-500 dark:text-gray-500">
+                See <code>components_library.md</code> for complete API documentation
+            </p>
+        `;
+        showcase.appendChild(footer);
+    </script>
+</body>
+</html>

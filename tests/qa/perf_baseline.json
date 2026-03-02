@@ -1,0 +1,59 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "created": "2026-02-28",
+    "description": "Performance baseline for VI-Agent QA. Auto-compared during test runs.",
+    "units": "milliseconds",
+    "threshold_multiplier": 1.5,
+    "note": "Tests FAIL if measured value > baseline × threshold_multiplier"
+  },
+  "backend": {
+    "health_latency_ms": 50,
+    "signup_latency_ms": 300,
+    "login_latency_ms": 200,
+    "me_latency_ms": 100,
+    "livekit_anonymous_token_ms": 500,
+    "livekit_auth_token_ms": 400,
+    "session_create_ms": 200,
+    "session_dispatch_ms": 200,
+    "session_complete_ms": 200,
+    "session_get_ms": 100,
+    "session_list_ms": 200,
+    "task_create_ms": 200,
+    "task_update_ms": 150,
+    "task_list_ms": 200,
+    "memory_create_ms": 200,
+    "memory_get_context_ms": 300,
+    "memory_list_ms": 200,
+    "memory_upsert_ms": 200,
+    "upload_presign_ms": 300,
+    "sse_first_heartbeat_ms": 35000,
+    "gateway_join_ms": 1000,
+    "gcs_presign_get_ms": 500
+  },
+  "browser": {
+    "page_load_dom_interactive_ms": 3000,
+    "agent_connection_ms": 5000,
+    "photo_capture_ms": 200,
+    "done_to_session_ms": 500,
+    "back_to_camera_ms": 500,
+    "view_transition_ms": 300
+  },
+  "agent_realtime": {
+    "agent_join_room_ms": 5000,
+    "greeting_received_ms": 10000,
+    "transcript_first_response_ms": 5000,
+    "task_dispatch_ack_ms": 3000,
+    "memory_write_on_disconnect_ms": 10000
+  },
+  "agent_gemini_flash": {
+    "first_html_chunk_ms": 3000,
+    "stream_complete_ms": 15000,
+    "total_e2e_ms": 20000
+  },
+  "agent_nanoclaw": {
+    "first_chunk_ms": 5000,
+    "stream_complete_ms": 30000,
+    "total_e2e_ms": 40000
+  }
+}

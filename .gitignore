@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build output
+dist/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Vite
+*.local
+
+# Docker
+docker-compose.override.yml
+
+# Claude Code session artifacts
+.claude/drive/
