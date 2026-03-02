@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "2.1.1"
+version: "2.2.0"
 ---
 
 # /team — Init + Dashboard (Teamwork v2)

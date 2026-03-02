@@ -1,3 +1,8 @@
+---
+description: "Create mission Issue from natural language. Try: /team-issue help"
+version: "2.2.0"
+---
+
 # /team-issue — Create Mission Contract Issue
 
 > Turn natural language into a standardized GitHub Issue (mission-contract format).
