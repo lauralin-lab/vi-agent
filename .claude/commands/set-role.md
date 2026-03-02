@@ -14,7 +14,37 @@ description: 设置角色身份。每个成员第一次进来先 /set-role 注�
 
 ## 执行流程
 
-### Step 1: 识别身份
+### Step 1: 检查 Skill 版本
+
+**在做任何其他事情之前，先检查用户本地的 skill 是否最新。**
+
+```bash
+.claude/check-skills.sh
+```
+
+根据输出判断：
+
+- `status=ok` → 一切正常，继续
+- `status=missing` → 用户从未安装过 skill，输出：
+  ```
+  ⚠️  你的本地 skill 尚未安装。请先运行：
+     .claude/install.sh
+  ```
+  **停止执行，等用户安装后重新运行 `/set-role`。**
+- `status=stale` → skill 指向了其他来源（不是本 repo），输出：
+  ```
+  ⚠️  你的本地 skill 链接到了其他位置，建议重新安装以使用本项目的最新版本：
+     .claude/install.sh
+  ```
+  用 AskUserQuestion 让用户选择是否立即安装。
+- `status=outdated` → skill 版本落后于 repo（git pull 后 skill 文件更新了但 fingerprint 没刷新），输出：
+  ```
+  ⚠️  你的 skill 版本落后于仓库最新版本。请重新安装：
+     .claude/install.sh
+  ```
+  用 AskUserQuestion 让用户选择是否立即安装。
+
+### Step 2: 识别身份
 
 ```bash
 git config user.name
@@ -22,7 +52,7 @@ git config user.name
 
 读取 `.teamspace/config.yml`，在 `members` 列表中匹配。
 
-### Step 2: 分支 — 已有成员 vs 新成员
+### Step 3: 分支 — 已有成员 vs 新成员
 
 #### 已有成员
 

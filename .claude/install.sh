@@ -102,9 +102,36 @@ install_symlink() {
 install_symlink "$SCRIPT_DIR/hooks/notify.sh" "$CLAUDE_DIR/notify.sh"
 install_symlink "$SCRIPT_DIR/hooks/question-relay-hook.sh" "$CLAUDE_DIR/question-relay-hook.sh"
 
+# ─── Install skills (user-level) ───
+
+print_header "Step 2: Install Skills"
+
+print_info "User-level skills: drive, architect, self-drive, improve-user"
+print_info "These are symlinked from the repo so 'git pull' keeps them up to date."
+
+COMMANDS_DST="$CLAUDE_DIR/commands"
+mkdir -p "$COMMANDS_DST"
+
+for skill in drive.md architect.md self-drive.md improve-user.md; do
+  install_symlink "$SCRIPT_DIR/skills/$skill" "$COMMANDS_DST/$skill"
+done
+
+# Write installed version fingerprint for freshness checks
+md5_cmd="md5sum"
+if command -v md5 &>/dev/null; then
+  md5_cmd="md5 -q"
+fi
+
+SKILL_VERSION=""
+for skill in drive.md architect.md self-drive.md improve-user.md; do
+  SKILL_VERSION+="$($md5_cmd "$SCRIPT_DIR/skills/$skill" 2>/dev/null | awk '{print $1}')  $skill"$'\n'
+done
+echo "$SKILL_VERSION" > "$CLAUDE_DIR/.skill-versions"
+print_step "Skill version fingerprint written"
+
 # ─── Install sounds ───
 
-print_header "Step 2: Install Sound Effects"
+print_header "Step 3: Install Sound Effects"
 
 SOUNDS_SRC="$SCRIPT_DIR/sounds"
 SOUNDS_DST="$CLAUDE_DIR/sounds"
@@ -129,7 +156,7 @@ fi
 
 # ─── Install messaging scripts ───
 
-print_header "Step 3: Install Messaging Scripts"
+print_header "Step 4: Install Messaging Scripts"
 
 for script in slack-send.py slack-listen.py slack-poll.py slack-question-relay.py telegram-send.py telegram-poll.py; do
   install_symlink "$SCRIPT_DIR/messaging/$script" "$CLAUDE_DIR/$script"
@@ -146,7 +173,7 @@ fi
 
 # ─── Configure settings.json ───
 
-print_header "Step 4: Configure Claude Settings"
+print_header "Step 5: Configure Claude Settings"
 
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 
@@ -216,7 +243,7 @@ fi
 
 # ─── Shell configuration ───
 
-print_header "Step 5: Shell Configuration"
+print_header "Step 6: Shell Configuration"
 
 SHELL_NAME=$(basename "$SHELL")
 if [ "$SHELL_NAME" = "zsh" ]; then
@@ -254,19 +281,27 @@ fi
 
 print_header "Installation Complete"
 
-echo -e "  ${BOLD}Auto-discovered skills (from .claude/commands/):${NC}"
-echo -e "    ${GREEN}/drive${NC}         — Hierarchical swarm execution"
-echo -e "    ${GREEN}/self-drive${NC}    — Perpetual improvement loop"
-echo -e "    ${GREEN}/architect${NC}     — System architecture design"
-echo -e "    ${GREEN}/improve-user${NC}  — Cognitive coaching"
+echo -e "  ${BOLD}Team lifecycle skills (project-level, auto-discovered):${NC}"
+echo -e "    ${GREEN}/set-role${NC}       — Register identity, link to teamspace"
+echo -e "    ${GREEN}/get-mission${NC}    — Pull Mission Contract from board"
+echo -e "    ${GREEN}/complete-mission${NC} — QA, PR, merge, board cleanup"
 echo ""
-echo -e "  ${BOLD}Project resources:${NC}"
-echo -e "    ${GREEN}pantheon/${NC}       — 1000+ greatest minds (reasoning reference)"
+echo -e "  ${BOLD}Dev tools (user-level, symlinked to ~/.claude/commands/):${NC}"
+echo -e "    ${GREEN}/drive${NC}          — Hierarchical swarm execution"
+echo -e "    ${GREEN}/self-drive${NC}     — Perpetual improvement loop"
+echo -e "    ${GREEN}/architect${NC}      — System architecture design"
+echo -e "    ${GREEN}/improve-user${NC}   — Cognitive coaching"
 echo ""
 echo -e "  ${BOLD}Installed to ~/.claude/:${NC}"
-echo -e "    Hooks (notify, question-relay), sounds (5 mp3), messaging (Slack/Telegram)"
+echo -e "    Skills (symlinked), hooks, sounds, messaging (Slack/Telegram)"
 echo ""
 echo -e "  ${BOLD}Quick start:${NC}"
-echo -e "    ${CYAN}/drive${NC}                     → autonomous swarm execution"
-echo -e "    ${CYAN}/self-drive${NC}                → autonomous improvement loop"
+echo -e "    ${CYAN}/set-role${NC}                  → register + see your status"
+echo -e "    ${CYAN}/get-mission${NC}               → pull your next task"
+echo -e "    ${CYAN}/drive${NC}                     → execute with full autonomy"
+echo -e "    ${CYAN}/complete-mission${NC}           → ship it to main"
+echo ""
+echo -e "  ${BOLD}Skill updates:${NC}"
+echo -e "    Skills are symlinked from the repo. Run ${CYAN}git pull${NC} to get latest versions."
+echo -e "    If skills are stale, Claude will prompt you to re-run ${CYAN}.claude/install.sh${NC}"
 echo ""

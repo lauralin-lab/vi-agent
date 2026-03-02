@@ -96,6 +96,21 @@ Each worktree gets its own ports via `.env` — no conflicts between Roles:
 
 `scripts/setup-worktree.sh` handles this automatically.
 
+## Skill 版本检查（主动执行）
+
+**每次新会话开始时**，如果用户要开始工作（不只是聊天），主动运行：
+
+```bash
+.claude/check-skills.sh
+```
+
+如果返回非 `status=ok`，**立即提醒用户更新**，然后再继续其他操作。
+不要等用户问、不要跳过。更新命令：`.claude/install.sh`
+
+用户级 skill（`/drive`, `/architect`, `/self-drive`, `/improve-user`）的最新版本
+存储在 `.claude/skills/` 目录。`git pull` 会拉取最新版，但需要 `install.sh`
+刷新 symlink 和 fingerprint。
+
 ## Code Standards
 
 - Commit: `type(scope): description`
