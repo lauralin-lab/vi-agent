@@ -16,24 +16,32 @@
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 
   /* Font Size Scale */
-  --text-2xs: 9px;   /* badge counts */
-  --text-xs:  10px;  /* status labels, timestamps, meta */
-  --text-sm:  12px;  /* captions, small buttons */
-  --text-base: 14px; /* body text, card content, inputs */
-  --text-lg:  16px;  /* card titles, sub-headings */
-  --text-xl:  18px;  /* secondary headings */
-  --text-2xl: 24px;  /* page headers */
-  --text-3xl: 32px;  /* main titles */
+  --text-2xs: 9px;
+  /* badge counts */
+  --text-xs: 10px;
+  /* status labels, timestamps, meta */
+  --text-sm: 12px;
+  /* captions, small buttons */
+  --text-base: 14px;
+  /* body text, card content, inputs */
+  --text-lg: 16px;
+  /* card titles, sub-headings */
+  --text-xl: 18px;
+  /* secondary headings */
+  --text-2xl: 24px;
+  /* page headers */
+  --text-3xl: 32px;
+  /* main titles */
 
   /* Letter Spacing */
-  --tracking-tight:  -0.01em;
-  --tracking-normal:  0em;
-  --tracking-wide:    0.01em;
-  --tracking-wider:   0.05em;
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.01em;
+  --tracking-wider: 0.05em;
 
   /* Line Height */
-  --leading-tight:   1.3;
-  --leading-normal:  1.5;
+  --leading-tight: 1.3;
+  --leading-normal: 1.5;
   --leading-relaxed: 1.8;
 }
 
@@ -58,7 +66,8 @@ body {
 
 #root {
   width: 100%;
-  height: 100dvh; /* dynamic viewport: excludes Safari toolbars */
+  height: 100dvh;
+  /* dynamic viewport: excludes Safari toolbars */
   overflow: hidden;
 }
 
@@ -69,7 +78,8 @@ body {
 
 @media (min-width: 768px) {
   .safe-area-top {
-    padding-top: 3.5rem; /* 56px — clears desktop phone simulator's Dynamic Island */
+    padding-top: 3.5rem;
+    /* 56px — clears desktop phone simulator's Dynamic Island */
   }
 
   .below-top-controls {
@@ -128,8 +138,15 @@ body {
 
 /* ═══ Teenage Engineering dial animation ═══ */
 @keyframes te-pulse {
-  0%, 100% { opacity: 0.4; }
-  50%       { opacity: 0.8; }
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .te-pulse {
@@ -138,8 +155,17 @@ body {
 
 /* ═══ Shutter breathe — subtle idle pulse like a real camera ═══ */
 @keyframes shutter-breathe {
-  0%, 100% { transform: scale(1);    opacity: 0.06; }
-  50%      { transform: scale(1.04); opacity: 0.12; }
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.06;
+  }
+
+  50% {
+    transform: scale(1.04);
+    opacity: 0.12;
+  }
 }
 
 .shutter-breathe {
@@ -148,8 +174,13 @@ body {
 
 /* ═══ Shimmer — scanning line glow ═══ */
 @keyframes shimmer-line {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(100%);  }
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 .shimmer-line {
@@ -158,9 +189,19 @@ body {
 
 /* ═══ Float drift — media stack idle wobble ═══ */
 @keyframes float-drift {
-  0%, 100% { transform: translateY(0)   rotate(0deg);   }
-  33%      { transform: translateY(-2px) rotate(0.5deg); }
-  66%      { transform: translateY(1px)  rotate(-0.3deg);}
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  33% {
+    transform: translateY(-2px) rotate(0.5deg);
+  }
+
+  66% {
+    transform: translateY(1px) rotate(-0.3deg);
+  }
 }
 
 .float-drift {
@@ -169,8 +210,15 @@ body {
 
 /* ═══ Pulse ring — shutter radial burst ═══ */
 @keyframes pulse-ring {
-  0%   { transform: scale(1);   opacity: 0.4; }
-  100% { transform: scale(1.6); opacity: 0;   }
+  0% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
 }
 
 .pulse-ring {
@@ -179,8 +227,13 @@ body {
 
 /* ═══ Bar fill — breakdown bar entrance ═══ */
 @keyframes bar-fill {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* ═══ Focus ring — monochromatic ═══ */

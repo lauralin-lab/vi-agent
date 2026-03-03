@@ -24,18 +24,14 @@ import { IFRAME_DESIGN_CSS } from './iframeDesignSystem';
 
 // ── Toast Component ──
 function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 1500);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
+  useEffect(() => { const t = setTimeout(onDone, 2000); return () => clearTimeout(t); }, [onDone]);
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 text-white/90 font-medium shadow-lg"
-      style={{ fontSize: 'var(--text-sm)' }}
+      initial={{ opacity: 0, y: 20, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.9 }}
+      className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] px-5 py-2.5 rounded-full font-medium shadow-lg"
+      style={{ fontSize: 'var(--text-sm)', background: '#000', color: '#fff' }}
     >
       {message}
     </motion.div>
@@ -202,8 +198,8 @@ function ActiveHtmlBlock({ block, onAction, streamingChunks }) {
 function HtmlBlock({ block, onAction, isActive, streamingChunks, isPlaceholder }) {
   if (isPlaceholder) {
     return (
-      <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-        <span className="text-white/20" style={{ fontSize: 'var(--text-xs)' }}>Content rendered earlier</span>
+      <div className="px-3 py-2" style={{ borderRadius: 16, background: '#fff', border: '1px solid rgba(0,0,0,0.04)' }}>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.2)' }}>Content rendered earlier</span>
       </div>
     );
   }
@@ -269,20 +265,21 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
       >
         <button
           onClick={onToggle}
-          className="w-full text-left px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.06] transition-colors"
+          className="w-full text-left px-4 py-3 hover:bg-black/[0.02] transition-colors"
+          style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.04)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
         >
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-white/70 font-medium truncate" style={{ fontSize: 'var(--text-sm)' }}>
+              <p className="font-medium truncate" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.6)' }}>
                 {title}
               </p>
               {summary && (
-                <p className="text-white/30 truncate mt-0.5" style={{ fontSize: 'var(--text-xs)' }}>
+                <p className="truncate mt-0.5" style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.25)' }}>
                   {summary}
                 </p>
               )}
             </div>
-            <ChevronDown size={14} className="text-white/20 shrink-0" />
+            <ChevronDown size={14} style={{ color: 'rgba(0,0,0,0.15)' }} className="shrink-0" />
           </div>
         </button>
       </motion.div>
@@ -301,8 +298,8 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
       {!isLatest && isDone && (
         <button
           onClick={onToggle}
-          className="flex items-center gap-1 mb-1.5 text-white/20 hover:text-white/40 transition-colors"
-          style={{ fontSize: 'var(--text-xs)' }}
+          className="flex items-center gap-1 mb-1.5 hover:opacity-70 transition-colors"
+          style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.25)' }}
         >
           <ChevronUp size={12} />
           <span>Collapse</span>
@@ -404,44 +401,45 @@ function ConversationPill({ messages }) {
     >
       <AnimatePresence mode="wait">
         {expanded ? (
-          // Inline chat — last 3-5 messages
           <motion.div
             key="expanded"
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="bg-neutral-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden max-h-[280px]"
+            className="backdrop-blur-xl overflow-hidden max-h-[280px]"
+            style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.1)' }}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+            <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
               <div className="flex items-center gap-2">
-                <MessageCircle size={14} className="text-white/30" />
-                <span className="text-white/40 font-medium" style={{ fontSize: 'var(--text-xs)' }}>
+                <MessageCircle size={14} style={{ color: 'rgba(0,0,0,0.25)' }} />
+                <span className="font-medium" style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.35)' }}>
                   Conversation
                 </span>
               </div>
               <button
                 onClick={() => { setExpanded(false); setVisible(false); }}
-                className="p-1 rounded-full hover:bg-white/10 transition-colors"
+                className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
               >
-                <X size={14} className="text-white/30" />
+                <X size={14} style={{ color: 'rgba(0,0,0,0.25)' }} />
               </button>
             </div>
-
-            {/* Messages */}
             <div className="overflow-y-auto px-4 py-3 space-y-2.5" style={{ maxHeight: '220px' }}>
               {recentMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={msg.role === 'user' ? 'flex justify-end' : ''}
-                >
+                <div key={msg.id} className={msg.role === 'user' ? 'flex justify-end' : ''}>
                   <p
                     className={msg.role === 'user'
-                      ? 'bg-purple-500/20 border border-purple-500/20 rounded-2xl px-3 py-1.5 text-white/90 font-light max-w-[85%]'
-                      : 'text-white/70 font-light'
+                      ? 'rounded-2xl px-3 py-1.5 font-light max-w-[85%]'
+                      : 'font-light'
                     }
-                    style={{ fontSize: 'var(--text-sm)', lineHeight: 'var(--leading-relaxed)' }}
+                    style={{
+                      fontSize: 'var(--text-sm)',
+                      lineHeight: 'var(--leading-relaxed)',
+                      ...(msg.role === 'user'
+                        ? { background: 'rgba(0,0,0,0.06)', color: 'rgba(0,0,0,0.7)' }
+                        : { color: 'rgba(0,0,0,0.55)' }
+                      ),
+                    }}
                   >
                     {msg.content}
                   </p>
@@ -450,7 +448,6 @@ function ConversationPill({ messages }) {
             </div>
           </motion.div>
         ) : (
-          // Floating pill — single latest message
           <motion.div
             key="pill"
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -460,24 +457,26 @@ function ConversationPill({ messages }) {
             onClick={() => setExpanded(true)}
             className="cursor-pointer"
           >
-            <div className="bg-neutral-900/90 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl px-4 py-2.5 flex items-center gap-2.5">
+            <div className="backdrop-blur-xl px-4 py-2.5 flex items-center gap-2.5"
+              style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}
+            >
               {latestMsg?.role === 'user' ? (
                 <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-                  <p className="text-white/50 font-light truncate flex-1" style={{ fontSize: 'var(--text-sm)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                  <p className="font-light truncate flex-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.4)' }}>
                     Heard: &ldquo;{latestMsg.content.slice(0, 40)}{latestMsg.content.length > 40 ? '...' : ''}&rdquo;
                   </p>
                 </>
               ) : (
                 <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
-                  <p className="text-white/70 font-light truncate flex-1" style={{ fontSize: 'var(--text-sm)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#000' }} />
+                  <p className="font-light truncate flex-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.55)' }}>
                     {latestMsg?.content?.slice(0, 60)}{(latestMsg?.content?.length || 0) > 60 ? '...' : ''}
                   </p>
                 </>
               )}
               {messages.length > 1 && (
-                <span className="text-white/20 shrink-0" style={{ fontSize: 'var(--text-2xs)' }}>
+                <span className="shrink-0" style={{ fontSize: 'var(--text-2xs)', color: 'rgba(0,0,0,0.2)' }}>
                   {messages.length}
                 </span>
               )}
@@ -496,7 +495,6 @@ function ConversationPill({ messages }) {
 
 function ActionBar({ actionCard, onSelect }) {
   if (!actionCard || !actionCard.options?.length) return null;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -506,7 +504,7 @@ function ActionBar({ actionCard, onSelect }) {
       className="px-4 pb-2"
     >
       {actionCard.title && (
-        <p className="text-white/30 mb-1.5 font-medium" style={{ fontSize: 'var(--text-xs)' }}>
+        <p className="mb-1.5 font-medium" style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.3)' }}>
           {actionCard.title}
         </p>
       )}
@@ -515,8 +513,8 @@ function ActionBar({ actionCard, onSelect }) {
           <button
             key={i}
             onClick={() => onSelect(option)}
-            className="shrink-0 px-4 py-2 rounded-full bg-white/[0.06] border border-white/[0.08] text-white/70 hover:bg-white/10 hover:text-white/90 transition-all active:scale-95"
-            style={{ fontSize: 'var(--text-sm)' }}
+            className="shrink-0 px-4 py-2 rounded-full hover:opacity-80 transition-all active:scale-95"
+            style={{ fontSize: 'var(--text-sm)', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', color: 'rgba(0,0,0,0.6)' }}
           >
             {option}
           </button>
@@ -533,20 +531,13 @@ function ActionBar({ actionCard, onSelect }) {
 
 function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut }) {
   const [showProgress, setShowProgress] = useState(false);
-
   useEffect(() => {
-    if (hasCanvasContent || sessionTimedOut) {
-      setShowProgress(false);
-      return;
-    }
+    if (hasCanvasContent || sessionTimedOut) { setShowProgress(false); return; }
     const timer = setTimeout(() => setShowProgress(true), 4000);
     return () => clearTimeout(timer);
   }, [hasCanvasContent, sessionTimedOut]);
-
   if (!showProgress) return null;
-
   const message = taskProgress?.message || infoBar?.message || 'Analyzing...';
-
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
@@ -554,9 +545,9 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
       exit={{ opacity: 0, scale: 0.9 }}
       className="flex items-center justify-center gap-2.5 py-8"
     >
-      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] border border-white/[0.06]">
-        <Loader2 size={14} className="text-purple-400 animate-spin" />
-        <span className="text-white/40 font-light" style={{ fontSize: 'var(--text-sm)' }}>
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.04)' }}>
+        <Loader2 size={14} className="animate-spin" style={{ color: 'rgba(0,0,0,0.3)' }} />
+        <span className="font-light" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.35)' }}>
           {message}
         </span>
       </div>
@@ -1142,57 +1133,47 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
-      className="w-full h-full bg-black flex flex-col relative z-50"
+      className="w-full h-full flex flex-col relative z-50"
+      style={{ background: '#fff' }}
     >
       {/* Header */}
       <div className="safe-area-top w-full flex items-center px-4 pb-2 shrink-0 relative z-10">
         <button
           onClick={() => { play('nav.back'); onBack(); }}
-          className="p-2 rounded-full bg-white/5 text-white hover:bg-white/10 transition-colors z-10"
+          className="p-2 rounded-full hover:bg-black/[0.04] transition-colors z-10"
+          style={{ color: 'rgba(0,0,0,0.4)' }}
         >
           <ChevronLeft size={22} />
         </button>
-        <h1 className="absolute left-0 right-0 text-center text-white/90 font-semibold tracking-wide pointer-events-none" style={{ fontSize: 'var(--text-base)' }}>
+        <h1 className="absolute left-0 right-0 text-center font-semibold tracking-wide pointer-events-none" style={{ fontSize: 'var(--text-base)', color: '#000' }}>
           {getShortTitle(livekit?.sessionHeader?.title || intention)}
         </h1>
       </div>
 
-      {/* Photo Gallery — shrinks to centered thumbnail on scroll */}
+      {/* Photo Gallery — simple rounded image */}
       {images.length > 0 && (
-        <div
-          className="w-full shrink-0 relative overflow-hidden"
-          style={{
-            zIndex: 5,
-            height: scrolledDown ? '64px' : 'clamp(200px, 33vh, 300px)',
-            transition: 'height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
-        >
-          {/* Expanded: full carousel */}
+        <div className="px-4 pb-3 shrink-0" style={{ zIndex: 5 }}>
           <div
-            style={{
-              opacity: scrolledDown ? 0 : 1,
-              pointerEvents: scrolledDown ? 'none' : 'auto',
-              transition: 'opacity 0.2s ease',
-              position: 'absolute',
-              inset: 0,
-            }}
+            className="relative overflow-hidden"
+            style={{ borderRadius: 24, border: '1px solid rgba(0,0,0,0.04)' }}
           >
+            {/* Carousel scroller */}
             <div
               ref={imageScrollerRef}
               onScroll={handleImageScroll}
-              className="w-full overflow-x-auto no-scrollbar h-full"
+              className="w-full overflow-x-auto no-scrollbar"
               style={{
                 scrollSnapType: 'x mandatory',
                 scrollbarWidth: 'none',
                 WebkitOverflowScrolling: 'touch',
               }}
             >
-              <div className="flex h-full" style={{ width: `${images.length * 100}%` }}>
+              <div className="flex" style={{ width: `${images.length * 100}%` }}>
                 {images.map((img, i) => (
                   <div
                     key={i}
-                    className="h-full relative"
-                    style={{ width: `${100 / images.length}%`, scrollSnapAlign: 'start' }}
+                    className="relative"
+                    style={{ width: `${100 / images.length}%`, scrollSnapAlign: 'start', aspectRatio: '4/3' }}
                   >
                     <img
                       src={img.src}
@@ -1205,20 +1186,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               </div>
             </div>
 
-            {/* Gradient fade at bottom */}
-            <div
-              className="absolute bottom-0 left-0 right-0 pointer-events-none"
-              style={{ height: '60px', background: 'linear-gradient(to bottom, transparent, black)' }}
-            />
-
             {/* Photo counter badge */}
             {images.length > 1 && (
               <div
-                className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-sm border border-white/10"
-                style={{ fontSize: 'var(--text-xs)' }}
+                className="absolute top-3 right-3 px-2.5 py-1 rounded-full backdrop-blur-sm"
+                style={{ fontSize: 'var(--text-xs)', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.06)' }}
               >
-                <span className="text-white/80 font-medium">{activeImageIndex + 1}</span>
-                <span className="text-white/40"> / {images.length}</span>
+                <span className="font-medium" style={{ color: 'rgba(0,0,0,0.7)' }}>{activeImageIndex + 1}</span>
+                <span style={{ color: 'rgba(0,0,0,0.3)' }}> / {images.length}</span>
               </div>
             )}
 
@@ -1236,48 +1211,11 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
                     }}
                     className={`rounded-full transition-all duration-300 ${i === activeImageIndex
                       ? 'w-6 h-1.5 bg-white/90'
-                      : 'w-1.5 h-1.5 bg-white/30 hover:bg-white/50'
+                      : 'w-1.5 h-1.5 bg-white/50 hover:bg-white/70'
                       }`}
                   />
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* Collapsed: centered thumbnail */}
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{
-              opacity: scrolledDown ? 1 : 0,
-              pointerEvents: scrolledDown ? 'auto' : 'none',
-              transition: 'opacity 0.2s ease',
-            }}
-          >
-            <div
-              className="rounded-xl overflow-hidden border border-white/10 shadow-lg"
-              style={{
-                width: '52px',
-                height: '52px',
-                transform: scrolledDown ? 'scale(1)' : 'scale(0.5)',
-                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-              onClick={() => {
-                scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-            >
-              <img
-                src={images[activeImageIndex]?.src || images[0]?.src}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            </div>
-            {images.length > 1 && (
-              <span
-                className="ml-2 text-white/40 font-medium"
-                style={{ fontSize: 'var(--text-xs)' }}
-              >
-                +{images.length - 1}
-              </span>
             )}
           </div>
         </div>
@@ -1328,20 +1266,20 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
 
         {/* Empty state — no canvas content and timed out */}
         {canvasBlocks.length === 0 && !hasCanvasContent && sessionTimedOut && (
-          <div className="flex flex-col items-center justify-center py-20 text-white/20">
-            <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-3">
-              <X size={24} className="text-red-400/60" />
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(255,59,48,0.08)' }}>
+              <X size={24} style={{ color: 'rgba(255,59,48,0.5)' }} />
             </div>
-            <p className="font-light text-red-300/60" style={{ fontSize: 'var(--text-base)' }}>Connection issue</p>
-            <p className="mt-1 text-white/10" style={{ fontSize: 'var(--text-sm)' }}>Go back and try again</p>
+            <p className="font-light" style={{ fontSize: 'var(--text-base)', color: 'rgba(255,59,48,0.6)' }}>Connection issue</p>
+            <p className="mt-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.2)' }}>Go back and try again</p>
           </div>
         )}
 
         {/* Empty canvas — waiting state (before progress pill kicks in) */}
         {canvasBlocks.length === 0 && !sessionTimedOut && (
-          <div className="flex flex-col items-center justify-center py-20 text-white/20">
-            <Sparkles size={28} className="mb-3 animate-pulse" />
-            <p className="font-light" style={{ fontSize: 'var(--text-sm)' }}>Waiting for results...</p>
+          <div className="flex flex-col items-center justify-center py-20">
+            <Sparkles size={28} className="mb-3 animate-pulse" style={{ color: 'rgba(0,0,0,0.15)' }} />
+            <p className="font-light" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.25)' }}>Waiting for results...</p>
           </div>
         )}
       </div>
@@ -1367,13 +1305,13 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         {chatImages.length > 0 && (
           <div className="flex gap-2 mb-2 px-5">
             {chatImages.map((img, i) => (
-              <div key={i} className="relative w-14 h-14 rounded-xl overflow-hidden border border-white/10">
+              <div key={i} className="relative w-14 h-14 overflow-hidden" style={{ borderRadius: 14, border: '1px solid rgba(0,0,0,0.06)' }}>
                 <img src={img.preview} alt="" className="w-full h-full object-cover" />
                 <button
                   onClick={() => setChatImages(prev => prev.filter((_, j) => j !== i))}
-                  className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-black/80 flex items-center justify-center"
+                  className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}
                 >
-                  <X size={10} className="text-white/60" />
+                  <X size={10} className="text-white" />
                 </button>
               </div>
             ))}
@@ -1388,22 +1326,23 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="absolute bottom-full left-4 mb-2 bg-neutral-900/95 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden shadow-2xl"
+              className="absolute bottom-full left-4 mb-2 backdrop-blur-xl overflow-hidden shadow-2xl"
+              style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
             >
               <button
                 onClick={() => { setShowAddMenu(false); onAddPhoto?.(); }}
-                className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-white/5 transition-colors"
+                className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-black/[0.02] transition-colors"
               >
-                <Camera size={18} className="text-white/60" />
-                <span className="text-white/80" style={{ fontSize: 'var(--text-base)' }}>Take Photo</span>
+                <Camera size={18} style={{ color: 'rgba(0,0,0,0.4)' }} />
+                <span style={{ fontSize: 'var(--text-base)', color: 'rgba(0,0,0,0.7)' }}>Take Photo</span>
               </button>
-              <div className="h-px bg-white/5" />
+              <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <button
                 onClick={() => { setShowAddMenu(false); fileInputRef.current?.click(); }}
-                className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-white/5 transition-colors"
+                className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-black/[0.02] transition-colors"
               >
-                <ImageIcon size={18} className="text-white/60" />
-                <span className="text-white/80" style={{ fontSize: 'var(--text-base)' }}>Choose from Album</span>
+                <ImageIcon size={18} style={{ color: 'rgba(0,0,0,0.4)' }} />
+                <span style={{ fontSize: 'var(--text-base)', color: 'rgba(0,0,0,0.7)' }}>Choose from Album</span>
               </button>
             </motion.div>
           )}
@@ -1414,13 +1353,16 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
           {/* + button */}
           <button
             onClick={() => setShowAddMenu(prev => !prev)}
-            className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all ${showAddMenu ? 'bg-white/15 text-white/80 rotate-45' : 'bg-white/[0.06] text-white/40 hover:bg-white/10'}`}
+            className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all ${showAddMenu ? 'rotate-45' : ''}`}
+            style={{ background: showAddMenu ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)', color: showAddMenu ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.3)' }}
           >
             <Plus size={20} />
           </button>
 
           {/* Text input with inline mic */}
-          <div className="flex-1 flex items-center bg-white/[0.06] backdrop-blur-xl rounded-2xl border border-white/[0.08] px-3 py-2.5 gap-2 min-h-[44px]">
+          <div className="flex-1 flex items-center backdrop-blur-xl px-3 py-2.5 gap-2 min-h-[44px]"
+            style={{ borderRadius: 22, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+          >
             <input
               ref={chatInputRef}
               type="text"
@@ -1428,13 +1370,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               onChange={e => setChatText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
               placeholder="Ask anything..."
-              className="flex-1 bg-transparent text-white/90 placeholder:text-white/25 outline-none font-light min-w-0"
-              style={{ fontSize: 'var(--text-base)' }}
+              className="flex-1 bg-transparent outline-none font-light min-w-0"
+              style={{ fontSize: 'var(--text-base)', color: '#000', '::placeholder': { color: 'rgba(0,0,0,0.25)' } }}
             />
             {/* Mic button */}
             <button
               onClick={() => livekit?.toggleMic?.()}
-              className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${livekit?.isMicEnabled ? 'bg-purple-500/30 text-purple-300' : 'bg-white/10 text-white/40'}`}
+              className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all"
+              style={{ background: livekit?.isMicEnabled ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)', color: livekit?.isMicEnabled ? '#000' : 'rgba(0,0,0,0.3)' }}
             >
               {livekit?.isMicEnabled ? <Mic size={16} /> : <MicOff size={16} />}
             </button>
@@ -1444,7 +1387,8 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
           <button
             onClick={handleSendMessage}
             disabled={!chatText.trim() && chatImages.length === 0}
-            className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all ${(chatText.trim() || chatImages.length > 0) ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-white/[0.06] text-white/20'}`}
+            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all"
+            style={{ background: (chatText.trim() || chatImages.length > 0) ? '#000' : 'rgba(0,0,0,0.04)', color: (chatText.trim() || chatImages.length > 0) ? '#fff' : 'rgba(0,0,0,0.15)' }}
           >
             <ArrowUp size={20} />
           </button>
