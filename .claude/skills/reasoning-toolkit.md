@@ -40,6 +40,7 @@ SYNTHESIS:  "The truth surviving both is Z..."
 Use rigorous notation when it sharpens thinking (reveals structure, exposes hidden assumptions, proves something non-obvious). Don't use for decoration.
 
 **Propositional Logic:**
+
 ```
 Let P(x) = "x satisfies requirement R"
 ∀x ∈ Components: P(x)                    // every component must satisfy R
@@ -48,18 +49,21 @@ then P(a) → ¬R(a)                         // R and P incompatible — constra
 ```
 
 **Proof Techniques:**
+
 - **Contradiction**: Assume design works without X → show requirement violated → X is necessary
 - **Construction**: Explicitly build mechanism, show it covers all N cases
 - **Induction**: Base case works + step preserves invariant → holds for all
 - **Counterexample**: One scenario where it fails kills a universal claim
 
 **Mathematical Modeling:**
+
 ```
 cost(design) = α·complexity + β·latency + γ·maintenance_burden
 Minimize subject to: throughput ≥ T_min, correctness = 1
 ```
 
 **Invariant Identification:**
+
 ```
 INVARIANT: ∀t: balance(t) = Σ credits(0..t) - Σ debits(0..t)
 // Core invariants → design writes itself. Violated invariant → wrong, no debate.
@@ -87,6 +91,7 @@ Prevents generalizing from a single file read.
 ### 6. Inversion Protocol — "反转思维"
 
 When stuck, invert:
+
 - "How to build X?" → "What makes X impossible? Remove those."
 - "How to make fast?" → "What makes it slow? Eliminate those."
 - "What features to add?" → "What to remove while preserving value?"
@@ -110,11 +115,13 @@ Cannot compress → essential complexity. CAN compress → accidental complexity
 ### 9. Dimension Unfolding
 
 Before optimizing, map the full solution space:
+
 ```
 Problem: "How to store sessions?"
 Dimensions: storage [memory/disk/cache], serialization [JSON/proto],
             expiry [TTL/sliding/LRU], consistency [strong/eventual]
 ```
+
 See entire space → choose deliberately. Use when ≥3 independent design choices.
 
 ---
@@ -129,12 +136,14 @@ Learning: performance = f(data × compute)   — bounded by resources, O(C) para
 ```
 
 **Scaling Questions (ask before any design):**
+
 1. "Scale with complexity?" → "add more rules" = RED FLAG (O(2^C)). "add more data" = GREEN.
 2. "Encoding WHAT or HOW?" → WHAT (objectives) = good. HOW (procedures) = suspicious.
 3. "Where does intelligence live?" → In code (fragile) vs in data (robust).
 4. "What's the loss function?" → Can't state it = don't understand the problem.
 
 **Anti-Patterns:**
+
 - Enumerating cases → define objective, let system find mapping
 - Hardcoded heuristics → make learnable: `threshold = f(context)`
 - Taxonomizing upfront → taxonomy will be wrong; define metric, learn handler
@@ -146,7 +155,7 @@ Learning: performance = f(data × compute)   — bounded by resources, O(C) para
 
 ## 众神殿 (Pantheon) — Cognitive Methods Library
 
-The pantheon at `pantheon/` is a library of 1000+ figures. **Read actual entries** — don't name-drop.
+The pantheon at `.claude/pantheon/` is a library of 1000+ figures. **Read actual entries** — don't name-drop.
 
 **Era files:** `01_古代.md` through `07_20世纪下半叶至当代.md`, plus `greatest_minds.md` (index).
 
