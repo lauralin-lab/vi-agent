@@ -86,6 +86,8 @@ export default function LiveCameraView({
   const [capturedMedia, setCapturedMedia] = useState([]);
   const capturedMediaRef = useRef(capturedMedia);
   capturedMediaRef.current = capturedMedia;
+  // Track pending upload promises so handleDone can wait for them
+  const uploadPromisesRef = useRef([]);
   const [showGallery, setShowGallery] = useState(false);
   const [isStackExpanded, setIsStackExpanded] = useState(false);
   const stackLongPressRef = useRef(null);
@@ -269,49 +271,57 @@ export default function LiveCameraView({
 
   // ── Upload photo to S3 and update media entry with public URL ──
   const uploadToS3 = useCallback(async (dataUrl) => {
-    try {
-      setStackStatus('UPLOADING');
-      const publicUrl = await api.uploadDataUrl(dataUrl);
-      // Update the media entry matching this src with the S3 URL
-      setCapturedMedia(prev => prev.map(item =>
-        item.src === dataUrl ? { ...item, s3Url: publicUrl } : item
-      ));
-      setStackStatus('ANALYZING');
-      setTimeout(() => {
+    const promise = (async () => {
+      try {
+        setStackStatus('UPLOADING');
+        const publicUrl = await api.uploadDataUrl(dataUrl);
+        // Update the media entry matching this src with the S3 URL
+        setCapturedMedia(prev => prev.map(item =>
+          item.src === dataUrl ? { ...item, s3Url: publicUrl } : item
+        ));
+        setStackStatus('ANALYZING');
+        setTimeout(() => {
+          setStackStatus('READY');
+          setTimeout(() => setStackStatus('IDLE'), 1500);
+        }, 1200);
+        console.log('[S3] Photo uploaded:', publicUrl);
+        return publicUrl;
+      } catch (err) {
+        console.error('[S3] Upload failed:', err);
         setStackStatus('READY');
         setTimeout(() => setStackStatus('IDLE'), 1500);
-      }, 1200);
-      console.log('[S3] Photo uploaded:', publicUrl);
-      return publicUrl;
-    } catch (err) {
-      console.error('[S3] Upload failed:', err);
-      setStackStatus('READY');
-      setTimeout(() => setStackStatus('IDLE'), 1500);
-      return null;
-    }
+        return null;
+      }
+    })();
+    uploadPromisesRef.current.push(promise);
+    return promise;
   }, []);
 
   // ── Upload video blob to S3 ──
   const uploadVideoToS3 = useCallback(async (blob, ext, thumbnailSrc) => {
-    try {
-      setStackStatus('UPLOADING');
-      const publicUrl = await api.uploadBlob(blob, ext);
-      setCapturedMedia(prev => prev.map(item =>
-        item.src === thumbnailSrc ? { ...item, s3Url: publicUrl } : item
-      ));
-      setStackStatus('ANALYZING');
-      setTimeout(() => {
+    const promise = (async () => {
+      try {
+        setStackStatus('UPLOADING');
+        const publicUrl = await api.uploadBlob(blob, ext);
+        setCapturedMedia(prev => prev.map(item =>
+          item.src === thumbnailSrc ? { ...item, s3Url: publicUrl } : item
+        ));
+        setStackStatus('ANALYZING');
+        setTimeout(() => {
+          setStackStatus('READY');
+          setTimeout(() => setStackStatus('IDLE'), 1500);
+        }, 1200);
+        console.log('[S3] Video uploaded:', publicUrl);
+        return publicUrl;
+      } catch (err) {
+        console.error('[S3] Video upload failed:', err);
         setStackStatus('READY');
         setTimeout(() => setStackStatus('IDLE'), 1500);
-      }, 1200);
-      console.log('[S3] Video uploaded:', publicUrl);
-      return publicUrl;
-    } catch (err) {
-      console.error('[S3] Video upload failed:', err);
-      setStackStatus('READY');
-      setTimeout(() => setStackStatus('IDLE'), 1500);
-      return null;
-    }
+        return null;
+      }
+    })();
+    uploadPromisesRef.current.push(promise);
+    return promise;
   }, []);
 
   // ── Photo capture from real video stream ──
@@ -502,7 +512,7 @@ export default function LiveCameraView({
   useEffect(() => {
     doneClickedRef.current = false;
   }, []);
-  const handleDone = () => {
+  const handleDone = async () => {
     if (doneClickedRef.current) return;
     doneClickedRef.current = true;
     play('camera.shutter');
@@ -514,33 +524,21 @@ export default function LiveCameraView({
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
 
-    // Collect already-uploaded S3 URLs
-    const readyUrls = capturedMedia.filter(m => m.s3Url).map(m => m.s3Url);
-    const pendingCount = capturedMedia.filter(m => !m.s3Url).length;
+    // Capture sendDispatch ref before potential unmount
+    const dispatch = livekit.sendDispatch;
 
-    if (pendingCount === 0) {
-      // All uploads done — dispatch immediately
-      livekit.sendDispatch(finalIntention, readyUrls);
-    } else {
-      // Some uploads still pending — dispatch with ready URLs now,
-      // then re-dispatch with all URLs once uploads finish (max 8s wait)
-      livekit.sendDispatch(finalIntention, readyUrls);
-
-      // Poll briefly for remaining uploads to complete (use ref to avoid stale closure)
-      let attempts = 0;
-      const pollUploads = setInterval(() => {
-        attempts++;
-        const current = capturedMediaRef.current;
-        const allUrls = current.filter(m => m.s3Url).map(m => m.s3Url);
-        if (allUrls.length >= current.length || attempts >= 16) {
-          clearInterval(pollUploads);
-          // Re-dispatch only if we got more URLs
-          if (allUrls.length > readyUrls.length) {
-            livekit.sendDispatch(finalIntention, allUrls);
-          }
-        }
-      }, 500);
+    // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
+    const pendingPromises = [...uploadPromisesRef.current];
+    if (pendingPromises.length > 0) {
+      await Promise.race([
+        Promise.allSettled(pendingPromises),
+        new Promise(resolve => setTimeout(resolve, 10000)),
+      ]);
     }
+
+    // Collect all successfully uploaded S3 URLs
+    const allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
+    dispatch(finalIntention, allUrls);
   };
 
   // ── Action card option handler ──

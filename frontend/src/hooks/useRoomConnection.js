@@ -358,41 +358,47 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
   // State for camera facing
   const [facingMode, setFacingMode] = useState('environment');
   const [torchEnabled, setTorchEnabled] = useState(false);
+  const facingModeRef = useRef('environment');
+  const switchingRef = useRef(false);
 
   // Switch between front and back camera
   const switchCamera = useCallback(async () => {
-    if (!roomRef.current) return;
-    const newFacing = facingMode === 'environment' ? 'user' : 'environment';
+    if (!roomRef.current || switchingRef.current) return;
+    switchingRef.current = true;
+    const newFacing = facingModeRef.current === 'environment' ? 'user' : 'environment';
     try {
-      // Create new track FIRST so there's no blank gap
-      const [newTrack] = await createLocalTracks({
-        audio: false,
-        video: {
-          facingMode: { exact: newFacing },
-          resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, frameRate: CAMERA_FPS },
-        },
-      });
-
-      // Now unpublish and stop the old track
+      // Stop old track FIRST to release camera hardware (required on many mobile devices)
       const currentTrack = roomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
       if (currentTrack?.track) {
         await roomRef.current.localParticipant.unpublishTrack(currentTrack.track);
         currentTrack.track.stop();
       }
 
-      // Publish the new track and update state immediately
+      // Create new track with preferred (not exact) facingMode for better compatibility
+      const [newTrack] = await createLocalTracks({
+        audio: false,
+        video: {
+          facingMode: newFacing,
+          resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, frameRate: CAMERA_FPS },
+        },
+      });
+
+      // Publish the new track and update state
       await roomRef.current.localParticipant.publishTrack(newTrack);
       setLocalVideoTrack(newTrack);
+      facingModeRef.current = newFacing;
       setFacingMode(newFacing);
       setTorchEnabled(false);
     } catch (e) {
       console.warn('[LiveKit] Camera switch failed:', e.message);
+    } finally {
+      switchingRef.current = false;
     }
-  }, [roomRef, facingMode]);
+  }, [roomRef]);
 
   // Toggle torch (flashlight) — only works on rear camera
   const toggleTorch = useCallback(async () => {
-    if (facingMode !== 'environment') return;
+    if (facingModeRef.current !== 'environment') return;
     const currentTrack = roomRef.current?.localParticipant.getTrackPublication(Track.Source.Camera);
     const mediaTrack = currentTrack?.track?.mediaStreamTrack;
     if (!mediaTrack) return;
