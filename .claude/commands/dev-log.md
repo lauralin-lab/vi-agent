@@ -4,7 +4,7 @@
 
 ## 配置
 
-- **服务器 IP**: `34.56.23.173`
+- **服务器 IP**: `34.172.9.61`
 - **管理员 SSH Key**: `~/.ssh/gcp_ssh_key`
 - **管理员用户**: `liyasong`
 
@@ -36,11 +36,11 @@
 
 ```bash
 # 查看指定实例的日志
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
+ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
   "cd /opt/vi-agent/instances/<NAME> && docker compose logs --tail <LINES> <SERVICE> 2>&1"
 
 # 如果是 default 实例
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.56.23.173 \
+ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
   "cd /opt/vi-agent && docker compose logs --tail <LINES> <SERVICE> 2>&1"
 ```
 

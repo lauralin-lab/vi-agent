@@ -105,7 +105,7 @@
     "status": "running"
   },
   "next_slot": 2,
-  "server_ip": "34.56.23.173",
+  "server_ip": "34.172.9.61",
   "max_slots": 9
 }
 ```

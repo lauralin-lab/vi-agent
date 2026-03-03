@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import get_db, get_redis
 from ..models import Session, User
 from ..services.memory_center import memory_center
-from ..services.gcs_service import GCS_BUCKET, get_gcs_bucket
+from ..services.gcs_service import GCS_BUCKET, get_gcs_bucket, get_signing_kwargs
 from ..services.session_center import session_center
 
 logger = logging.getLogger(__name__)
@@ -483,6 +483,7 @@ async def presign_get_urls(body: PresignGetRequest):
                 version="v4",
                 expiration=timedelta(hours=1),
                 method="GET",
+                **get_signing_kwargs(),
             )
             result[url] = signed
         except Exception:

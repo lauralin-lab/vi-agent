@@ -3,7 +3,7 @@
 # 真实运行时状态以服务器端 /opt/vi-agent/registry.json 为准
 
 server:
-  ip: "34.56.23.173"
+  ip: "34.172.9.61"
   machine_type: e2-standard-4
   zone: us-central1-c
   project_id: excellent-nexus-488404-c8

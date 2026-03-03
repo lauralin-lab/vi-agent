@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..deps import get_current_user_or_device
 from ..limiter import limiter
-from ..services.gcs_service import GCS_BUCKET, get_gcs_bucket
+from ..services.gcs_service import GCS_BUCKET, get_gcs_bucket, get_signing_kwargs
 
 router = APIRouter()
 
@@ -52,12 +52,14 @@ async def get_presigned_upload_url(
         key = f"{GCS_PREFIX}{date_prefix}/{file_id}.{ext}"
 
         blob = bucket.blob(key)
+        signing = get_signing_kwargs()
 
         presigned_url = blob.generate_signed_url(
             version="v4",
             expiration=timedelta(minutes=5),
             method="PUT",
             content_type=content_type,
+            **signing,
         )
 
         # Generate a signed GET URL so the object is accessible without
@@ -67,6 +69,7 @@ async def get_presigned_upload_url(
             version="v4",
             expiration=timedelta(days=7),
             method="GET",
+            **signing,
         )
 
         return {

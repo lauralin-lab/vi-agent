@@ -1,5 +1,6 @@
 ---
-description: "Ship your completed mission — push, create PR with Issue linking, check CI, clean up Contract. The delivery step."
+description: "Ship mission → PR. Try: /team-ship help"
+version: "2.3.0"
 ---
 
 # /team-ship — Deliver Mission
@@ -16,12 +17,36 @@ description: "Ship your completed mission — push, create PR with Issue linking
 | `done` | Post-merge cleanup (close Issue, update labels, clean worktree) |
 | `review` | AI code review on current PR |
 | `sync` | Rebase current branch on main |
+| `help` or `-h` | Show usage guide |
 
 ---
 
 ## Route by Argument
 
 Parse `$ARGUMENTS`:
+- If `help` or `-h` → output the following and **STOP**:
+
+```
+/team-ship — Deliver your mission
+
+USAGE:
+  /team-ship            Push + create PR + CI check + cleanup
+  /team-ship done       After PR merge: close Issue, update labels, clean worktree
+  /team-ship review     AI review current PR (correctness/security/architecture/quality)
+  /team-ship sync       Rebase current branch on latest main
+
+SHIP FLOW:
+  1. Pre-flight: verify branch, sub-tasks done, tests pass
+  2. Push branch to GitHub
+  3. Create PR with "Closes #N" (auto-closes Issue on merge)
+  4. Watch CI (if configured)
+  5. Request review (if configured)
+  6. Clean up local Contract, label Issue status:review
+
+AFTER MERGE:
+  /team-ship done closes the Issue, labels status:done, returns to main.
+```
+
 - If `done` → jump to **Operation Done**
 - If `review` → jump to **Operation Review**
 - If `sync` → jump to **Operation Sync**
@@ -69,6 +94,7 @@ ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
 
 - If no Contract found AND no `.mission` file → "No active mission. Nothing to ship." → **STOP**
 - If no Contract but `.mission` exists → use Issue number from `.mission` to locate Contract or fetch Issue directly.
+- **Worktree fallback**: If in worktree mode and Contract not found locally, check the main repo's `$TEAMWORK_DIR/active/` directory (parent of worktree path).
 - If multiple Contracts found → "Multiple active contracts found. Keep one, remove the rest." → **STOP**
 
 Read the Contract file fully. Extract from YAML frontmatter:
@@ -197,7 +223,15 @@ Determine commit type from the Contract title/objective:
 
 Capture the PR number and URL from the output.
 
-### 4d: Add labels
+### 4d: Post PR comment to Issue
+
+```bash
+gh issue comment {issue} --body "📦 PR #{pr-number} created — {pr-url}"
+```
+
+Non-fatal: if comment fails, warn but continue.
+
+### 4e: Add labels
 
 ```bash
 gh pr edit {pr-number} --add-label "status:review"
@@ -299,7 +333,8 @@ Next steps:
 Locate the Issue number from (in priority order):
 1. Active Contract (`$TEAMWORK_DIR/active/MISSION-*.md` frontmatter)
 2. `.mission` file (worktree mode)
-3. Current branch name (extract from `mission/{issue}-{slug}`)
+3. Current branch name — extract first numeric segment after `/` (works for both `mission/42-slug` and `bugfix/T-044-slug` patterns)
+4. `$ARGUMENTS` — if user passes `done #42` or `done 42`
 
 If no Issue found → "Cannot determine Issue. Provide Issue number: `/team-ship done #42`" → **STOP**
 

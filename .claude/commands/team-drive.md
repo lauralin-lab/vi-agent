@@ -1,5 +1,6 @@
 ---
-description: "Execute your claimed mission using drive methodology. Reads your Mission Contract and enters execution mode."
+description: "Execute mission from Contract. Try: /team-drive help"
+version: "2.3.0"
 ---
 
 # /team-drive — Execute Mission
@@ -7,6 +8,29 @@ description: "Execute your claimed mission using drive methodology. Reads your M
 > Read your Mission Contract, enter drive-like execution, and work through sub-tasks systematically.
 
 **User input**: $ARGUMENTS
+
+If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
+
+```
+/team-drive — Execute your claimed mission
+
+USAGE:
+  /team-drive           Read Contract, execute sub-tasks with verify loop
+
+WHAT HAPPENS:
+  1. Reads your Mission Contract (.teamwork/active/MISSION-N.md)
+  2. Verifies you're on the correct branch
+  3. For each unchecked sub-task:
+     — Read context files → implement → run tests → commit
+     — Checks off sub-task in Contract with timestamp
+  4. After all sub-tasks: verify acceptance criteria + self-review
+  5. Can be interrupted — progress saved via checkboxes
+
+PREREQUISITES:
+  Run /team-claim first to generate a Contract.
+
+NEXT: /team-ship to deliver via PR
+```
 
 ---
 
@@ -31,6 +55,7 @@ fi
 
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
 - If in worktree mode (`WORKTREE_MODE=true`) → no branch switching needed in Step 1.
+- **Worktree note**: Contract should be in `$TEAMWORK_DIR/active/` within the worktree (copied during `/team-claim`). If not found but `.mission` exists, look for the Contract in the main repo parent directory as fallback.
 
 ```bash
 ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
@@ -51,6 +76,49 @@ Extract from body:
 - **Acceptance Criteria**
 - **Context Files**
 - **Test Command**
+
+---
+
+## Step 0b: Issue Freshness Check
+
+Check whether the Issue has been modified since the Contract was generated.
+
+```bash
+# Fetch current Issue content
+ISSUE_DATA=$(gh issue view {issue} --json title,body 2>/dev/null)
+```
+
+- If `gh issue view` fails (network error, offline) → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
+
+If fetch succeeds:
+
+```bash
+# Compute hash of current Issue content
+CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f1)
+# Compare with Contract's issue_content_hash
+CONTRACT_HASH=$(grep 'issue_content_hash:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
+```
+
+If `issue_content_hash` is not in Contract (pre-v2.3.0 Contract) → skip check, continue.
+
+If `CURRENT_HASH ≠ CONTRACT_HASH`:
+
+Display the current Issue body to the user:
+```
+⚠ ISSUE UPDATED since claim
+═══════════════════════════════════════
+The Issue description has changed since you generated this Contract.
+
+Current Issue body:
+──────────────────────────────────────
+{current Issue body}
+──────────────────────────────────────
+```
+
+Use `AskUserQuestion`:
+- "Update Contract?" → Re-extract Objective, Sub-tasks, Acceptance Criteria from new body. Update `issue_content_hash`. Preserve Context Files and AI Notes (locally generated).
+- "Continue with current Contract" → proceed without changes
+- "Abort" → **STOP**
 
 ---
 
@@ -132,7 +200,8 @@ After completing a sub-task, update the Contract file:
 
 ### 3f: Commit
 ```bash
-git add -A
+# Stage only files modified for this sub-task (avoid git add -A which stages everything)
+git add {specific files changed for this sub-task}
 git commit -m "{type}({scope}): {description} | Mission: #{issue}"
 ```
 
@@ -169,8 +238,10 @@ All tests must pass.
 ### 4c: Self-review
 Read through all changes made during this session:
 ```bash
-git log --oneline mission/{issue}..HEAD
-git diff main...HEAD --stat
+# Use the branch name from Contract frontmatter (not hardcoded)
+BASE_BRANCH=$(grep 'base_branch:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' || echo "main")
+git log --oneline ${BASE_BRANCH}..HEAD
+git diff ${BASE_BRANCH}...HEAD --stat
 ```
 
 Check for:
@@ -181,7 +252,15 @@ Check for:
 
 Fix any issues found.
 
-### 4d: Update Contract AI Notes
+### 4d: Post completion comment to Issue
+
+```bash
+gh issue comment {issue} --body "✅ All sub-tasks complete — ready for review. Branch: \`{branch}\`"
+```
+
+Non-fatal: if comment fails, warn but continue.
+
+### 4e: Update Contract AI Notes
 Add execution notes to the Contract's **AI Notes** section:
 ```markdown
 ## AI Notes
