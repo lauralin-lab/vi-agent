@@ -215,22 +215,22 @@ summary::marker { color: rgba(0, 0, 0, 0.3); }
   gap: 8px;
   padding: 0.55em 1.1em;
   border-radius: 14px;
-  border: 1px solid var(--glass-border);
-  background: var(--card-bg);
-  color: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--glass-border) !important;
+  background: var(--card-bg) !important;
+  color: rgba(0, 0, 0, 0.6) !important;
   font-weight: 500;
   font-size: var(--text-sm);
   cursor: pointer;
   transition: all 0.2s;
 }
-.vi-btn:hover { background: var(--glass-hover); }
+.vi-btn:hover { background: var(--glass-hover) !important; }
 .vi-btn:active { transform: scale(0.97); }
 .vi-btn-primary {
-  background: #000;
-  border-color: #000;
-  color: #fff;
+  background: #000 !important;
+  border-color: #000 !important;
+  color: #fff !important;
 }
-.vi-btn-primary:hover { background: rgba(0, 0, 0, 0.85); }
+.vi-btn-primary:hover { background: rgba(0, 0, 0, 0.85) !important; }
 .vi-accent-bar {
   height: 2px;
   background: rgba(0, 0, 0, 0.08);
