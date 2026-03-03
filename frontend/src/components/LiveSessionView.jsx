@@ -1058,7 +1058,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // ── Scroll handling ──
   const handleContentScroll = useCallback(() => {
     if (scrollContainerRef.current) {
-      setScrolledDown(scrollContainerRef.current.scrollTop > 30);
+      const st = scrollContainerRef.current.scrollTop;
+      // Hysteresis: enter scrolled at >30, exit only near top (<5)
+      // Prevents gallery height oscillation feedback loop
+      setScrolledDown(prev => prev ? st >= 5 : st > 30);
     }
   }, []);
 
