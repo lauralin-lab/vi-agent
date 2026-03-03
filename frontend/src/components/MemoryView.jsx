@@ -1,87 +1,63 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronLeft, Edit3, Trash2, Save, X, FileText, Loader2
+  ChevronLeft, Edit3, Trash2, Save, X, Loader2, SlidersHorizontal
 } from 'lucide-react';
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
 
-// Layer config
-const LAYERS = [
-  { key: null, label: 'All' },
+const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
+
+const SORT_OPTIONS = [
+  { key: 'updated', label: 'Last Updated' },
   { key: 'identity', label: 'Identity' },
   { key: 'semantic', label: 'Semantic' },
   { key: 'episodic', label: 'Episodic' },
 ];
 
-const LAYER_COLORS = {
-  identity: 'text-amber-400',
-  semantic: 'text-blue-400',
-  episodic: 'text-green-400',
-};
-
-// ── Memory File Card ──
-const MemoryCard = memo(function MemoryCard({ file, onEdit, onDelete, onView }) {
-  const layerColor = LAYER_COLORS[file.layer] || 'text-white/40';
+// ── Memory Block Card (like the reference image) ──
+const MemoryCard = memo(function MemoryCard({ file, onEdit, onDelete, onView, index }) {
+  const layerLabel = (file.layer || 'semantic').charAt(0).toUpperCase() + (file.layer || 'semantic').slice(1);
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12, scale: 0.95 }}
-      className="bg-white/[0.04] border border-white/[0.08] rounded-2xl overflow-hidden"
+      transition={{ delay: index * 0.04, ...IOS_SPRING }}
+      onClick={() => onView(file)}
+      className="cursor-pointer active:scale-[0.98] transition-transform"
+      style={{
+        background: '#fff',
+        borderRadius: 28,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
+        overflow: 'hidden',
+        padding: '20px 22px',
+      }}
     >
-      <button
-        onClick={() => onView(file)}
-        className="w-full text-left p-4 active:bg-white/5 transition-colors"
+      {/* Layer tag — like the date tag in reference image */}
+      <span
+        className="font-medium"
+        style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)' }}
       >
-        <div className="flex items-center gap-2 mb-2">
-          <FileText size={14} className="text-purple-400 shrink-0" />
-          <span className="text-white/90 font-medium truncate" style={{ fontSize: 'var(--text-base)' }}>{file.filename}</span>
-          <span className="ml-auto text-white/20 shrink-0" style={{ fontSize: 'var(--text-xs)' }}>
-            {formatDate(file.updated_at)}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`${layerColor} font-medium`} style={{ fontSize: 'var(--text-xs)' }}>
-            {file.layer || 'semantic'}
-          </span>
-          {file.importance != null && (
-            <div className="flex items-center gap-1">
-              <div className="w-12 h-1 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-purple-500/60 rounded-full"
-                  style={{ width: `${Math.round((file.importance || 0) * 100)}%` }}
-                />
-              </div>
-              <span className="text-white/15" style={{ fontSize: '10px' }}>
-                {Math.round((file.importance || 0) * 100)}
-              </span>
-            </div>
-          )}
-        </div>
-        {file.preview && (
-          <p className="text-white/40 line-clamp-2 leading-relaxed" style={{ fontSize: 'var(--text-sm)' }}>{file.preview}</p>
-        )}
-      </button>
-      <div className="flex border-t border-white/[0.06]">
-        <button
-          onClick={() => onEdit(file)}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
-          style={{ fontSize: 'var(--text-sm)' }}
-        >
-          <Edit3 size={12} /> Edit
-        </button>
-        <div className="w-px bg-white/[0.06]" />
-        <button
-          onClick={() => onDelete(file)}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-white/30 hover:text-red-400 hover:bg-red-500/5 transition-all"
-          style={{ fontSize: 'var(--text-sm)' }}
-        >
-          <Trash2 size={12} /> Delete
-        </button>
-      </div>
+        {layerLabel}
+      </span>
+
+      {/* Title / filename — big bold like reference */}
+      <p
+        className="font-bold leading-snug mt-1 line-clamp-2"
+        style={{ fontSize: 22, color: '#000', letterSpacing: '-0.01em' }}
+      >
+        {file.filename?.replace(/\.md$/, '').replace(/[-_]/g, ' ') || file.filename}
+      </p>
+
+      {/* Preview text */}
+      {file.preview && (
+        <p className="line-clamp-2 leading-relaxed mt-2" style={{ fontSize: 15, color: 'rgba(0,0,0,0.4)' }}>
+          {file.preview}
+        </p>
+      )}
     </motion.div>
   );
 });
@@ -103,19 +79,20 @@ function formatDate(isoStr) {
 export default function MemoryView({ onBack, livekit }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeLayer, setActiveLayer] = useState(null);  // null = all
-  const [viewing, setViewing] = useState(null);       // { filename, content, updated_at, layer, ... }
-  const [editing, setEditing] = useState(null);        // { filename, content, isNew }
+  const [viewing, setViewing] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [editContent, setEditContent] = useState('');
   const [editFilename, setEditFilename] = useState('');
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(null);      // filename to confirm delete
+  const [deleting, setDeleting] = useState(null);
+  const [sortBy, setSortBy] = useState('updated');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const textareaRef = useRef(null);
 
   // Load memory files
   const loadFiles = useCallback(async () => {
     try {
-      const data = await api.listMemory(activeLayer);
+      const data = await api.listMemory(null);
       setFiles(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to load memories:', e);
@@ -123,20 +100,18 @@ export default function MemoryView({ onBack, livekit }) {
     } finally {
       setLoading(false);
     }
-  }, [activeLayer]);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     loadFiles();
   }, [loadFiles]);
 
-  // Listen for memory_updated data channel events
   useEffect(() => {
     if (!livekit?.memoryUpdatedAt) return;
     loadFiles();
   }, [livekit?.memoryUpdatedAt, loadFiles]);
 
-  // View a memory file
   const handleView = useCallback(async (file) => {
     try {
       const data = await api.getMemory(file.filename);
@@ -146,7 +121,6 @@ export default function MemoryView({ onBack, livekit }) {
     }
   }, []);
 
-  // Start editing
   const handleEdit = useCallback(async (file) => {
     try {
       const data = await api.getMemory(file.filename);
@@ -159,9 +133,6 @@ export default function MemoryView({ onBack, livekit }) {
     }
   }, []);
 
-
-
-  // Save
   const handleSave = useCallback(async () => {
     const fname = editFilename.trim();
     if (!fname || !editContent.trim()) return;
@@ -179,7 +150,6 @@ export default function MemoryView({ onBack, livekit }) {
     }
   }, [editFilename, editContent, loadFiles]);
 
-  // Delete
   const handleDelete = useCallback(async (file) => {
     setDeleting(file.filename);
   }, []);
@@ -196,6 +166,22 @@ export default function MemoryView({ onBack, livekit }) {
     }
   }, [deleting, viewing, loadFiles]);
 
+  // Sort/filter files
+  const sortedFiles = (() => {
+    let result = [...files];
+    // If a type is selected, filter by that layer
+    if (['identity', 'semantic', 'episodic'].includes(sortBy)) {
+      result = result.filter(f => (f.layer || 'semantic') === sortBy);
+    }
+    // Always sort by last updated
+    result.sort((a, b) => {
+      const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return tb - ta;
+    });
+    return result;
+  })();
+
   // ── Edit Mode ──
   if (editing) {
     return (
@@ -204,20 +190,22 @@ export default function MemoryView({ onBack, livekit }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="w-full h-full bg-black text-white flex flex-col"
+        className="w-full h-full flex flex-col"
+        style={{ background: '#F2F2F7' }}
       >
-        {/* Header */}
-        <div className="shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,20px)] pb-3 border-b border-white/[0.06]">
-          <button onClick={() => setEditing(null)} className="p-1.5 -ml-1.5 rounded-full hover:bg-white/10 transition-colors">
-            <X size={20} className="text-white/60" />
+        <div className="shrink-0 flex items-center gap-3 px-5 pt-[env(safe-area-inset-top,20px)] pb-3"
+          style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <button onClick={() => setEditing(null)} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
+            <X size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
           </button>
-          <span className="text-white/90 font-medium flex-1 truncate" style={{ fontSize: 'var(--text-base)' }}>
+          <span className="font-semibold flex-1 truncate" style={{ fontSize: 16, color: '#000' }}>
             {editing.isNew ? 'New Memory File' : editing.filename}
           </span>
           <button
             onClick={handleSave}
             disabled={saving || !editFilename.trim() || !editContent.trim()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500 text-white font-medium disabled:opacity-40 active:scale-95 transition-all" style={{ fontSize: 'var(--text-sm)' }}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold disabled:opacity-40 active:scale-95 transition-all"
+            style={{ fontSize: 13, background: '#000', color: '#fff' }}
           >
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
             Save
@@ -225,30 +213,34 @@ export default function MemoryView({ onBack, livekit }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {/* Filename input */}
           {editing.isNew && (
             <div>
-              <label className="text-white/40 mb-1 block" style={{ fontSize: 'var(--text-sm)' }}>Filename</label>
+              <label className="mb-1 block font-medium" style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>Filename</label>
               <input
                 value={editFilename}
                 onChange={e => setEditFilename(e.target.value)}
                 placeholder="memory-name.md"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/40"
-                style={{ fontSize: 'var(--text-base)' }}
+                className="w-full px-4 py-3 focus:outline-none"
+                style={{
+                  fontSize: 16, color: '#000', background: '#fff', borderRadius: 20,
+                  border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
+                }}
               />
             </div>
           )}
-
-          {/* Content editor */}
           <div className="flex-1">
-            <label className="text-white/40 mb-1 block" style={{ fontSize: 'var(--text-sm)' }}>Content (Markdown)</label>
+            <label className="mb-1 block font-medium" style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>Content (Markdown)</label>
             <textarea
               ref={textareaRef}
               value={editContent}
               onChange={e => setEditContent(e.target.value)}
               placeholder="Write your memory content..."
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/40 resize-none"
-              style={{ minHeight: '300px', fontSize: 'var(--text-base)', fontFamily: 'var(--font-mono)' }}
+              className="w-full px-4 py-3 focus:outline-none resize-none"
+              style={{
+                minHeight: 300, fontSize: 16, color: '#000', background: '#fff', borderRadius: 20,
+                border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
+                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+              }}
             />
           </div>
         </div>
@@ -258,46 +250,56 @@ export default function MemoryView({ onBack, livekit }) {
 
   // ── View Mode (single file) ──
   if (viewing) {
-    const viewLayerColor = LAYER_COLORS[viewing.layer] || 'text-white/40';
     return (
       <motion.div
         key="memory-view"
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 20 }}
-        className="w-full h-full bg-black text-white flex flex-col"
+        transition={IOS_SPRING}
+        className="w-full h-full flex flex-col"
+        style={{ background: '#F2F2F7' }}
       >
-        {/* Header */}
-        <div className="shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,20px)] pb-3 border-b border-white/[0.06]">
-          <button onClick={() => setViewing(null)} className="p-1.5 -ml-1.5 rounded-full hover:bg-white/10 transition-colors">
-            <ChevronLeft size={20} className="text-white/60" />
+        <div className="shrink-0 flex items-center gap-3 px-5 pt-[env(safe-area-inset-top,20px)] pb-3"
+          style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <button onClick={() => setViewing(null)} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
+            <ChevronLeft size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
           </button>
           <div className="flex-1 min-w-0">
-            <span className="text-white/90 font-medium truncate block" style={{ fontSize: 'var(--text-base)' }}>{viewing.filename}</span>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={`${viewLayerColor} font-medium`} style={{ fontSize: 'var(--text-xs)' }}>
-                {viewing.layer || 'semantic'}
-              </span>
-              <span className="text-white/20" style={{ fontSize: 'var(--text-xs)' }}>
-                {viewing.category || 'general'}
-              </span>
-            </div>
+            <span className="font-semibold truncate block" style={{ fontSize: 16, color: '#000' }}>{viewing.filename}</span>
+            <span className="font-medium" style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)' }}>
+              {(viewing.layer || 'semantic').charAt(0).toUpperCase() + (viewing.layer || 'semantic').slice(1)}
+            </span>
           </div>
-          <button
-            onClick={() => {
-              setEditing({ filename: viewing.filename, isNew: false });
-              setEditContent(viewing.content);
-              setEditFilename(viewing.filename);
-              setViewing(null);
-            }}
-            className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
-          >
-            <Edit3 size={16} className="text-white/40" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                setEditing({ filename: viewing.filename, isNew: false });
+                setEditContent(viewing.content);
+                setEditFilename(viewing.filename);
+                setViewing(null);
+              }}
+              className="p-1.5 rounded-full hover:bg-black/[0.04] transition-colors"
+            >
+              <Edit3 size={16} style={{ color: 'rgba(0,0,0,0.3)' }} />
+            </button>
+            <button
+              onClick={() => setDeleting(viewing.filename)}
+              className="p-1.5 rounded-full hover:bg-black/[0.04] transition-colors"
+            >
+              <Trash2 size={16} style={{ color: 'rgba(0,0,0,0.3)' }} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {renderMarkdown(viewing.content)}
+          <div style={{
+            background: '#fff', borderRadius: 24, padding: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
+            color: '#000', fontSize: 16, lineHeight: 1.6,
+          }}>
+            {renderMarkdown(viewing.content)}
+          </div>
         </div>
       </motion.div>
     );
@@ -310,62 +312,44 @@ export default function MemoryView({ onBack, livekit }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="w-full h-full bg-black text-white flex flex-col"
+      className="w-full h-full flex flex-col relative"
+      style={{ background: '#F2F2F7' }}
     >
       {/* Header */}
       <div className="safe-area-top shrink-0 flex items-center justify-between px-6 pb-4">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-full hover:bg-white/10 transition-colors">
-            <ChevronLeft size={20} className="text-white/60" />
+          <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
+            <ChevronLeft size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
           </button>
-          <h1 className="font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent" style={{ fontSize: 'var(--text-2xl)' }}>Memory</h1>
-        </div>
-      </div>
-
-      {/* Layer Filter Tabs */}
-      <div className="shrink-0 px-4 pb-3">
-        <div className="flex gap-1 bg-white/[0.03] rounded-xl p-1">
-          {LAYERS.map(({ key, label }) => (
-            <button
-              key={label}
-              onClick={() => setActiveLayer(key)}
-              className={`flex-1 py-1.5 rounded-lg font-medium transition-all ${activeLayer === key
-                ? 'bg-white/10 text-white/90'
-                : 'text-white/30 hover:text-white/50'
-                }`}
-              style={{ fontSize: 'var(--text-xs)' }}
-            >
-              {label}
-            </button>
-          ))}
+          <h1 className="font-bold" style={{ fontSize: 28, color: '#000' }}>Memory</h1>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 pb-8">
+      <div className="flex-1 overflow-y-auto px-3 pb-24 flex flex-col">
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 size={24} className="animate-spin text-white/20" />
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(0,0,0,0.15)' }} />
           </div>
-        ) : files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="mb-4" style={{ fontSize: 'var(--text-3xl)' }}>🧠</div>
-            <p className="text-white/40 mb-2 font-medium" style={{ fontSize: 'var(--text-base)' }}>
-              {activeLayer ? `No ${activeLayer} memories` : 'No memories yet'}
+        ) : sortedFiles.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center">
+            <p className="font-semibold mb-1" style={{ fontSize: 16, color: 'rgba(0,0,0,0.55)' }}>
+              No memories yet
             </p>
-            <p className="text-white/20 leading-relaxed px-6" style={{ fontSize: 'var(--text-sm)' }}>
+            <p className="leading-relaxed px-6" style={{ fontSize: 14, color: 'rgba(0,0,0,0.3)' }}>
               After chatting with AI, it will automatically remember your preferences and important info.
             </p>
           </div>
         ) : (
           <div className="space-y-3">
             <AnimatePresence>
-              {files.map(file => (
+              {sortedFiles.map((file, index) => (
                 <MemoryCard
                   key={file.id || file.filename}
                   file={file}
+                  index={index}
                   onView={handleView}
-                  onEdit={handleEdit}
+                  onEdit={(f) => handleEdit(f)}
                   onDelete={handleDelete}
                 />
               ))}
@@ -374,40 +358,120 @@ export default function MemoryView({ onBack, livekit }) {
         )}
       </div>
 
-      {/* Delete Confirmation */}
+      {/* ═══ Bottom sorting button — round like camera FAB ═══ */}
+      <div className="absolute z-50" style={{ bottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))', right: '1.25rem' }}>
+        <motion.button
+          onClick={() => setShowSortMenu(true)}
+          whileTap={{ scale: 0.88 }}
+          className="w-14 h-14 rounded-full flex items-center justify-center"
+          style={{
+            background: '#000',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          }}
+        >
+          <SlidersHorizontal size={20} strokeWidth={2} className="text-white" />
+        </motion.button>
+      </div>
+
+      {/* ═══ Sort menu bottom sheet ═══ */}
+      <AnimatePresence>
+        {showSortMenu && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-end justify-center"
+            style={{ background: 'rgba(0,0,0,0.25)' }}
+            onClick={() => setShowSortMenu(false)}
+          >
+            <motion.div
+              initial={{ y: 100 }}
+              animate={{ y: 0 }}
+              exit={{ y: 100 }}
+              transition={IOS_SPRING}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-sm mx-4 mb-8 overflow-hidden"
+              style={{ borderRadius: 20, background: '#fff', boxShadow: '0 -4px 40px rgba(0,0,0,0.12)' }}
+            >
+              <div className="p-4 pb-2">
+                <p className="font-semibold text-center" style={{ fontSize: 15, color: '#000' }}>Sort by</p>
+              </div>
+              <button
+                onClick={() => { setSortBy('updated'); setShowSortMenu(false); }}
+                className="w-full px-5 py-3.5 text-left flex items-center justify-between hover:bg-black/[0.02] transition-colors"
+                style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
+              >
+                <span style={{ fontSize: 15, color: sortBy === 'updated' ? '#000' : 'rgba(0,0,0,0.5)' }}
+                  className={sortBy === 'updated' ? 'font-semibold' : ''}>
+                  Last Updated
+                </span>
+                {sortBy === 'updated' && <div className="w-2 h-2 rounded-full" style={{ background: '#000' }} />}
+              </button>
+              <div className="px-5 pt-3 pb-1" style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                <span className="font-semibold uppercase tracking-wide" style={{ fontSize: 10, color: 'rgba(0,0,0,0.3)', letterSpacing: '0.06em' }}>Type</span>
+              </div>
+              {['identity', 'semantic', 'episodic'].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => { setSortBy(type); setShowSortMenu(false); }}
+                  className="w-full px-5 py-3 text-left flex items-center justify-between hover:bg-black/[0.02] transition-colors"
+                >
+                  <span style={{ fontSize: 15, color: sortBy === type ? '#000' : 'rgba(0,0,0,0.5)' }}
+                    className={sortBy === type ? 'font-semibold' : ''}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </span>
+                  {sortBy === type && <div className="w-2 h-2 rounded-full" style={{ background: '#000' }} />}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowSortMenu(false)}
+                className="w-full py-3.5 font-medium hover:bg-black/[0.02] transition-colors"
+                style={{ fontSize: 14, color: 'rgba(0,0,0,0.4)', borderTop: '1px solid rgba(0,0,0,0.06)' }}
+              >
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ Delete confirmation bottom sheet ═══ */}
       <AnimatePresence>
         {deleting && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] flex items-end justify-center"
+            style={{ background: 'rgba(0,0,0,0.25)' }}
             onClick={() => setDeleting(null)}
           >
             <motion.div
               initial={{ y: 100 }}
               animate={{ y: 0 }}
               exit={{ y: 100 }}
+              transition={IOS_SPRING}
               onClick={e => e.stopPropagation()}
-              className="w-full max-w-sm mx-4 mb-8 bg-neutral-900 border border-white/10 rounded-2xl overflow-hidden"
+              className="w-full max-w-sm mx-4 mb-8 overflow-hidden"
+              style={{ borderRadius: 20, background: '#fff', boxShadow: '0 -4px 40px rgba(0,0,0,0.12)' }}
             >
-              <div className="p-4 text-center">
-                <p className="text-white/90 font-medium mb-1" style={{ fontSize: 'var(--text-base)' }}>Delete {deleting}?</p>
-                <p className="text-white/40" style={{ fontSize: 'var(--text-sm)' }}>This action cannot be undone</p>
+              <div className="p-5 text-center">
+                <p className="font-semibold mb-1" style={{ fontSize: 16, color: '#000' }}>Delete {deleting}?</p>
+                <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>This action cannot be undone</p>
               </div>
-              <div className="flex border-t border-white/10">
+              <div className="flex" style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                 <button
                   onClick={() => setDeleting(null)}
-                  className="flex-1 py-3 text-white/60 font-medium hover:bg-white/5 transition-colors"
-                  style={{ fontSize: 'var(--text-base)' }}
+                  className="flex-1 py-3.5 font-medium hover:bg-black/[0.02] transition-colors"
+                  style={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }}
                 >
                   Cancel
                 </button>
-                <div className="w-px bg-white/10" />
+                <div style={{ width: 1, background: 'rgba(0,0,0,0.06)' }} />
                 <button
                   onClick={confirmDelete}
-                  className="flex-1 py-3 text-red-400 font-medium hover:bg-red-500/10 transition-colors"
-                  style={{ fontSize: 'var(--text-base)' }}
+                  className="flex-1 py-3.5 font-semibold hover:bg-black/[0.02] transition-colors"
+                  style={{ fontSize: 14, color: '#000' }}
                 >
                   Delete
                 </button>

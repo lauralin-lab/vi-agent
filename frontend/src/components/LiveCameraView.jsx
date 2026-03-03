@@ -24,7 +24,7 @@ const INTENT_COLORS = {
   search: 'text-blue-400',
   analyze: 'text-blue-400',
   scan: 'text-cyan-400',
-  create: 'text-purple-400',
+  create: 'text-white/70',
   shop: 'text-yellow-400',
   identify: 'text-emerald-400',
   translate: 'text-indigo-400',
@@ -210,7 +210,7 @@ export default function LiveCameraView({
 
   // ── Handle agent transcripts → update card text ──
   useEffect(() => {
-    if (livekit.lastAgentText) {
+    if (livekit.lastAgentText && !livekit.lastAgentText.startsWith('[SYSTEM')) {
       setCardText(livekit.lastAgentText);
       setShowCard(true);
     }
@@ -577,7 +577,7 @@ export default function LiveCameraView({
       />
 
       {/* Fullscreen Viewfinder */}
-      <div className="absolute inset-0 bg-neutral-900 overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden" style={{ background: '#0a0a0a' }}>
         {livekit.localVideoTrack ? (
           <video
             ref={videoRef}
@@ -587,8 +587,59 @@ export default function LiveCameraView({
             className="absolute inset-0 w-full h-full object-cover"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
-            <Loader2 size={32} className="text-neutral-500 animate-spin" />
+          /* ── Beautiful no-camera fallback ── */
+          <div className="absolute inset-0 texture-grain">
+            {/* Ambient radial glow */}
+            <div className="absolute inset-0 pointer-events-none" style={{
+              background: 'radial-gradient(ellipse at 35% 55%, rgba(255,255,255,0.03) 0%, transparent 55%), radial-gradient(ellipse at 72% 28%, rgba(6,182,212,0.05) 0%, transparent 50%)',
+            }} />
+            {/* Subtle grid */}
+            <div className="absolute inset-0 pointer-events-none opacity-[0.025]" style={{
+              backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)',
+              backgroundSize: '40px 40px',
+            }} />
+            {/* Center icon + status */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5">
+              <motion.div
+                animate={{ scale: [1, 1.04, 1], opacity: [0.5, 0.9, 0.5] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="w-20 h-20 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  boxShadow: '0 0 40px rgba(255,255,255,0.03)',
+                }}
+              >
+                <Eye size={32} strokeWidth={1} className="text-white/20" />
+              </motion.div>
+              <div className="flex flex-col items-center gap-1.5">
+                {livekit.connectionState === 'connecting' ? (
+                  <>
+                    <motion.div
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.5, repeat: Infinity }}
+                      className="flex items-center gap-2"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400/60 animate-pulse" />
+                      <span className="font-mono text-white/30 tracking-[0.2em] uppercase" style={{ fontSize: '9px' }}>
+                        Connecting
+                      </span>
+                    </motion.div>
+                  </>
+                ) : (
+                  <span className="font-mono text-white/20 tracking-[0.2em] uppercase" style={{ fontSize: '9px' }}>
+                    Camera unavailable
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* Shimmer scan line */}
+            <motion.div
+              className="absolute left-0 right-0 h-px pointer-events-none"
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), rgba(6,182,212,0.2), transparent)' }}
+              animate={{ top: ['10%', '90%', '10%'] }}
+              transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+            />
           </div>
         )}
 
@@ -649,7 +700,7 @@ export default function LiveCameraView({
                   </motion.div>
                 )}
                 {stackStatus === 'ANALYZING' && (
-                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center z-20 shadow-md border border-purple-400">
+                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center z-20 shadow-md border border-cyan-400">
                     <ScanLine size={10} strokeWidth={3} className="text-white animate-pulse" />
                   </motion.div>
                 )}
@@ -803,7 +854,7 @@ export default function LiveCameraView({
                   'top-1/2 left-0 right-0 -translate-y-1/2'
                 }`}
             >
-              <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border font-semibold tracking-wide shadow-lg ${uiBadge.color === 'purple' ? 'bg-purple-500/20 border-purple-500/40 text-purple-200 shadow-purple-500/10' :
+              <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border font-semibold tracking-wide shadow-lg ${uiBadge.color === 'purple' ? 'bg-white/[0.12] border-white/20 text-white/80' :
                 uiBadge.color === 'green' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200 shadow-emerald-500/10' :
                   uiBadge.color === 'cyan' ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-200 shadow-cyan-500/10' :
                     'bg-blue-500/20 border-blue-500/40 text-blue-200 shadow-blue-500/10'
@@ -864,7 +915,7 @@ export default function LiveCameraView({
                   <button
                     key={i}
                     onClick={() => handleActionCardOption(opt)}
-                    className="px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-200 font-medium hover:bg-purple-500/30 transition-colors active:scale-95"
+                    className="px-3 py-1.5 rounded-full bg-white/[0.08] border border-white/[0.12] text-white/80 font-medium hover:bg-white/[0.14] transition-colors active:scale-95"
                     style={{ fontSize: 'var(--text-sm)' }}
                   >
                     {opt}
@@ -883,59 +934,67 @@ export default function LiveCameraView({
       </div>
 
       {/* Top Controls Area — floating glass overlay */}
-      <div className="safe-area-top absolute top-0 left-0 right-0 pb-2 px-6 flex justify-between items-center z-20 pointer-events-none">
+      <div className="safe-area-top absolute top-0 left-0 right-0 pb-2 px-4 flex justify-between items-center z-20 pointer-events-none">
         <button
           onClick={() => { play('nav.history'); onOpenHistory(); }}
-          className="p-2 rounded-full text-white/90 bg-white/10 backdrop-blur-md transition-colors pointer-events-auto active:scale-95"
+          className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.10] backdrop-blur-xl active:scale-90 transition-all pointer-events-auto"
+          style={{ background: 'rgba(255,255,255,0.07)' }}
         >
-          <ArrowLeft size={22} strokeWidth={2.5} />
+          <ArrowLeft size={18} strokeWidth={2} className="text-white/80" />
         </button>
 
-        {/* AI Connection Signal — centered in top bar */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center justify-center pointer-events-auto">
-          <AnimatePresence mode="wait">
-            {connectionIcon === 'connecting' && (
-              <motion.div key="connecting" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
-                <Loader2 size={24} className="text-white animate-spin drop-shadow-md" />
-              </motion.div>
-            )}
-            {connectionIcon === 'connected' && (
-              <motion.div key="connected" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
-                <Wifi size={24} strokeWidth={2.5} className="text-green-400 drop-shadow-md" />
-              </motion.div>
-            )}
-            {connectionIcon === 'weak' && (
-              <motion.div key="weak" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
-                <Wifi size={24} strokeWidth={2.5} className="text-yellow-400 animate-pulse drop-shadow-md" />
-              </motion.div>
-            )}
-            {connectionIcon === 'offline' && (
-              <motion.div key="offline" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ duration: 0.2 }}>
-                <WifiOff size={24} strokeWidth={2.5} className="text-red-400/60 drop-shadow-md" />
-              </motion.div>
-            )}
-          </AnimatePresence>
+        {/* AI Connection Signal — centered */}
+        <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto">
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-xl border border-white/[0.08]"
+            style={{ background: 'rgba(0,0,0,0.35)' }}
+          >
+            <AnimatePresence mode="wait">
+              {connectionIcon === 'connecting' && (
+                <motion.div key="connecting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                  <Loader2 size={11} className="text-blue-400 animate-spin" />
+                  <span className="font-mono text-blue-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Connecting</span>
+                </motion.div>
+              )}
+              {connectionIcon === 'connected' && (
+                <motion.div key="connected" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  <span className="font-mono text-green-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Live</span>
+                </motion.div>
+              )}
+              {connectionIcon === 'weak' && (
+                <motion.div key="weak" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                  <span className="font-mono text-yellow-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Weak</span>
+                </motion.div>
+              )}
+              {connectionIcon === 'offline' && (
+                <motion.div key="offline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-400/60" />
+                  <span className="font-mono text-red-400/60 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Offline</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
-        {/* Flash / Flip camera controls */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          {/* Torch toggle (rear camera only) */}
+        {/* Torch + Flip */}
+        <div className="flex items-center gap-1.5 pointer-events-auto">
           {livekit.facingMode === 'environment' && (
             <button
               onClick={() => livekit.toggleTorch?.()}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                livekit.torchEnabled ? 'bg-yellow-400/20 text-yellow-300' : 'text-white/50 hover:text-white/80'
-              }`}
+              className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.08] backdrop-blur-xl active:scale-90 transition-all"
+              style={{ background: livekit.torchEnabled ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.06)' }}
             >
-              <Zap size={20} />
+              <Zap size={16} strokeWidth={1.8} className={livekit.torchEnabled ? 'text-yellow-300' : 'text-white/50'} />
             </button>
           )}
-          {/* Camera flip */}
           <button
             onClick={() => livekit.switchCamera?.()}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white/50 hover:text-white/80 transition-colors"
+            className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.08] backdrop-blur-xl active:scale-90 transition-all"
+            style={{ background: 'rgba(255,255,255,0.06)' }}
           >
-            <RefreshCw size={20} />
+            <RefreshCw size={16} strokeWidth={1.8} className="text-white/50" />
           </button>
         </div>
       </div>
@@ -954,10 +1013,18 @@ export default function LiveCameraView({
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 className="w-full max-w-[90%]"
               >
-                <div className="bg-black/30 backdrop-blur-2xl rounded-2xl px-4 py-3">
+                <div
+                  className="rounded-2xl px-4 py-3"
+                  style={{
+                    background: 'rgba(0,0,0,0.50)',
+                    backdropFilter: 'blur(28px)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    boxShadow: '0 4px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
+                  }}
+                >
                   <div className="flex items-center gap-1.5 mb-2">
-                    <Edit3 size={12} className="text-purple-400" />
-                    <span className="text-purple-400/80 font-medium tracking-wide uppercase" style={{ fontSize: 'var(--text-xs)' }}>
+                    <Edit3 size={11} className="text-white/40" />
+                    <span className="font-mono font-semibold text-white/40 tracking-[0.15em] uppercase" style={{ fontSize: '9px' }}>
                       Intention
                     </span>
                   </div>
@@ -970,11 +1037,8 @@ export default function LiveCameraView({
                     }}
                     placeholder="What should VI do with your photos?"
                     rows={2}
-                    className="w-full bg-transparent text-white/90 font-medium leading-relaxed resize-none outline-none placeholder:text-white/30"
-                    style={{
-                      fontSize: 'var(--text-base)',
-                      textShadow: '0 1px 8px rgba(0,0,0,0.8)',
-                    }}
+                    className="w-full bg-transparent text-white/90 font-medium leading-relaxed resize-none outline-none placeholder:text-white/25"
+                    style={{ fontSize: 'var(--text-base)', textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}
                   />
                 </div>
               </motion.div>
@@ -996,15 +1060,21 @@ export default function LiveCameraView({
 
         <div className="w-full flex items-center justify-center px-6 py-4 gap-6">
           {/* Mic Toggle */}
-          <button
+          <motion.button
             onClick={handleMicToggle}
-            className={`w-14 h-14 rounded-full transition-all border flex items-center justify-center backdrop-blur-md active:scale-95 ${isMicOn
-              ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-              : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70 border-white/5'
-              }`}
+            whileTap={{ scale: 0.85 }}
+            className="w-14 h-14 rounded-full flex items-center justify-center border transition-all backdrop-blur-xl"
+            style={{
+              background: isMicOn ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
+              borderColor: isMicOn ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+              boxShadow: isMicOn ? '0 0 20px rgba(255,255,255,0.08)' : 'none',
+            }}
           >
-            {isMicOn ? <Mic size={22} strokeWidth={1.5} /> : <MicOff size={22} strokeWidth={1.5} />}
-          </button>
+            {isMicOn
+              ? <Mic size={20} strokeWidth={1.8} className="text-white/80" />
+              : <MicOff size={20} strokeWidth={1.8} className="text-white/35" />
+            }
+          </motion.button>
 
           {/* Unified Shutter / Go Button */}
           {(() => {
@@ -1024,18 +1094,16 @@ export default function LiveCameraView({
                   onPointerUp={hasMedia ? undefined : handleShutterUp}
                   onPointerLeave={() => { if (!isRecording) clearTimeout(longPressTimerRef.current); }}
                   disabled={connectionIcon === 'offline' && !livekit.localVideoTrack}
-                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${
-                    isRecording ? 'border-red-500/50 scale-110' :
-                    hasMedia ? 'border-green-400/60' : glowBorder
-                  } active:scale-95 select-none touch-none disabled:opacity-30`}
+                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${isRecording ? 'border-red-500/50 scale-110' :
+                      hasMedia ? 'border-green-400/60' : glowBorder
+                    } active:scale-95 select-none touch-none disabled:opacity-30`}
                   style={{ boxShadow: isRecording ? 'none' : glowShadow }}
                 >
                   {isRecording ? (
                     <div className="w-7 h-7 rounded-md bg-red-500 animate-pulse transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
                   ) : (
-                    <div className={`w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] ${
-                      hasMedia ? 'bg-green-500' : 'bg-white'
-                    }`}>
+                    <div className={`w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] ${hasMedia ? 'bg-green-500' : 'bg-white'
+                      }`}>
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={hasMedia ? 'go' : (ShutterIcon.displayName || ShutterIcon.name || 'icon')}

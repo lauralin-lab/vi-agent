@@ -1,15 +1,19 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @theme {
-  --color-glass-bg: rgba(255, 255, 255, 0.1);
-  --color-glass-border: rgba(255, 255, 255, 0.2);
+  --color-glass-bg: rgba(255, 255, 255, 0.06);
+  --color-glass-border: rgba(255, 255, 255, 0.12);
+  --color-surface-0: #0a0a0a;
+  --color-surface-1: #111111;
+  --color-surface-2: #1a1a1a;
 }
 
 /* ── Unified Typography System ── */
 :root {
   /* Font Family */
   --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 
   /* Font Size Scale */
   --text-2xs: 9px;
@@ -53,6 +57,8 @@ body {
   font-size: var(--text-base);
   letter-spacing: var(--tracking-wide);
   line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   /* Prevent iOS rubber-band scrolling */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
@@ -65,7 +71,7 @@ body {
   overflow: hidden;
 }
 
-/* Dynamic safe-area top padding — adapts to notch / Dynamic Island */
+/* ═══ Dynamic safe-area top padding ═══ */
 .safe-area-top {
   padding-top: env(safe-area-inset-top, 0.75rem);
 }
@@ -83,4 +89,156 @@ body {
   .below-top-signal {
     top: calc(3.5rem + 48px) !important;
   }
+}
+
+/* ═══ Hasselblad-inspired subtle texture overlay ═══ */
+.texture-grain {
+  position: relative;
+}
+
+.texture-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+/* ═══ Premium scrollbar — invisible but functional ═══ */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ═══ Industrial precision scrollbar (thin, metallic) ═══ */
+.precision-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+
+.precision-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.precision-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.precision-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ═══ Teenage Engineering dial animation ═══ */
+@keyframes te-pulse {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.te-pulse {
+  animation: te-pulse 2.5s ease-in-out infinite;
+}
+
+/* ═══ Shutter breathe — subtle idle pulse like a real camera ═══ */
+@keyframes shutter-breathe {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.06;
+  }
+
+  50% {
+    transform: scale(1.04);
+    opacity: 0.12;
+  }
+}
+
+.shutter-breathe {
+  animation: shutter-breathe 2.8s ease-in-out infinite;
+}
+
+/* ═══ Shimmer — scanning line glow ═══ */
+@keyframes shimmer-line {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer-line {
+  animation: shimmer-line 1.5s ease-in-out infinite;
+}
+
+/* ═══ Float drift — media stack idle wobble ═══ */
+@keyframes float-drift {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  33% {
+    transform: translateY(-2px) rotate(0.5deg);
+  }
+
+  66% {
+    transform: translateY(1px) rotate(-0.3deg);
+  }
+}
+
+.float-drift {
+  animation: float-drift 4s ease-in-out infinite;
+}
+
+/* ═══ Pulse ring — shutter radial burst ═══ */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.pulse-ring {
+  animation: pulse-ring 0.4s ease-out forwards;
+}
+
+/* ═══ Bar fill — breakdown bar entrance ═══ */
+@keyframes bar-fill {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ═══ Focus ring — monochromatic ═══ */
+input:focus-visible,
+button:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.15);
+  outline-offset: 2px;
 }

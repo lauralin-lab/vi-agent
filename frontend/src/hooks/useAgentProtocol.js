@@ -20,13 +20,15 @@ function filterToolCallSyntax(text) {
   if (!text) return null;
 
   let cleaned = text.replace(/\b\w+\s*\([^)]*\)\s*/g, '');
+  // Also strip partial tool calls (opening paren without closing paren)
+  cleaned = cleaned.replace(/\b\w+\s*\([^)]*$/g, '');
   cleaned = cleaned.replace(/<\/?[a-z_]+[^>]*>/gi, '');
   cleaned = cleaned.replace(/\b\w+\s*=\s*["'][^"']*["']\s*;?/g, '');
   cleaned = cleaned.replace(/\{\s*["']?\w+["']?\s*:\s*["'][^"']*["']\s*\}/g, '');
   cleaned = cleaned.replace(/\bdef\s+\w+\s*\([^)]*\)\s*:/g, '');
   cleaned = cleaned.replace(/\bprint\s*\([^)]*\)/g, '');
   // Filter Gemini tool call leaks (our specific tool names and parameter names)
-  cleaned = cleaned.replace(/\b(update_intention|suggest_action|execute_task|push_bubble|update_memory)\b/gi, '');
+  cleaned = cleaned.replace(/\b(update_intention|suggest_action|execute_task|push_bubble|update_memory|update_info_bar|publish_info_bar)\b/gi, '');
   cleaned = cleaned.replace(/\b(intention_text|task_description|action_type)\s*[:=]/gi, '');
   cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
   cleaned = cleaned.replace(/`[^`]+`/g, '');
@@ -580,12 +582,12 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
             }
           } else if (data.type === 'timeline_block') {
             // Direct block push from agent tools (push_bubble, etc.)
-            const content = data.content;
+            const content = filterToolCallSyntax(data.content || '');
             if (content) {
               setLastAgentText(content);
             }
           } else if (data.type === 'card') {
-            const content = data.content || data.title || '';
+            const content = filterToolCallSyntax(data.content || data.title || '');
             if (content) {
               setLastAgentText(content);
             }
