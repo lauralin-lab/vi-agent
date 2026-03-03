@@ -27,6 +27,7 @@ export interface TaskRequest {
     memoryContext?: string;
     previousResults?: string[];
     conversationHistory?: Array<{ role: string; content: string }>;
+    viUserId?: string;
   };
   priority: 'fast' | 'thorough' | 'code';
   executorHint?: string;

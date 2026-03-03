@@ -811,7 +811,10 @@ export class GatewayService {
     try {
       const resp = await fetch(`${API_BASE_URL}/api/internal/memories/batch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Token': process.env.INTERNAL_API_TOKEN || 'vi-internal-dev-token',
+        },
         body: JSON.stringify({ vi_user_id: viUserId, updates }),
       });
       if (resp.ok) {
