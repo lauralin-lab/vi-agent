@@ -1,28 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { User } from 'lucide-react';
 
 export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAuthenticated }) {
     const [expanded, setExpanded] = useState(true);
-    const [videoLoaded, setVideoLoaded] = useState(false);
     const videoReadyRef = useRef(false);
 
-    const handleVideoReady = useCallback(() => {
-        videoReadyRef.current = true;
-        setVideoLoaded(true);
-        setExpanded(false);
-    }, []);
-
     useEffect(() => {
-        // Start shrink when video loads, or after max 1.5s
+        // Shrink when video first frame ready, or max 1.5s fallback
         const maxTimer = setTimeout(() => setExpanded(false), 1500);
-
-        if (videoReadyRef.current) {
-            clearTimeout(maxTimer);
-            const t = setTimeout(() => setExpanded(false), 200);
-            return () => { clearTimeout(maxTimer); clearTimeout(t); };
-        }
-
         return () => clearTimeout(maxTimer);
     }, []);
 
@@ -63,9 +49,14 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
                     loop
                     muted
                     playsInline
-                    onCanPlayThrough={handleVideoReady}
+                    preload="auto"
+                    onLoadedData={() => {
+                        if (!videoReadyRef.current) {
+                            videoReadyRef.current = true;
+                            setExpanded(false);
+                        }
+                    }}
                     className="absolute inset-0 w-full h-full object-cover"
-                    style={{ opacity: videoLoaded ? 1 : 0, transition: 'opacity 0.6s ease' }}
                 >
                     <source src="/promo-bg.mp4" type="video/mp4" />
                 </video>
