@@ -152,15 +152,32 @@ export class GeminiFlashAdapter implements ExecutionAdapter {
     const fullPrompt = textParts.join('\n\n');
 
     // Build content parts: text + optional images
-    const contentParts: Part[] = [{ text: fullPrompt }];
+    // Images must be passed as inlineData (base64) — fileData.fileUri only accepts
+    // gs:// protocol URIs, not signed HTTPS GCS URLs.
+    const contentParts: Part[] = [];
 
     if (request.context.photoUrls && request.context.photoUrls.length > 0) {
       for (const url of request.context.photoUrls) {
-        contentParts.push({
-          fileData: { fileUri: url, mimeType: 'image/jpeg' },
-        });
+        try {
+          console.log(`[GeminiFlashAdapter] Fetching image: ${url.slice(0, 80)}...`);
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            console.warn(`[GeminiFlashAdapter] Image fetch failed (${resp.status}): ${url.slice(0, 80)}`);
+            continue;
+          }
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          const base64Data = buffer.toString('base64');
+          const contentType = resp.headers.get('content-type') || 'image/jpeg';
+          const mimeType = contentType.split(';')[0].trim() as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+          contentParts.push({ inlineData: { mimeType, data: base64Data } });
+          console.log(`[GeminiFlashAdapter] Image loaded: ${base64Data.length} base64 chars, type=${mimeType}`);
+        } catch (err) {
+          console.warn(`[GeminiFlashAdapter] Failed to load image URL: ${url}`, err);
+        }
       }
     }
+
+    contentParts.push({ text: fullPrompt });
 
     yield { type: 'progress', step: 1, total: 3, message: 'Thinking...' };
 

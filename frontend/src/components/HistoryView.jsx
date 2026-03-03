@@ -1,89 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, User, Loader2, Clock, CheckCircle2, AlertCircle, Sparkles, Mic, MicOff, Upload, Brain, ListTodo, Play } from 'lucide-react';
+import { Camera, Loader2, AlertCircle, Mic, MicOff, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import useSound from '../hooks/useSound';
 import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
+import PromotionBlock from './PromotionBlock';
+import { MOCK_SESSIONS } from '../data/mockSessions';
 
 const POLL_INTERVAL = 10000;
-const POLL_INTERVAL_SSE_ACTIVE = 30000; // Slow polling when SSE is active
+const POLL_INTERVAL_SSE_ACTIVE = 30000;
 
-// Status config for consistent rendering
-const STATUS_CONFIG = {
-    pending: {
-        emoji: '\u23F3',
-        label: 'Pending',
-        color: 'text-yellow-400',
-        bgGlow: 'from-yellow-500/20 to-transparent',
-    },
-    progress: {
-        emoji: '',
-        label: 'Processing',
-        color: 'text-cyan-400',
-        bgGlow: 'from-cyan-500/20 to-transparent',
-    },
-    complete: {
-        emoji: '\u2705',
-        label: 'Complete',
-        color: 'text-green-400',
-        bgGlow: 'from-green-500/20 to-transparent',
-    },
-    error: {
-        emoji: '\u274C',
-        label: 'Error',
-        color: 'text-red-400',
-        bgGlow: 'from-red-500/20 to-transparent',
-    },
-};
+// ── iOS spring config ──
+const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
 
-// Sub-state config for granular progress display
-const SUB_STATE_CONFIG = {
-    uploading: { icon: Upload, label: 'Uploading', color: 'text-blue-400' },
-    analyzing: { icon: Brain, label: 'Analyzing', color: 'text-purple-400' },
-    planning: { icon: ListTodo, label: 'Planning', color: 'text-cyan-400' },
-    executing: { icon: Play, label: 'Executing', color: 'text-green-400' },
-};
-
-// Animated status indicator component
-function StatusIndicator({ status, session }) {
-    const config = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
-
-    // Check for granular sub-state from session context
-    const progressMsg = session?.context?.progress_message?.toLowerCase();
-    if (status === 'progress' && progressMsg) {
-        const subKey = Object.keys(SUB_STATE_CONFIG).find(k => progressMsg.includes(k));
-        if (subKey) {
-            const SubIcon = SUB_STATE_CONFIG[subKey].icon;
-            return <SubIcon size={16} className={`${SUB_STATE_CONFIG[subKey].color} animate-pulse`} />;
-        }
-    }
-
-    if (status === 'pending') {
-        return (
-            <motion.span
-                animate={{ opacity: [1, 0.4, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-                className=""
-                style={{ fontSize: 'var(--text-base)' }}
-            >
-                {config.emoji}
-            </motion.span>
-        );
-    }
-
-    if (status === 'progress') {
-        return (
-            <Loader2 size={16} className="text-cyan-400 animate-spin" />
-        );
-    }
-
-    return <span style={{ fontSize: 'var(--text-base)' }}>{config.emoji}</span>;
-}
-
-// Extract photo URLs from session context or prompt
 function extractPhotos(session) {
     const photos = [];
-    // Check context.photos array (set by agent_common.py)
     if (session.context?.photos) {
         if (Array.isArray(session.context.photos)) {
             photos.push(...session.context.photos);
@@ -92,7 +23,6 @@ function extractPhotos(session) {
             if (urls) photos.push(...urls);
         }
     }
-    // Fallback: extract S3 URLs from prompt text
     if (photos.length === 0 && session.prompt) {
         const urls = session.prompt.match(/https:\/\/storage\.googleapis\.com\/[^\s]+/g);
         if (urls) photos.push(...urls);
@@ -100,81 +30,82 @@ function extractPhotos(session) {
     return photos;
 }
 
-
-// Active session card shown prominently at the top
+// ── Active session card — iOS light ──
 function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
     const photos = extractPhotos(session);
     const [, forceUpdate] = useState(0);
 
-    // Timer to trigger re-render for timeout detection
     useEffect(() => {
         const timer = setInterval(() => forceUpdate(n => n + 1), 15000);
         return () => clearInterval(timer);
     }, []);
 
     const elapsed = session.created_at ? Date.now() - new Date(session.created_at).getTime() : 0;
-    const isSlow = elapsed > 120000;   // > 2 minutes
-    const isStale = elapsed > 600000;  // > 10 minutes
+    const isStale = elapsed > 600000;
+
+    const statusLabel = session.status === 'pending' ? 'Queued' : 'Processing';
 
     return (
         <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={IOS_SPRING}
             onClick={onClick}
-            className="relative cursor-pointer active:scale-[0.98] transition-transform"
+            className="cursor-pointer active:scale-[0.98] transition-transform"
+            style={{
+                background: '#fff',
+                borderRadius: 24,
+                overflow: 'hidden',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
+            }}
         >
-            {/* Animated glow border */}
-            <motion.div
-                className="absolute -inset-[1px] rounded-2xl opacity-60"
-                style={{
-                    background: 'linear-gradient(135deg, rgba(6,182,212,0.4), rgba(147,51,234,0.4), rgba(6,182,212,0.4))',
-                    backgroundSize: '200% 200%',
-                }}
-                animate={{
-                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-                }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-            />
+            {/* Hero photo */}
+            {photos.length > 0 && (
+                <div className="relative" style={{ height: 120 }}>
+                    <img
+                        src={photos[0]}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={{ opacity: 0.85 }}
+                    />
+                    <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 40%, rgba(255,255,255,0.95) 100%)' }} />
+                </div>
+            )}
 
-            <div className="relative rounded-2xl bg-black/90 border border-white/10 p-3 backdrop-blur-sm">
+            <div className="px-5 py-4">
+                {/* Status pill */}
                 <div className="flex items-center gap-2 mb-2">
-                    <Sparkles size={14} className="text-cyan-400" />
-                    <span className="font-semibold uppercase tracking-widest text-cyan-400" style={{ fontSize: 'var(--text-xs)' }}>
-                        {session.status === 'pending' ? 'Queued' : 'Processing Now'}
+                    <motion.div
+                        className="w-2 h-2 rounded-full"
+                        style={{ background: '#000' }}
+                        animate={{ opacity: [1, 0.3, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                    />
+                    <span
+                        className="font-semibold tracking-wide uppercase"
+                        style={{ fontSize: 10, color: 'rgba(0,0,0,0.4)', letterSpacing: '0.08em' }}
+                    >
+                        {statusLabel}
                     </span>
                 </div>
 
-                {/* Photo thumbnails */}
-                {photos.length > 0 && (
-                    <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
-                        {photos.slice(0, 4).map((url, i) => (
-                            <div key={i} className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-white/10">
-                                <img src={url} alt="" className="w-full h-full object-cover" />
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                <p className="text-white/90 font-medium leading-snug mb-2 line-clamp-2" style={{ fontSize: 'var(--text-base)' }}>
-                    {getShortTitle(session.prompt) || 'Working on your request...'}
+                <p className="font-semibold leading-snug line-clamp-2" style={{ fontSize: 15, color: '#000' }}>
+                    {getShortTitle(session.prompt) || 'Working on your request…'}
                 </p>
 
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <StatusIndicator status={session.status} session={session} />
-                        <span className="text-white/40 line-clamp-1" style={{ fontSize: 'var(--text-xs)' }}>
-                            {session.context?.progress_message || STATUS_CONFIG[session.status]?.label || 'Processing'}
-                        </span>
-                    </div>
-                    <span className="text-white/25" style={{ fontSize: 'var(--text-xs)' }}>{formatDate(session.created_at)}</span>
+                <div className="flex items-center justify-between mt-3">
+                    <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)' }}>
+                        {formatDate(session.created_at)}
+                    </span>
                 </div>
 
-                {/* Progress bar for in-progress sessions */}
+                {/* Progress bar */}
                 {session.status === 'progress' && (
-                    <div className="mt-3 h-1 bg-white/5 rounded-full overflow-hidden">
+                    <div className="mt-3 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.06)' }}>
                         <motion.div
-                            className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full"
+                            className="h-full rounded-full"
+                            style={{ background: '#000' }}
                             initial={{ width: '0%' }}
                             animate={{ width: ['10%', '60%', '30%', '80%', '45%'] }}
                             transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
@@ -182,42 +113,45 @@ function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
                     </div>
                 )}
 
-                {/* Timeout warnings */}
+                {/* Stale warning */}
                 {isStale && (
-                    <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-                        <div className="flex items-center gap-2">
-                            <AlertCircle size={12} className="text-red-400 shrink-0" />
-                            <span className="text-red-300/80" style={{ fontSize: 'var(--text-xs)' }}>This session may have failed</span>
+                    <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2 rounded-2xl"
+                        style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                        <div className="flex items-center gap-1.5">
+                            <AlertCircle size={11} className="shrink-0" style={{ color: 'rgba(0,0,0,0.35)' }} />
+                            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)' }}>Session may have failed</span>
                         </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); onDismiss?.(session); }}
-                            className="font-medium text-red-300 px-2 py-1 rounded-full bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 transition-colors"
-                            style={{ fontSize: 'var(--text-xs)' }}
+                            className="font-medium px-2.5 py-0.5 rounded-full active:scale-95 transition-transform"
+                            style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)', background: 'rgba(0,0,0,0.05)' }}
                         >
                             Dismiss
                         </button>
                     </div>
-                )}
-                {isSlow && !isStale && (
-                    <p className="mt-2 text-yellow-400/60" style={{ fontSize: 'var(--text-xs)' }}>Taking longer than expected...</p>
                 )}
             </div>
         </motion.div>
     );
 }
 
-export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onProfileTap, onClearSessionCache, isAuthenticated, user, isHome, livekit, onNotification, memoryBadge, sseEvents = [], sseConnected = false }) {
+// ─── Main component ─────────────────────────────────────────────────────────
+export default function HistoryView({
+    onBack, onOpenCamera, onSelectSession, onProfileTap, onClearSessionCache,
+    isAuthenticated, user, isHome, livekit, onNotification, memoryBadge,
+    sseEvents = [], sseConnected = false,
+}) {
     const { play } = useSound();
     const [liveSessions, setLiveSessions] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
-    const [deleteTarget, setDeleteTarget] = useState(null); // session to confirm delete
     const pollRef = useRef(null);
     const mountedRef = useRef(true);
     const longPressTimerRef = useRef(null);
     const longPressStartRef = useRef(null);
 
-    // Long-press handlers
+    // ── Long-press handlers ──
     const handlePointerDown = useCallback((session, e) => {
         longPressStartRef.current = { x: e.clientX, y: e.clientY };
         longPressTimerRef.current = setTimeout(() => {
@@ -244,7 +178,6 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         }
     }, []);
 
-    // Confirm delete from bottom sheet
     const confirmDeleteSession = useCallback(async () => {
         if (!deleteTarget) return;
         play('media.delete');
@@ -255,20 +188,19 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         try { await api.deleteSession(sessionId); } catch (err) { console.error('Delete failed:', err); }
     }, [deleteTarget, play, onClearSessionCache]);
 
-    // Fetch sessions (V3: unified — sessions are the single source of truth)
+    // ── Fetch sessions ──
     const fetchSessions = useCallback(async (isInitial = false) => {
-        // Guard: if not authenticated and no viUserId yet, defer
         const viUserId = api.getViUserId();
         if (!isAuthenticated && !api.getToken() && !viUserId) {
-            if (isInitial) setLoading(true);
+            if (isInitial) {
+                setLiveSessions(MOCK_SESSIONS);
+                setLoading(false);
+            }
             return;
         }
-
         if (isInitial) setLoading(true);
-
         try {
             const sessions = await api.getSessions().catch(() => []);
-
             if (mountedRef.current) {
                 const normalized = (sessions || []).map(s => ({
                     id: s.id,
@@ -285,79 +217,55 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
                     result_summary: s.result_summary,
                     timeline: s.timeline || [],
                 }));
-
-                // Sort by created_at descending
                 normalized.sort((a, b) => {
                     const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
                     const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
                     return tb - ta;
                 });
-                setLiveSessions(normalized);
+                setLiveSessions(normalized.length > 0 ? normalized : MOCK_SESSIONS);
             }
         } catch (err) {
             console.error('Failed to fetch sessions:', err);
-            if (mountedRef.current && isInitial) setLiveSessions([]);
+            if (mountedRef.current && isInitial) setLiveSessions(MOCK_SESSIONS);
         } finally {
             if (mountedRef.current && isInitial) setLoading(false);
         }
     }, [isAuthenticated]);
 
-    // Initial fetch + adaptive polling (slow when SSE active, normal otherwise)
+    // Initial fetch + adaptive polling
     useEffect(() => {
         mountedRef.current = true;
-
-        // Initial fetch
         fetchSessions(true);
-
-        // Adaptive polling: 30s when SSE is active, 10s otherwise
         const interval = sseConnected ? POLL_INTERVAL_SSE_ACTIVE : POLL_INTERVAL;
-        pollRef.current = setInterval(() => {
-            fetchSessions(false);
-        }, interval);
-
+        pollRef.current = setInterval(() => fetchSessions(false), interval);
         return () => {
             mountedRef.current = false;
-            if (pollRef.current) {
-                clearInterval(pollRef.current);
-                pollRef.current = null;
-            }
+            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         };
     }, [fetchSessions, sseConnected]);
 
-    // Re-fetch when LiveKit connects and viUserId becomes available
+    // Re-fetch when LiveKit sessionId becomes available
     const prevSessionIdRef = useRef(null);
     useEffect(() => {
         if (livekit?.sessionId && livekit.sessionId !== prevSessionIdRef.current) {
             prevSessionIdRef.current = livekit.sessionId;
-            // viUserId is now set — fetch sessions
             fetchSessions(liveSessions.length === 0);
         }
     }, [livekit?.sessionId, fetchSessions, liveSessions.length]);
 
-    // Listen for real-time session events from LiveKit data channel
-    // Note: Gateway DataChannel events use 'task_*' naming for historical reasons.
-    // The task_id in these events corresponds to a session UUID in the backend.
+    // LiveKit DataChannel task events
     useEffect(() => {
         if (!livekit?.taskEvents || livekit.taskEvents.length === 0) return;
-
         const latest = livekit.taskEvents[livekit.taskEvents.length - 1];
         if (!latest) return;
 
         if (latest.type === 'task_started') {
             setLiveSessions(prev => {
-                const exists = prev.some(t => t.id === latest.task_id);
-                if (exists) return prev;
-                return [{
-                    id: latest.task_id,
-                    prompt: latest.description,
-                    status: 'pending',
-                    created_at: new Date().toISOString(),
-                }, ...prev];
+                if (prev.some(t => t.id === latest.task_id)) return prev;
+                return [{ id: latest.task_id, prompt: latest.description, status: 'pending', created_at: new Date().toISOString() }, ...prev];
             });
         } else if (latest.type === 'task_progress') {
-            setLiveSessions(prev => prev.map(t =>
-                t.id === latest.task_id ? { ...t, status: 'progress' } : t
-            ));
+            setLiveSessions(prev => prev.map(t => t.id === latest.task_id ? { ...t, status: 'progress' } : t));
         } else if (latest.type === 'task_result') {
             setLiveSessions(prev => prev.map(t =>
                 t.id === latest.task_id ? { ...t, status: latest.status || 'complete', result: latest.result } : t
@@ -365,7 +273,7 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         }
     }, [livekit?.taskEvents]);
 
-    // Listen for SSE real-time events (when LiveKit is not connected)
+    // SSE real-time events
     const lastSseEventRef = useRef(0);
     useEffect(() => {
         if (sseEvents.length === 0) return;
@@ -376,28 +284,19 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         if (latest.type === 'session_update') {
             const { session_id, status, progress_message, result_summary } = latest;
             if (!session_id) return;
-
             setLiveSessions(prev => {
                 const idx = prev.findIndex(t => t.id === session_id);
-                if (idx === -1) {
-                    // New session we don't know about — fetch fresh
-                    fetchSessions(false);
-                    return prev;
-                }
+                if (idx === -1) { fetchSessions(false); return prev; }
                 const updated = [...prev];
                 const entry = { ...updated[idx] };
                 if (status === 'dispatched' || status === 'pending') {
                     entry.status = 'pending';
                 } else if (status === 'progress' || status === 'processing') {
                     entry.status = 'progress';
-                    if (progress_message) {
-                        entry.context = { ...entry.context, progress_message };
-                    }
+                    if (progress_message) entry.context = { ...entry.context, progress_message };
                 } else if (status === 'completed' || status === 'complete') {
                     entry.status = 'complete';
-                    if (result_summary) {
-                        entry.result = entry.result || { summary: result_summary };
-                    }
+                    if (result_summary) entry.result = entry.result || { summary: result_summary };
                     onNotification?.({ type: 'session_complete', sessionId: session_id });
                 } else if (status === 'failed' || status === 'error') {
                     entry.status = 'error';
@@ -411,7 +310,7 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         }
     }, [sseEvents, fetchSessions, onNotification]);
 
-    // Format date
+    // ── Helpers ──
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const d = new Date(dateStr);
@@ -424,39 +323,6 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         return d.toLocaleDateString();
     };
 
-    // Truncate result summary for preview
-    const getResultPreview = (session) => {
-        if (!session.result) return null;
-        let text;
-        if (typeof session.result === 'string') {
-            text = session.result;
-        } else if (session.result.type === 'html') {
-            text = `Website generated (${(session.result.chars / 1000).toFixed(1)}k chars)`;
-        } else if (session.result.summary) {
-            text = session.result.summary;
-        } else if (session.result.content) {
-            text = typeof session.result.content === 'string' ? session.result.content : JSON.stringify(session.result.content);
-        } else if (session.result.raw) {
-            text = session.result.raw;
-        } else if (session.result.text) {
-            text = session.result.text;
-        } else if (session.result.type === 'text' && session.result.summary) {
-            text = session.result.summary;
-        } else {
-            text = JSON.stringify(session.result);
-        }
-        // Clean up code-like content
-        text = text.replace(/<[^>]+>/g, '').replace(/\n+/g, ' ').trim();
-        return text.length > 60 ? text.slice(0, 60) + '...' : text;
-    };
-
-    const filtered = liveSessions;
-
-    // Separate active sessions (pending/progress) from completed
-    const activeSessions = filtered.filter(t => t.status === 'pending' || t.status === 'progress');
-    const completedSessions = filtered.filter(t => t.status === 'complete' || t.status === 'error');
-
-    // Handle session click — pass full session data for LiveSessionView navigation
     const handleSessionClick = (session) => {
         play('nav.forward');
         const photos = extractPhotos(session);
@@ -475,66 +341,87 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
         });
     };
 
+    // ── Timeline grouping ──
+    const GROUP_ORDER = ['Today', 'Yesterday', 'This Week', 'Earlier'];
+    const getTimelineGroup = (dateStr) => {
+        if (!dateStr) return 'Earlier';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Earlier';
+        const now = new Date();
+        const diff = now - d;
+        if (diff < 86400000) return 'Today';
+        if (diff < 172800000) return 'Yesterday';
+        if (diff < 604800000) return 'This Week';
+        return 'Earlier';
+    };
+
+    const [expandedGroups, setExpandedGroups] = useState({ 'Today': true, 'Yesterday': true });
+    const toggleGroup = (groupName) => {
+        setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
+    };
+
+    const groupedSessions = useMemo(() => {
+        const groups = {};
+        liveSessions.forEach(session => {
+            const group = getTimelineGroup(session.created_at);
+            if (!groups[group]) groups[group] = [];
+            groups[group].push(session);
+        });
+        return groups;
+    }, [liveSessions]);
+
+    const activeSessions = liveSessions.filter(t => t.status === 'pending' || t.status === 'progress');
+    const completedSessions = liveSessions.filter(t => t.status === 'complete' || t.status === 'error');
+
+    // ── Render ──────────────────────────────────────────────────────────────
     return (
         <motion.div
             initial={isHome ? { opacity: 0 } : { x: '-100%' }}
             animate={isHome ? { opacity: 1 } : { x: 0 }}
             exit={isHome ? { opacity: 0 } : { x: '-100%' }}
-            transition={isHome ? { duration: 0.3 } : { type: "spring", stiffness: 300, damping: 30 }}
-            className="safe-area-top w-full h-full bg-black text-white p-6 relative z-40"
+            transition={isHome
+                ? { duration: 0.35, ease: [0.23, 1, 0.32, 1] }
+                : IOS_SPRING}
+            className="w-full h-full relative z-40 overflow-hidden"
+            style={{ background: '#F2F2F7' }}
         >
-            {/* Header */}
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent" style={{ fontSize: 'var(--text-2xl)' }}>{isHome ? 'Home' : 'History'}</h1>
-                <button
-                    onClick={() => { play('nav.forward'); onProfileTap?.(); }}
-                    className="relative w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-95 hover:ring-2 hover:ring-white/20"
-                    style={{
-                        background: isAuthenticated
-                            ? 'linear-gradient(135deg, rgba(147,51,234,0.5), rgba(6,182,212,0.5))'
-                            : 'rgba(255,255,255,0.1)',
-                    }}
-                >
-                    {isAuthenticated && user?.displayName ? (
-                        <span className="text-white font-semibold" style={{ fontSize: 'var(--text-base)' }}>
-                            {user.displayName.charAt(0).toUpperCase()}
-                        </span>
-                    ) : (
-                        <User size={20} className="text-white/80" />
+            {/* ═══ Scrollable content ═══ */}
+            <div className="w-full h-full overflow-y-auto pb-32" style={{ WebkitOverflowScrolling: 'touch' }}>
+
+                {/* ═══ Promotion Block ═══ */}
+                <PromotionBlock
+                    onOpenCamera={onOpenCamera}
+                    onOpenProfile={() => { play('nav.forward'); onProfileTap?.(); }}
+                    user={user}
+                    isAuthenticated={isAuthenticated}
+                />
+
+                {/* ═══ Main content ═══ */}
+                <div className="px-3 space-y-4">
+
+                    {/* Loading */}
+                    {loading && (
+                        <div className="flex items-center justify-center py-14">
+                            <Loader2 size={20} className="animate-spin" style={{ color: 'rgba(0,0,0,0.2)' }} />
+                        </div>
                     )}
-                    {memoryBadge > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-purple-500 text-white font-bold px-1 border-2 border-black" style={{ fontSize: '10px' }}>
-                            {memoryBadge > 9 ? '9+' : memoryBadge}
-                        </span>
-                    )}
-                </button>
-            </div>
 
-
-
-            {/* Content */}
-            <div className="pb-20 overflow-y-auto overflow-x-hidden max-h-[72vh] no-scrollbar"
-                style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
-                {loading && (
-                    <div className="flex items-center justify-center py-8">
-                        <Loader2 size={24} className="text-white/30 animate-spin" />
-                    </div>
-                )}
-
-                {!loading && liveSessions.length > 0 && (
-                    <>
-                        {/* Current Session section — active sessions at the top */}
-                        <AnimatePresence>
-                            {activeSessions.length > 0 && (
-                                <div className="mb-2">
-                                    <h2 className="text-white/40 font-semibold uppercase tracking-widest mb-3" style={{ fontSize: 'var(--text-sm)' }}>
-                                        Current {activeSessions.length === 1 ? 'Session' : 'Sessions'}
-                                    </h2>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {activeSessions.map((session) => (
+                    {!loading && liveSessions.length > 0 && (
+                        <>
+                            {/* Active sessions — still show prominently */}
+                            <AnimatePresence>
+                                {activeSessions.length > 0 && (
+                                    <div className="space-y-3 mb-4">
+                                        <span
+                                            className="font-semibold tracking-wide uppercase px-1 block"
+                                            style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', letterSpacing: '0.06em' }}
+                                        >
+                                            Active · {activeSessions.length}
+                                        </span>
+                                        {activeSessions.map(session => (
                                             <div
                                                 key={session.id}
-                                                onPointerDown={(e) => handlePointerDown(session, e)}
+                                                onPointerDown={e => handlePointerDown(session, e)}
                                                 onPointerMove={handlePointerMove}
                                                 onPointerUp={handlePointerUp}
                                                 onPointerLeave={handlePointerUp}
@@ -542,160 +429,345 @@ export default function HistoryView({ onBack, onOpenCamera, onSelectSession, onP
                                                 <ActiveSessionCard
                                                     session={session}
                                                     onClick={() => handleSessionClick(session)}
-                                                    onDismiss={(s) => {
+                                                    onDismiss={s => {
                                                         play('media.delete');
                                                         setLiveSessions(prev => prev.filter(item => item.id !== s.id));
                                                         onClearSessionCache?.(s.id);
-                                                        api.deleteSession(s.id).catch(err =>
-                                                            console.error('Delete failed:', err)
-                                                        );
+                                                        api.deleteSession(s.id).catch(err => console.error('Delete failed:', err));
                                                     }}
                                                     formatDate={formatDate}
                                                 />
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-                            )}
-                        </AnimatePresence>
+                                )}
+                            </AnimatePresence>
 
-                        {/* Completed / Error sessions — dual-column image cards */}
-                        {completedSessions.length > 0 && (
-                            <div className="mb-6">
-                                <h2 className="text-white/40 font-semibold uppercase tracking-widest mb-3" style={{ fontSize: 'var(--text-sm)' }}>
-                                    Recent Sessions
-                                </h2>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {completedSessions.map((session, index) => {
-                                        const photos = extractPhotos(session);
-                                        const heroImg = photos[0] || null;
+                            {/* Date-grouped completed sessions */}
+                            {completedSessions.length > 0 && (
+                                <div className="space-y-3">
+                                    <span
+                                        className="font-semibold tracking-wide uppercase px-1 block"
+                                        style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', letterSpacing: '0.06em' }}
+                                    >
+                                        History · {completedSessions.length}
+                                    </span>
+
+                                    {GROUP_ORDER.map(groupName => {
+                                        const items = groupedSessions[groupName];
+                                        if (!items || items.length === 0) return null;
+                                        // Only show completed sessions in timeline groups
+                                        const completedItems = items.filter(s => s.status === 'complete' || s.status === 'error');
+                                        if (completedItems.length === 0) return null;
+
+                                        const isExpanded = !!expandedGroups[groupName];
+
                                         return (
                                             <motion.div
-                                                key={session.id}
-                                                initial={{ opacity: 0, y: 10 }}
+                                                key={groupName}
+                                                initial={{ opacity: 0, y: 12 }}
                                                 animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, scale: 0.8 }}
-                                                transition={{ delay: index * 0.04 }}
-                                                onClick={() => handleSessionClick(session)}
-                                                onPointerDown={(e) => handlePointerDown(session, e)}
-                                                onPointerMove={handlePointerMove}
-                                                onPointerUp={handlePointerUp}
-                                                onPointerLeave={handlePointerUp}
-                                                className="group relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 hover:border-white/20 transition-all cursor-pointer active:scale-[0.97]"
+                                                transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+                                                className="overflow-hidden"
+                                                style={{
+                                                    borderRadius: 20,
+                                                    background: '#fff',
+                                                    border: '1px solid rgba(0,0,0,0.04)',
+                                                }}
                                             >
-                                                {heroImg ? (
-                                                    <img src={heroImg} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" />
-                                                ) : (
-                                                    <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent" />
-                                                )}
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-                                                {!heroImg && (
-                                                    <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-40" style={{ fontSize: 'var(--text-3xl)' }}>
-                                                        {STATUS_CONFIG[session.status]?.emoji || ''}
+                                                {/* Group header */}
+                                                <button
+                                                    onClick={() => toggleGroup(groupName)}
+                                                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/[0.01] active:bg-black/[0.02] transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-2.5">
+                                                        <span className="font-semibold tracking-wide" style={{ fontSize: 13, color: 'rgba(0,0,0,0.6)' }}>
+                                                            {groupName}
+                                                        </span>
+                                                        <span
+                                                            className="font-medium px-1.5 py-0.5"
+                                                            style={{ fontSize: 10, color: 'rgba(0,0,0,0.2)', background: 'rgba(0,0,0,0.03)', borderRadius: 8 }}
+                                                        >
+                                                            {completedItems.length}
+                                                        </span>
                                                     </div>
-                                                )}
-                                                <div className="absolute bottom-3 left-3 right-3">
-                                                    <p className="text-white font-semibold leading-snug line-clamp-2" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.8)', fontSize: 'var(--text-base)' }}>
-                                                        {getShortTitle(session.prompt)}
-                                                    </p>
-                                                    <div className="flex items-center gap-1.5 mt-1.5">
-                                                        {session.status === 'error' && <AlertCircle size={10} className="text-red-400/80" />}
-                                                        <span className="text-white/40" style={{ fontSize: 'var(--text-xs)' }}>{formatDate(session.created_at)}</span>
-                                                    </div>
-                                                </div>
+                                                    <motion.div
+                                                        animate={{ rotate: isExpanded ? 0 : -90 }}
+                                                        transition={{ duration: 0.2 }}
+                                                    >
+                                                        <ChevronDown size={14} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.2)' }} />
+                                                    </motion.div>
+                                                </button>
+
+                                                {/* Group items */}
+                                                <AnimatePresence initial={false}>
+                                                    {isExpanded && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <div className="px-1 pb-1.5">
+                                                                {completedItems.map((session, index) => {
+                                                                    const photos = extractPhotos(session);
+                                                                    const heroImg = photos[0] || null;
+                                                                    return (
+                                                                        <motion.div
+                                                                            key={session.id}
+                                                                            initial={{ opacity: 0, x: -8 }}
+                                                                            animate={{ opacity: 1, x: 0 }}
+                                                                            transition={{
+                                                                                delay: index * 0.04,
+                                                                                duration: 0.3,
+                                                                                ease: [0.23, 1, 0.32, 1]
+                                                                            }}
+                                                                            onClick={() => handleSessionClick(session)}
+                                                                            onPointerDown={e => handlePointerDown(session, e)}
+                                                                            onPointerMove={handlePointerMove}
+                                                                            onPointerUp={handlePointerUp}
+                                                                            onPointerLeave={handlePointerUp}
+                                                                            className="flex items-center gap-3.5 px-3 py-2.5 mx-1 cursor-pointer active:scale-[0.98] transition-all duration-200 group"
+                                                                            style={{ borderRadius: 16 }}
+                                                                        >
+                                                                            {/* Thumbnail */}
+                                                                            <div
+                                                                                className="w-12 h-12 overflow-hidden flex-shrink-0 relative"
+                                                                                style={{ borderRadius: 14, background: 'rgba(0,0,0,0.03)' }}
+                                                                            >
+                                                                                {heroImg ? (
+                                                                                    <img
+                                                                                        src={heroImg}
+                                                                                        alt={getShortTitle(session.prompt)}
+                                                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="w-full h-full flex items-center justify-center">
+                                                                                        <Eye size={18} strokeWidth={1.2} style={{ color: 'rgba(0,0,0,0.12)' }} />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* Text content */}
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <p className="font-medium truncate leading-tight" style={{ fontSize: 13, color: 'rgba(0,0,0,0.75)' }}>
+                                                                                    {getShortTitle(session.prompt)}
+                                                                                </p>
+                                                                                <div className="flex items-center gap-2 mt-1">
+                                                                                    {session.status === 'error' && (
+                                                                                        <AlertCircle size={9} style={{ color: 'rgba(255,59,48,0.5)' }} />
+                                                                                    )}
+                                                                                    <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.25)' }}>
+                                                                                        {formatDate(session.created_at)}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Arrow */}
+                                                                            <ChevronRight size={14} strokeWidth={1.8} className="flex-shrink-0 group-hover:opacity-50 transition-opacity" style={{ color: 'rgba(0,0,0,0.12)' }} />
+                                                                        </motion.div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
                                             </motion.div>
                                         );
                                     })}
                                 </div>
-                            </div>
-                        )}
-                    </>
-                )}
+                            )}
+                        </>
+                    )}
 
+                    {/* ═══ Empty state ═══ */}
+                    {!loading && liveSessions.length === 0 && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.6, delay: 0.2 }}
+                            className="flex flex-col items-center justify-center px-6 pt-10 pb-12"
+                        >
+                            {/* Simple icon */}
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.5 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ delay: 0.3, ...IOS_SPRING }}
+                                className="mb-6 w-20 h-20 rounded-full flex items-center justify-center"
+                                style={{ background: 'rgba(0,0,0,0.04)' }}
+                            >
+                                <Eye size={32} strokeWidth={1.2} style={{ color: 'rgba(0,0,0,0.18)' }} />
+                            </motion.div>
 
-
-                {!loading && liveSessions.length === 0 && (
-                    <div className="text-center py-8">
-                        {!api.getViUserId() ? (
-                            <>
-                                <Loader2 size={24} className="text-white/20 animate-spin mx-auto mb-3" />
-                                <p className="text-white/30" style={{ fontSize: 'var(--text-base)' }}>Connecting...</p>
-                                <p className="text-white/20 mt-1" style={{ fontSize: 'var(--text-sm)' }}>Your sessions will appear here</p>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-white/30" style={{ fontSize: 'var(--text-base)' }}>No sessions yet</p>
-                                <p className="text-white/20 mt-1" style={{ fontSize: 'var(--text-sm)' }}>Point your camera at something to get started</p>
-                            </>
-                        )}
-                    </div>
-                )}
+                            {/* Text + CTA */}
+                            {!api.getViUserId() ? (
+                                <>
+                                    <motion.p
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.45 }}
+                                        className="font-semibold text-center leading-snug tracking-tight mb-1"
+                                        style={{ fontSize: 17, color: 'rgba(0,0,0,0.65)' }}
+                                    >
+                                        Connecting…
+                                    </motion.p>
+                                    <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.3)' }} className="text-center">
+                                        Your sessions will appear here
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <motion.p
+                                        initial={{ opacity: 0, y: 14 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.45, duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+                                        className="font-bold text-center leading-snug tracking-tight max-w-[240px] mb-2"
+                                        style={{ fontSize: 20, color: '#000' }}
+                                    >
+                                        The AI That Sees For You
+                                    </motion.p>
+                                    <motion.p
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.55, duration: 0.5 }}
+                                        className="text-center max-w-[220px] mb-8"
+                                        style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)', lineHeight: 1.5 }}
+                                    >
+                                        Point your camera at something to begin your first session
+                                    </motion.p>
+                                    <motion.button
+                                        onClick={() => { play('nav.forward'); onOpenCamera?.(); }}
+                                        initial={{ opacity: 0, y: 12 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.65, ...IOS_SPRING }}
+                                        whileTap={{ scale: 0.92 }}
+                                        whileHover={{ scale: 1.03 }}
+                                        className="flex items-center gap-2.5 px-6 py-3 rounded-full"
+                                        style={{
+                                            background: '#000',
+                                            boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+                                        }}
+                                    >
+                                        <Camera size={16} strokeWidth={2} className="text-white" />
+                                        <span className="font-semibold text-white" style={{ fontSize: 14 }}>
+                                            Start exploring
+                                        </span>
+                                    </motion.button>
+                                </>
+                            )}
+                        </motion.div>
+                    )}
+                </div>
             </div>
 
-            {/* Mic Toggle FAB */}
-            <button
-                onClick={() => { livekit?.ensureAudioContext?.(); play(livekit?.isMicEnabled ? 'mic.off' : 'mic.on'); livekit?.toggleMic?.(); }}
-                className={`absolute bottom-4 md:bottom-8 left-6 w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 z-50 ${livekit?.isMicEnabled ? 'bg-white/10 border border-white/20 text-white/80' : 'bg-red-500/80 text-white border border-red-400/40'}`}
-            >
-                {livekit?.isMicEnabled ? <Mic size={24} /> : <MicOff size={24} />}
-            </button>
+            {/* ═══ Bottom fade ═══ */}
+            <div
+                className="absolute bottom-0 left-0 right-0 h-28 pointer-events-none z-40"
+                style={{ background: 'linear-gradient(to top, #F2F2F7 30%, transparent)' }}
+            />
 
-            {/* Camera FAB */}
-            <button
-                onClick={() => { livekit?.ensureAudioContext?.(); play('nav.forward'); onOpenCamera ? onOpenCamera() : onBack?.(); }}
-                className="absolute bottom-4 md:bottom-8 right-6 w-[4.5rem] h-[4.5rem] rounded-full bg-white text-black flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-50"
-            >
-                <Camera size={32} />
-            </button>
+            {/* ═══ Mic FAB ═══ */}
+            <div className="absolute z-50" style={{ bottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))', left: '1.25rem' }}>
+                <motion.button
+                    onClick={() => {
+                        livekit?.ensureAudioContext?.();
+                        play(livekit?.isMicEnabled ? 'mic.off' : 'mic.on');
+                        livekit?.toggleMic?.();
+                    }}
+                    whileTap={{ scale: 0.88 }}
+                    className="w-12 h-12 rounded-full flex items-center justify-center transition-all"
+                    style={{
+                        background: livekit?.isMicEnabled ? '#fff' : 'rgba(0,0,0,0.06)',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04)',
+                    }}
+                >
+                    {livekit?.isMicEnabled
+                        ? <Mic size={18} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.55)' }} />
+                        : <MicOff size={18} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.3)' }} />
+                    }
+                </motion.button>
+            </div>
 
-            {/* Delete Confirmation Bottom Sheet */}
+            {/* ═══ Camera FAB ═══ */}
+            <div className="absolute z-50" style={{ bottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))', right: '1.25rem' }}>
+                <motion.button
+                    onClick={() => {
+                        livekit?.ensureAudioContext?.();
+                        play('nav.forward');
+                        onOpenCamera ? onOpenCamera() : onBack?.();
+                    }}
+                    whileTap={{ scale: 0.88 }}
+                    whileHover={{ scale: 1.04 }}
+                    className="w-14 h-14 rounded-full flex items-center justify-center transition-all"
+                    style={{
+                        background: '#000',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                    }}
+                >
+                    <Camera size={22} strokeWidth={2} className="text-white" />
+                </motion.button>
+            </div>
+
+            {/* ═══ Delete confirmation bottom sheet ═══ */}
             <AnimatePresence>
                 {deleteTarget && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50"
+                        className="fixed inset-0 z-[60] flex items-end justify-center"
+                        style={{ background: 'rgba(0,0,0,0.25)' }}
                         onClick={() => setDeleteTarget(null)}
                     >
                         <motion.div
                             initial={{ y: 100 }}
                             animate={{ y: 0 }}
                             exit={{ y: 100 }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full max-w-sm mx-4 mb-8 bg-neutral-900 border border-white/10 rounded-2xl overflow-hidden"
+                            transition={IOS_SPRING}
+                            onClick={e => e.stopPropagation()}
+                            className="w-full max-w-sm mx-4 mb-8 overflow-hidden"
+                            style={{
+                                borderRadius: 20,
+                                background: '#fff',
+                                boxShadow: '0 -4px 40px rgba(0,0,0,0.12)',
+                            }}
                         >
-                            <div className="p-4">
-                                <p className="text-white/90 font-semibold mb-3 text-center" style={{ fontSize: 'var(--text-base)' }}>
+                            <div className="p-5">
+                                <p className="font-semibold mb-3 text-center" style={{ fontSize: 15, color: '#000' }}>
                                     Delete this session?
                                 </p>
-                                <div className="flex items-center gap-3 bg-white/5 rounded-xl p-3">
+                                <div
+                                    className="flex items-center gap-3 rounded-2xl p-3"
+                                    style={{ background: 'rgba(0,0,0,0.03)' }}
+                                >
                                     {(() => {
                                         const photos = extractPhotos(deleteTarget);
                                         return photos[0] ? (
-                                            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-white/10">
+                                            <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0"
+                                                style={{ border: '1px solid rgba(0,0,0,0.06)' }}>
                                                 <img src={photos[0]} alt="" className="w-full h-full object-cover" />
                                             </div>
                                         ) : null;
                                     })()}
-                                    <p className="text-white/60 line-clamp-2 leading-snug" style={{ fontSize: 'var(--text-sm)' }}>
+                                    <p className="line-clamp-2 leading-snug" style={{ fontSize: 13, color: 'rgba(0,0,0,0.5)' }}>
                                         {getShortTitle(deleteTarget.prompt)}
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex border-t border-white/10">
+                            <div className="flex" style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                                 <button
                                     onClick={() => setDeleteTarget(null)}
-                                    className="flex-1 py-3 text-white/60 font-medium hover:bg-white/5 transition-colors"
-                                    style={{ fontSize: 'var(--text-base)' }}
+                                    className="flex-1 py-3.5 font-medium hover:bg-black/[0.02] transition-colors"
+                                    style={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }}
                                 >
                                     Cancel
                                 </button>
-                                <div className="w-px bg-white/10" />
+                                <div style={{ width: 1, background: 'rgba(0,0,0,0.06)' }} />
                                 <button
                                     onClick={confirmDeleteSession}
-                                    className="flex-1 py-3 text-red-400 font-medium hover:bg-red-500/10 transition-colors"
-                                    style={{ fontSize: 'var(--text-base)' }}
+                                    className="flex-1 py-3.5 font-semibold hover:bg-black/[0.02] transition-colors"
+                                    style={{ fontSize: 14, color: '#000' }}
                                 >
                                     Delete
                                 </button>

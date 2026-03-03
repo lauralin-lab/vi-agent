@@ -48,7 +48,7 @@ export default function DeviceFrame({ children }) {
                 </div>
 
                 {/* Screen Content — pt-2/pb-6 avoids rounded-corner clipping */}
-                <div className="w-full h-full relative overflow-hidden rounded-[46px] bg-black pt-2 pb-6">
+                <div className="w-full h-full relative overflow-hidden rounded-[46px] bg-black">
                     {children}
                 </div>
 

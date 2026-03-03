@@ -78,14 +78,6 @@ class Preferences {
     await sp.setString(_Key.uuid.key, uuid);
   }
 
-  /// 获取绑定用户的 FirebaseId 缓存
-  String get firebaseIdInLocalCache => sp.getString(_Key.firebaseId.key) ?? "";
-
-  /// 设置绑定用户的 FirebaseId 缓存
-  Future<void> setFirebaseIdLocalCache(String uuid) async {
-    await sp.setString(_Key.firebaseId.key, uuid);
-  }
-
   /// 获取 AdjustId 缓存
   String? get adjustId => sp.getString(_Key.adjustId.key);
 
@@ -176,9 +168,6 @@ enum _Key {
 
   /// AdjustId 缓存
   adjustId._(5),
-
-  /// FirebaseID 缓存
-  firebaseId._(6),
 
   /// 临时登出
   fireBaseSignOut._(7),

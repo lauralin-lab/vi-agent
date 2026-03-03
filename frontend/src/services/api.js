@@ -71,10 +71,14 @@ class ApiClient {
     let lastError;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
         const response = await fetch(`${this.baseUrl}${path}`, {
           ...options,
           headers,
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (response.status === 401) {
           this.setToken(null);

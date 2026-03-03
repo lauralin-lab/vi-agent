@@ -12,7 +12,7 @@ function renderHighlightedText(text, isMicOn) {
 
         if (isQuoted || isCapitalized || isQuestion) {
             const highlightColor = isMicOn
-                ? 'text-purple-200 font-semibold'
+                ? 'text-white font-semibold'
                 : 'text-cyan-200 font-semibold';
             return (
                 <span key={i} className={highlightColor}>
@@ -30,7 +30,7 @@ const AGENT_STATUS_CONFIG = {
     offline: { emoji: '', label: 'Offline', dotColor: 'bg-red-400/80', textColor: 'text-red-400/80', glowColor: 'rgba(248,113,113,0.3)' },
     weak_connection: { emoji: '', label: 'Weak Signal', dotColor: 'bg-yellow-400/80', textColor: 'text-yellow-400/80', glowColor: 'rgba(250,204,21,0.3)' },
     connecting: { emoji: '', label: 'Connecting', dotColor: 'bg-blue-400/80', textColor: 'text-blue-400/80', glowColor: 'rgba(96,165,250,0.3)', pulse: true },
-    listening: { emoji: '🎧', label: 'Listening', dotColor: 'bg-purple-400/80', textColor: 'text-purple-400/80', glowColor: 'rgba(192,132,252,0.3)' },
+    listening: { emoji: '🎧', label: 'Listening', dotColor: 'bg-white/70', textColor: 'text-white/70', glowColor: 'rgba(255,255,255,0.2)' },
     thinking: { emoji: '🧠', label: 'Thinking', dotColor: 'bg-cyan-400/80', textColor: 'text-cyan-400/80', glowColor: 'rgba(34,211,238,0.3)', pulse: true },
     viewing: { emoji: '👁️', label: 'Viewing', dotColor: 'bg-cyan-400/80', textColor: 'text-cyan-400/80', glowColor: 'rgba(34,211,238,0.3)' },
     waiting: { emoji: '✨', label: 'Ready', dotColor: 'bg-green-400/80', textColor: 'text-green-400/80', glowColor: 'rgba(74,222,128,0.3)' },
@@ -103,17 +103,20 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
                 y: isVisible ? 0 : 30,
                 opacity: isVisible ? 1 : 0,
             }}
-            transition={{
-                type: "spring",
-                stiffness: 400,
-                damping: 30,
-                delay: 0.1
-            }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30, delay: 0.1 }}
             className="relative w-auto max-w-[90%] z-50"
         >
-            <div className="bg-black/30 backdrop-blur-2xl rounded-2xl px-4 py-3 text-center">
-                {/* Status label — state machine driven */}
-                <div className="flex items-center justify-center gap-1.5 mb-2">
+            <div
+                className="rounded-2xl px-4 py-3 text-center"
+                style={{
+                    background: 'rgba(0,0,0,0.48)',
+                    backdropFilter: 'blur(28px)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    boxShadow: '0 4px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)',
+                }}
+            >
+                {/* Status label */}
+                <div className="flex items-center justify-center gap-1.5 mb-1.5">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={status}
@@ -126,7 +129,7 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
                             {statusConfig.emoji ? (
                                 <span
                                     className={statusConfig.pulse ? 'animate-pulse' : ''}
-                                    style={{ animationDuration: '2.5s', fontSize: 'var(--text-base)' }}
+                                    style={{ animationDuration: '2.5s', fontSize: '13px' }}
                                 >
                                     {statusConfig.emoji}
                                 </span>
@@ -134,8 +137,8 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
                                 <div className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotColor} ${statusConfig.pulse ? 'animate-pulse' : ''}`} />
                             )}
                             <span
-                                className={`${statusConfig.textColor} font-medium tracking-wide uppercase`}
-                                style={{ fontSize: 'var(--text-xs)', filter: `drop-shadow(0 0 3px ${statusConfig.glowColor})` }}
+                                className={`${statusConfig.textColor} font-mono font-semibold tracking-[0.14em] uppercase`}
+                                style={{ fontSize: '9px', filter: `drop-shadow(0 0 4px ${statusConfig.glowColor})` }}
                             >
                                 {statusConfig.label}
                             </span>
@@ -143,15 +146,14 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
                     </AnimatePresence>
                 </div>
 
-                {/* Floating text with keyword highlights */}
-                <p className="text-white/90 font-medium leading-relaxed line-clamp-3"
-                    style={{
-                        fontSize,
-                        textShadow: '0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)',
-                    }}>
+                {/* Streaming text */}
+                <p
+                    className="text-white/90 font-medium leading-relaxed line-clamp-3"
+                    style={{ fontSize, textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}
+                >
                     {renderHighlightedText(displayedText, isMicOn)}
                     {isStreaming && (
-                        <span className="inline-block w-[2px] h-[1em] bg-white/80 animate-pulse ml-0.5 align-middle" />
+                        <span className="inline-block w-[2px] h-[1em] bg-white/70 animate-pulse ml-0.5 align-middle" />
                     )}
                 </p>
             </div>

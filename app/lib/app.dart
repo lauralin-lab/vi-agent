@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -171,6 +173,7 @@ class App {
     routes: $appRoutes,
     initialLocation: preferences.hasLogin ? RouterPaths.home : RouterPaths.login,
     observers: [appNavigatorObserver, _routeObserver],
+    redirect: _routerRedirect,
     extraCodec: routeCodec,
   );
 
@@ -186,6 +189,26 @@ class App {
   /// 设备编号
   String? _deviceId;
 }
+
+/// 全局路由重定向
+FutureOr<String?> _routerRedirect(BuildContext context, GoRouterState state) {
+  final location = state.matchedLocation;
+  final isLoggedIn = App().auth.logged;
+  final isOnLoginPage = location == RouterPaths.login;
+
+  // 未登录 + 不在登录页 → 重定向到登录页
+  if (!isLoggedIn && !isOnLoginPage) {
+    return RouterPaths.login;
+  }
+
+  // 已登录 + 在登录页 → 重定向到首页
+  if (isLoggedIn && isOnLoginPage) {
+    return RouterPaths.home;
+  }
+
+  return null;
+}
+
 
 class _PackageInitializer extends Initializer {
   const _PackageInitializer(super.type);
