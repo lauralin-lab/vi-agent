@@ -174,7 +174,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1.5G
     logging:
       driver: json-file
       options:
