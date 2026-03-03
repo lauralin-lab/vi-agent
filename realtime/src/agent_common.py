@@ -308,6 +308,11 @@ class Assistant(Agent):
         self._pending_gateway_responses: asyncio.Queue = asyncio.Queue()
         # Timeline: accumulates conversation entries for DB persistence
         self._session_timeline: list[dict] = []
+        # Conversation session: tracks non-dispatch chat messages
+        self._conversation_session_id: str | None = None
+        self._conversation_timeline: list[dict] = []
+        self._conversation_session_lock = asyncio.Lock()
+        self._conversation_timeline_last_flush: float = 0.0
 
         logger.info(f"Assistant initialized for room: {room_name}, vi_user_id: {self._vi_user_id}")
 
@@ -318,12 +323,118 @@ class Assistant(Agent):
 
     def record_timeline_entry(self, entry_type: str, content: str):
         """Record a conversation entry for later persistence to DB."""
-        if self._current_session_id and content:
-            self._session_timeline.append({
-                "type": entry_type,
-                "content": content[:2000],
-                "ts": time.time(),
-            })
+        if not content:
+            return
+        entry = {
+            "type": entry_type,
+            "content": content[:2000],
+            "ts": time.time(),
+        }
+        # Always record to conversation timeline (for non-dispatch chat persistence)
+        self._conversation_timeline.append(entry)
+        # Also record to dispatch session timeline when a dispatch is active
+        if self._current_session_id:
+            self._session_timeline.append(entry)
+
+    async def ensure_conversation_session(self):
+        """Create a session for non-dispatch chat conversation if one doesn't exist.
+
+        Uses a lock to prevent duplicate creation from concurrent messages.
+        """
+        if self._conversation_session_id:
+            return
+        async with self._conversation_session_lock:
+            # Double-check after acquiring lock
+            if self._conversation_session_id:
+                return
+            try:
+                async with aiohttp.ClientSession(headers=self._internal_headers) as http:
+                    resp = await http.post(
+                        f"{self._api_base}/api/internal/sessions",
+                        json={
+                            "vi_user_id": self._vi_user_id,
+                            "context": {"source": "chat", "type": "conversation"},
+                        },
+                    )
+                    if resp.status == 200:
+                        data = await resp.json()
+                        self._conversation_session_id = data.get("session_id")
+                        logger.info(f"[conversation] Created chat session: {self._conversation_session_id}")
+                    else:
+                        body = await resp.text()
+                        logger.warning(f"[conversation] Failed to create session ({resp.status}): {body}")
+            except Exception as e:
+                logger.warning(f"[conversation] Error creating session: {e}")
+
+    async def persist_conversation_timeline(self):
+        """Persist conversation timeline to DB on disconnect.
+
+        Creates a session if needed, patches it with timeline entries,
+        derives title from first user message, and sets status to 'ended'.
+        """
+        if not self._conversation_timeline:
+            return
+        try:
+            # Ensure we have a session to attach the timeline to
+            await self.ensure_conversation_session()
+            session_id = self._conversation_session_id
+            if not session_id:
+                logger.warning("[conversation] Cannot persist timeline — no session_id")
+                return
+
+            # Derive title from first user message
+            title = "Chat conversation"
+            for entry in self._conversation_timeline:
+                if entry.get("type") == "user":
+                    title = entry.get("content", "Chat conversation")[:100]
+                    break
+
+            async with aiohttp.ClientSession(headers=self._internal_headers) as http:
+                resp = await http.patch(
+                    f"{self._api_base}/api/internal/sessions/{session_id}",
+                    json={
+                        "timeline": self._conversation_timeline,
+                        "title": title,
+                        "status": "ended",
+                    },
+                )
+                if resp.status == 200:
+                    logger.info(f"[conversation] Timeline persisted ({len(self._conversation_timeline)} entries) to session {session_id}")
+                else:
+                    body = await resp.text()
+                    logger.warning(f"[conversation] Timeline persist failed ({resp.status}): {body}")
+
+                # Also mark session as ended
+                try:
+                    await http.patch(
+                        f"{self._api_base}/api/internal/sessions/{session_id}/end",
+                        json={},
+                    )
+                except Exception:
+                    pass  # Best-effort
+
+            self._conversation_timeline_last_flush = time.time()
+        except Exception as e:
+            logger.warning(f"[conversation] Error persisting timeline: {e}")
+
+    async def _flush_conversation_timeline(self):
+        """Periodically flush conversation timeline to DB as insurance against crashes."""
+        session_id = self._conversation_session_id
+        if not session_id or not self._conversation_timeline:
+            return
+        try:
+            async with aiohttp.ClientSession(headers=self._internal_headers) as http:
+                resp = await http.patch(
+                    f"{self._api_base}/api/internal/sessions/{session_id}",
+                    json={"timeline": self._conversation_timeline},
+                )
+                if resp.status == 200:
+                    self._conversation_timeline_last_flush = time.time()
+                    logger.info(f"[conversation] Flushed timeline ({len(self._conversation_timeline)} entries)")
+                else:
+                    logger.debug(f"[conversation] Timeline flush failed: {resp.status}")
+        except Exception as e:
+            logger.debug(f"[conversation] Timeline flush error: {e}")
 
     async def persist_session(self, text: str):
         """Persist a [USER_DISPATCH] message as a session in the DB."""
@@ -517,6 +628,10 @@ class Assistant(Agent):
                 self._trim_conversation_history()
                 # Drain any pending gateway responses that were queued due to timeout
                 await self._drain_pending_responses()
+                # Periodically flush conversation timeline to DB (every 60s)
+                if (self._conversation_timeline
+                    and time.time() - self._conversation_timeline_last_flush > 60):
+                    await self._flush_conversation_timeline()
                 now = time.time()
                 session_time = int(now - self.start_time)
                 idle_time = int(now - self.last_talk_time)
@@ -729,6 +844,41 @@ class Assistant(Agent):
             except Exception as e:
                 logger.warning(f"[shutdown] Failed to say goodbye: {e}")
         
+        # Persist conversation timeline (non-dispatch chat messages)
+        try:
+            await self.persist_conversation_timeline()
+        except Exception as e:
+            logger.warning(f"[shutdown] Failed to persist conversation timeline: {e}")
+
+        # Trigger session-end memory extraction
+        try:
+            if self._conversation_timeline and self._vi_user_id:
+                # Build summary from conversation timeline
+                summary_parts = []
+                for entry in self._conversation_timeline[:20]:
+                    role = entry.get("type", "unknown")
+                    text = entry.get("content", "")[:200]
+                    summary_parts.append(f"{role}: {text}")
+                summary = "\n".join(summary_parts)
+
+                session_id = self._conversation_session_id or self._current_session_id or ""
+                async with aiohttp.ClientSession(headers=self._internal_headers) as http:
+                    resp = await http.post(
+                        f"{self._api_base}/api/internal/memories/session-end",
+                        json={
+                            "session_id": session_id,
+                            "vi_user_id": self._vi_user_id,
+                            "summary": summary[:3000],
+                        },
+                    )
+                    if resp.status == 200:
+                        logger.info("[shutdown] Session-end memory extraction triggered")
+                    else:
+                        body = await resp.text()
+                        logger.debug(f"[shutdown] Session-end memory failed ({resp.status}): {body}")
+        except Exception as e:
+            logger.warning(f"[shutdown] Failed to trigger session-end memory: {e}")
+
         # Cache Gemini session resumption token for faster next-session connect
         # Path: AgentSession.llm → RealtimeModel._sessions (set) → RealtimeSession.session_resumption_handle
         try:
@@ -894,6 +1044,7 @@ class Assistant(Agent):
                 "visualObservation": "",
                 "userMemory": "",
                 "conversationSummary": "",
+                "viUserId": self._vi_user_id,
             },
             "priority": "thorough",
         }
@@ -1185,8 +1336,29 @@ class Assistant(Agent):
     @function_tool
     async def rpc_b2g_update_memory(self, context: RunContext, memory_update: str):
         """Updates important memory in the gateway (agent name, user name, profile, facts, requests, preferences). Use this to record information the user explicitly wants remembered OR information that's critical for future conversations. MUST be called when user says 'remember this', 'you must know', etc. This is async and non-blocking - just records the information without waiting for confirmation."""
-        logger.info(f"[rpc_b2g_update_memory] Delegating to rpc_b2g_dispatch_message: {memory_update[:100]}")
-        return await self.rpc_b2g_dispatch_message(context, memory_update, action="update_memory")
+        logger.info(f"[rpc_b2g_update_memory] Saving memory directly: {memory_update[:100]}")
+        # Write directly to memory API instead of routing through gateway
+        try:
+            async with aiohttp.ClientSession(headers=self._internal_headers) as http:
+                resp = await http.post(
+                    f"{self._api_base}/api/internal/memories",
+                    json={
+                        "vi_user_id": self._vi_user_id,
+                        "content": memory_update,
+                        "type": "long_term",
+                        "source": "agent",
+                    },
+                )
+                if resp.status == 200:
+                    logger.info(f"[memory] Saved memory update for user {self._vi_user_id}")
+                    return {"ok": True, "message": "Memory saved successfully"}
+                else:
+                    body = await resp.text()
+                    logger.warning(f"[memory] Memory save failed ({resp.status}): {body}")
+                    return {"ok": False, "error": f"Memory save failed: {resp.status}"}
+        except Exception as e:
+            logger.warning(f"[memory] Error saving memory: {e}")
+            return {"ok": False, "error": str(e)}
         
 
 def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
@@ -1337,6 +1509,11 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
         images = data.get("images", [])
         log_info(f"[rpc_f2b_send_message] Received message from user: {text[:100]}", "user")
 
+        # Record all non-action user text messages to conversation timeline
+        if text and not text.strip().startswith("[USER_DISPATCH]"):
+            assistant.record_timeline_entry("user", text)
+            asyncio.create_task(assistant.ensure_conversation_session())
+
         # Persist task to DB if this is a dispatch message
         if text.strip().startswith("[USER_DISPATCH]"):
             asyncio.create_task(assistant.persist_session(text))
@@ -1371,7 +1548,7 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
                 if assistant._agent_session:
                     assistant._agent_session.generate_reply(
                         user_input=(
-                            "A task has been dispatched to the backend. "
+                            "[SYSTEM] A task has been dispatched to the backend. "
                             "Tell the user briefly that you're working on it. "
                             "Do NOT call any tools. Keep it under 15 words."
                         )
@@ -1422,7 +1599,7 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
 
     # === INSTANT GREETING — reads cached context from Redis, no gateway wait ===
     async def _fire_instant_greeting():
-        """Read cached context from Redis and fire greeting immediately.
+        """Read cached context from Redis + memory API and fire greeting immediately.
 
         Key optimization: we do NOT call update_instructions here because that
         reconfigures the Gemini realtime session (slow). Instead we embed the
@@ -1433,21 +1610,49 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
             return
         try:
             cached = await _get_cached_context(assistant._vi_user_id)
+
+            # Fetch persistent memory context from API
+            memory_context = ""
+            try:
+                async with aiohttp.ClientSession(headers=assistant._internal_headers) as http:
+                    resp = await http.get(
+                        f"{assistant._api_base}/api/internal/memories/context/{assistant._vi_user_id}",
+                        params={"max_chars": 1500},
+                        timeout=aiohttp.ClientTimeout(total=3),
+                    )
+                    if resp.status == 200:
+                        data = await resp.json()
+                        memory_context = data.get("context", "")
+                        if memory_context:
+                            logger.info(f"[init] Fetched memory context ({len(memory_context)} chars)")
+            except Exception as mem_err:
+                logger.debug(f"[init] Memory context fetch failed (non-critical): {mem_err}")
+
+            # Combine cached Redis context with persistent memory
+            combined_context = ""
             if cached:
+                combined_context = cached[:1500]
+            if memory_context:
+                if combined_context:
+                    combined_context += f"\n\n## User Memory\n{memory_context[:1000]}"
+                else:
+                    combined_context = memory_context[:1500]
+
+            if combined_context:
                 # Store for later use by catch-up, but DON'T call update_instructions yet
-                assistant._catch_up_section = cached[:1500]
+                assistant._catch_up_section = combined_context
                 # Ultra-short prompt = fastest Gemini inference
                 # CRITICAL: "Do not call any tools" prevents Gemini from speaking info_bar
                 # metadata aloud. "under 10 words" caps greeting length to reduce audio streaming time.
                 greeting_prompt = (
-                    f"Do NOT call any tools. Greet the user warmly in under 10 words. "
-                    f"Previous context: {cached[:150]}"
+                    "[SYSTEM: Do NOT call any tools. Greet the user warmly in under 10 words. "
+                    + f"Previous context: {combined_context[:150]}]"
                 )
             else:
-                greeting_prompt = "Do NOT call any tools. If you can see video input, briefly describe what you see in under 15 words. Otherwise, greet warmly in under 10 words."
+                greeting_prompt = "[SYSTEM: Do NOT call any tools. If you can see video input, briefly describe what you see in under 15 words. Otherwise, greet warmly in under 10 words.]"
             assistant._greeting_sent = True
             session.generate_reply(user_input=greeting_prompt)
-            logger.info(f"[init] Instant greeting fired (cached={'yes' if cached else 'no'})")
+            logger.info(f"[init] Instant greeting fired (cached={'yes' if cached else 'no'}, memory={'yes' if memory_context else 'no'})")
         except Exception as e:
             logger.warning(f"[init] Instant greeting failed: {e}")
 
