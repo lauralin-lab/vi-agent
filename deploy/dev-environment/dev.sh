@@ -54,10 +54,11 @@ DRY_RUN=false
 IMAGE_TAG=""
 BUILD_MODE="image"
 
+KEY_EXPLICITLY_SET=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --name)          DEV_NAME="$2";     shift 2 ;;
-    --key)           SSH_KEY="$2";      shift 2 ;;
+    --key)           SSH_KEY="$2"; KEY_EXPLICITLY_SET=true; shift 2 ;;
     --tag)           IMAGE_TAG="$2";    shift 2 ;;
     --mode)          BUILD_MODE="$2";   shift 2 ;;
     --show-versions) SHOW_VERSIONS=true; shift ;;
@@ -87,6 +88,11 @@ if $SHOW_CONFIG; then
     echo "STATUS=missing-name"
     echo "CONFIG_FILE=$CONFIG_FILE"
     echo "SSH_KEY=${SSH_KEY:-<not found>}"
+  elif [ -n "$SSH_KEY" ] && [ ! -f "$SSH_KEY" ]; then
+    echo "STATUS=bad-key"
+    echo "DEV_NAME=$DEV_NAME"
+    echo "SSH_KEY=$SSH_KEY (FILE NOT FOUND)"
+    echo "CONFIG_FILE=$CONFIG_FILE"
   else
     echo "STATUS=ok"
     echo "DEV_NAME=$DEV_NAME"
@@ -103,6 +109,19 @@ if $SAVE_CONFIG; then
     echo "ERROR: --save-config requires --name NAME" >&2
     exit 1
   fi
+  if $KEY_EXPLICITLY_SET; then
+    # Validate SSH key file exists only when --key was explicitly provided
+    if [ ! -f "$SSH_KEY" ]; then
+      echo "ERROR: SSH key file not found: $SSH_KEY" >&2
+      exit 1
+    fi
+  else
+    # --key not provided: re-detect fresh (ignore any bad value from config)
+    SSH_KEY=""
+    for key in ~/.ssh/gcp_ssh_key ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa; do
+      if [ -f "$key" ]; then SSH_KEY="$key"; break; fi
+    done
+  fi
   cat > "$CONFIG_FILE" << EOF
 # Dev environment local config — NOT committed to git (covered by *.local in .gitignore)
 DEV_NAME=$DEV_NAME
@@ -110,7 +129,7 @@ SSH_KEY=${SSH_KEY:-}
 EOF
   echo "Saved to $CONFIG_FILE"
   echo "  DEV_NAME=$DEV_NAME"
-  echo "  SSH_KEY=${SSH_KEY:-<not set>}"
+  echo "  SSH_KEY=${SSH_KEY:-<auto-detect on next run>}"
   exit 0
 fi
 
