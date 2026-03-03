@@ -1292,7 +1292,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       </AnimatePresence>
 
-      {/* ═══ BOTTOM AREA: Action Bar + Chat Input ═══ */}
+      {/* ═══ BOTTOM AREA: Siri-like floating chat bar ═══ */}
       <div className="absolute bottom-0 left-0 right-0 z-20"
         style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
 
@@ -1305,7 +1305,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         {chatImages.length > 0 && (
           <div className="flex gap-2 mb-2 px-5">
             {chatImages.map((img, i) => (
-              <div key={i} className="relative w-14 h-14 overflow-hidden" style={{ borderRadius: 14, border: '1px solid rgba(0,0,0,0.06)' }}>
+              <div key={i} className="relative w-14 h-14 overflow-hidden" style={{ borderRadius: 16, border: '1px solid rgba(0,0,0,0.06)' }}>
                 <img src={img.preview} alt="" className="w-full h-full object-cover" />
                 <button
                   onClick={() => setChatImages(prev => prev.filter((_, j) => j !== i))}
@@ -1327,71 +1327,144 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               transition={{ duration: 0.15 }}
               className="absolute bottom-full left-4 mb-2 backdrop-blur-xl overflow-hidden shadow-2xl"
-              style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+              style={{ borderRadius: 22, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(40px)', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
             >
               <button
                 onClick={() => { setShowAddMenu(false); onAddPhoto?.(); }}
-                className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-black/[0.02] transition-colors"
+                className="flex items-center gap-3 px-5 py-3.5 w-full text-left hover:bg-black/[0.02] transition-colors"
               >
-                <Camera size={18} style={{ color: 'rgba(0,0,0,0.4)' }} />
-                <span style={{ fontSize: 'var(--text-base)', color: 'rgba(0,0,0,0.7)' }}>Take Photo</span>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: '#000' }}>
+                  <Camera size={14} className="text-white" />
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.7)' }}>Take Photo</span>
               </button>
-              <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
+              <div className="h-px mx-4" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <button
                 onClick={() => { setShowAddMenu(false); fileInputRef.current?.click(); }}
-                className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-black/[0.02] transition-colors"
+                className="flex items-center gap-3 px-5 py-3.5 w-full text-left hover:bg-black/[0.02] transition-colors"
               >
-                <ImageIcon size={18} style={{ color: 'rgba(0,0,0,0.4)' }} />
-                <span style={{ fontSize: 'var(--text-base)', color: 'rgba(0,0,0,0.7)' }}>Choose from Album</span>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.75)' }}>
+                  <ImageIcon size={14} className="text-white" />
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.7)' }}>Choose from Album</span>
               </button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Input row */}
-        <div className="flex items-center gap-2 px-4 py-2">
-          {/* + button */}
-          <button
-            onClick={() => setShowAddMenu(prev => !prev)}
-            className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all ${showAddMenu ? 'rotate-45' : ''}`}
-            style={{ background: showAddMenu ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)', color: showAddMenu ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.3)' }}
+        {/* Siri-like floating input pill */}
+        <div className="px-3 py-1.5">
+          <motion.div
+            className="relative overflow-hidden"
+            style={{
+              borderRadius: 28,
+              background: livekit?.isMicEnabled
+                ? 'rgba(0,0,0,0.03)'
+                : 'rgba(255,255,255,0.85)',
+              backdropFilter: 'blur(40px)',
+              WebkitBackdropFilter: 'blur(40px)',
+              boxShadow: livekit?.isMicEnabled
+                ? '0 0 0 1.5px rgba(0,0,0,0.12), 0 8px 32px rgba(0,0,0,0.08)'
+                : '0 0 0 1px rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.06)',
+              transition: 'all 0.4s cubic-bezier(0.23, 1, 0.32, 1)',
+            }}
           >
-            <Plus size={20} />
-          </button>
+            {/* Animated gradient border when mic is active */}
+            {livekit?.isMicEnabled && (
+              <motion.div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  borderRadius: 28,
+                  background: 'linear-gradient(270deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02), rgba(0,0,0,0.06))',
+                  backgroundSize: '300% 100%',
+                }}
+                animate={{
+                  backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: 'linear',
+                }}
+              />
+            )}
 
-          {/* Text input with inline mic */}
-          <div className="flex-1 flex items-center backdrop-blur-xl px-3 py-2.5 gap-2 min-h-[44px]"
-            style={{ borderRadius: 22, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-          >
-            <input
-              ref={chatInputRef}
-              type="text"
-              value={chatText}
-              onChange={e => setChatText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-              placeholder="Ask anything..."
-              className="flex-1 bg-transparent outline-none font-light min-w-0"
-              style={{ fontSize: 'var(--text-base)', color: '#000', '::placeholder': { color: 'rgba(0,0,0,0.25)' } }}
-            />
-            {/* Mic button */}
-            <button
-              onClick={() => livekit?.toggleMic?.()}
-              className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all"
-              style={{ background: livekit?.isMicEnabled ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)', color: livekit?.isMicEnabled ? '#000' : 'rgba(0,0,0,0.3)' }}
-            >
-              {livekit?.isMicEnabled ? <Mic size={16} /> : <MicOff size={16} />}
-            </button>
-          </div>
+            <div className="relative flex items-center gap-1.5 px-2 py-1.5">
+              {/* + button */}
+              <button
+                onClick={() => setShowAddMenu(prev => !prev)}
+                className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${showAddMenu ? 'rotate-45' : ''}`}
+                style={{
+                  background: showAddMenu ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)',
+                  color: showAddMenu ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.25)',
+                }}
+              >
+                <Plus size={18} strokeWidth={2} />
+              </button>
 
-          {/* Send button */}
-          <button
-            onClick={handleSendMessage}
-            disabled={!chatText.trim() && chatImages.length === 0}
-            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all"
-            style={{ background: (chatText.trim() || chatImages.length > 0) ? '#000' : 'rgba(0,0,0,0.04)', color: (chatText.trim() || chatImages.length > 0) ? '#fff' : 'rgba(0,0,0,0.15)' }}
-          >
-            <ArrowUp size={20} />
-          </button>
+              {/* Text input */}
+              <input
+                ref={chatInputRef}
+                type="text"
+                value={chatText}
+                onChange={e => setChatText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                placeholder={livekit?.isMicEnabled ? 'Listening...' : 'Ask anything...'}
+                className="flex-1 bg-transparent outline-none min-w-0"
+                style={{
+                  fontSize: 15,
+                  fontWeight: 400,
+                  color: '#000',
+                  letterSpacing: '-0.01em',
+                }}
+              />
+
+              {/* Mic button — Siri-like animated orb */}
+              <motion.button
+                onClick={() => livekit?.toggleMic?.()}
+                whileTap={{ scale: 0.88 }}
+                className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center relative overflow-hidden transition-all duration-300"
+                style={{
+                  background: livekit?.isMicEnabled
+                    ? '#000'
+                    : 'rgba(0,0,0,0.04)',
+                  color: livekit?.isMicEnabled ? '#fff' : 'rgba(0,0,0,0.25)',
+                  boxShadow: livekit?.isMicEnabled ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
+                }}
+              >
+                {/* Pulse ring when active */}
+                {livekit?.isMicEnabled && (
+                  <motion.div
+                    className="absolute inset-0 rounded-full"
+                    style={{ border: '2px solid rgba(0,0,0,0.2)' }}
+                    animate={{ scale: [1, 1.5, 1], opacity: [0.6, 0, 0.6] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                )}
+                {livekit?.isMicEnabled ? <Mic size={16} strokeWidth={2.2} /> : <Mic size={16} strokeWidth={1.8} />}
+              </motion.button>
+
+              {/* Send button — only visible when there's content */}
+              <AnimatePresence>
+                {(chatText.trim() || chatImages.length > 0) && (
+                  <motion.button
+                    initial={{ scale: 0, opacity: 0, width: 0 }}
+                    animate={{ scale: 1, opacity: 1, width: 40 }}
+                    exit={{ scale: 0, opacity: 0, width: 0 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    onClick={handleSendMessage}
+                    className="h-10 shrink-0 rounded-full flex items-center justify-center overflow-hidden"
+                    style={{
+                      background: '#000',
+                      color: '#fff',
+                    }}
+                  >
+                    <ArrowUp size={18} strokeWidth={2.2} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
         </div>
 
         {/* Hidden file input for album upload */}
