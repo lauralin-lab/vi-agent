@@ -50,8 +50,15 @@ else
     SLOT=$(python3 -c "
 import json
 with open('$REGISTRY') as f: r=json.load(f)
-print(r['next_slot'])
+used = set(v['slot'] for v in r['instances'].values())
+max_slots = r.get('max_slots', 9)
+slot = next((s for s in range(1, max_slots + 1) if s not in used), -1)
+print(slot)
 ")
+    if [ "$SLOT" = "-1" ]; then
+        echo "ERROR: No available slots (max_slots=$(python3 -c "import json; print(json.load(open('$REGISTRY')).get('max_slots',9))")). Stop an existing instance first."
+        exit 1
+    fi
     echo "New instance — allocating slot $SLOT"
 fi
 
