@@ -21,6 +21,7 @@ class Settings:
     LIVEKIT_API_KEY: str = os.getenv("LIVEKIT_API_KEY", "")
     LIVEKIT_API_SECRET: str = os.getenv("LIVEKIT_API_SECRET", "")
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+    VI_AGENT_NAME: str = os.getenv("VI_AGENT_NAME", "")
 
     def __init__(self):
         if "DO-NOT-USE-IN-PRODUCTION" in self.JWT_SECRET or "change-this" in self.JWT_SECRET:

@@ -49,9 +49,10 @@ async def _dispatch_agent(room_name: str) -> None:
             api_key=settings.LIVEKIT_API_KEY,
             api_secret=settings.LIVEKIT_API_SECRET,
         ) as lk_api:
-            dispatch = await lk_api.agent_dispatch.create_dispatch(
-                CreateAgentDispatchRequest(room=room_name)
-            )
+            req = CreateAgentDispatchRequest(room=room_name)
+            if settings.VI_AGENT_NAME:
+                req.agent_name = settings.VI_AGENT_NAME
+            dispatch = await lk_api.agent_dispatch.create_dispatch(req)
             logger.info("Agent dispatched to room %s: %s", room_name, dispatch.id)
     except Exception as e:
         logger.warning("Failed to dispatch agent to room %s: %s", room_name, e)
