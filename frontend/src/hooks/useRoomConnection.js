@@ -367,18 +367,21 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     switchingRef.current = true;
     const newFacing = facingModeRef.current === 'environment' ? 'user' : 'environment';
     try {
-      // Stop old track FIRST to release camera hardware (required on many mobile devices)
+      // Stop camera hardware FIRST, then unpublish (release hardware before signaling)
       const currentTrack = roomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
       if (currentTrack?.track) {
-        await roomRef.current.localParticipant.unpublishTrack(currentTrack.track);
         currentTrack.track.stop();
+        await roomRef.current.localParticipant.unpublishTrack(currentTrack.track);
       }
 
-      // Create new track with preferred (not exact) facingMode for better compatibility
+      // Wait for mobile camera hardware to fully release
+      await new Promise(r => setTimeout(r, 300));
+
+      // Use exact facingMode to force camera switch on mobile
       const [newTrack] = await createLocalTracks({
         audio: false,
         video: {
-          facingMode: newFacing,
+          facingMode: { exact: newFacing },
           resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, frameRate: CAMERA_FPS },
         },
       });
@@ -390,7 +393,24 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
       setFacingMode(newFacing);
       setTorchEnabled(false);
     } catch (e) {
-      console.warn('[LiveKit] Camera switch failed:', e.message);
+      console.warn('[LiveKit] Camera switch (exact) failed, trying ideal:', e.message);
+      // exact facingMode may fail on some devices — fall back to ideal constraint
+      try {
+        const [fallbackTrack] = await createLocalTracks({
+          audio: false,
+          video: {
+            facingMode: newFacing,
+            resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, frameRate: CAMERA_FPS },
+          },
+        });
+        await roomRef.current.localParticipant.publishTrack(fallbackTrack);
+        setLocalVideoTrack(fallbackTrack);
+        facingModeRef.current = newFacing;
+        setFacingMode(newFacing);
+        setTorchEnabled(false);
+      } catch (fallbackErr) {
+        console.warn('[LiveKit] Camera switch fallback also failed:', fallbackErr.message);
+      }
     } finally {
       switchingRef.current = false;
     }
