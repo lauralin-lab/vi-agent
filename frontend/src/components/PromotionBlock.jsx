@@ -1,13 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { User } from 'lucide-react';
 
 export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAuthenticated }) {
     const [expanded, setExpanded] = useState(true);
+    const [videoLoaded, setVideoLoaded] = useState(false);
+    const videoReadyRef = useRef(false);
+
+    const handleVideoReady = useCallback(() => {
+        videoReadyRef.current = true;
+        setVideoLoaded(true);
+        setExpanded(false);
+    }, []);
 
     useEffect(() => {
-        const timer = setTimeout(() => setExpanded(false), 400);
-        return () => clearTimeout(timer);
+        // Start shrink when video loads, or after max 1.5s
+        const maxTimer = setTimeout(() => setExpanded(false), 1500);
+
+        if (videoReadyRef.current) {
+            clearTimeout(maxTimer);
+            const t = setTimeout(() => setExpanded(false), 200);
+            return () => { clearTimeout(maxTimer); clearTimeout(t); };
+        }
+
+        return () => clearTimeout(maxTimer);
     }, []);
 
     const firstName = user?.displayName?.split(' ')[0] || null;
@@ -37,7 +53,7 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
             }}
             className="relative overflow-hidden"
             style={{
-                background: 'transparent',
+                background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
             }}
         >
             {/* ═══ Video background — looping ═══ */}
@@ -47,7 +63,9 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
                     loop
                     muted
                     playsInline
+                    onCanPlayThrough={handleVideoReady}
                     className="absolute inset-0 w-full h-full object-cover"
+                    style={{ opacity: videoLoaded ? 1 : 0, transition: 'opacity 0.6s ease' }}
                 >
                     <source src="/promo-bg.mp4" type="video/mp4" />
                 </video>
