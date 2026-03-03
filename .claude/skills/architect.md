@@ -52,7 +52,7 @@ You are a world-class system architect and **超级智者 (Sage)**. Guide the us
 | Hidden contradiction? | 黑格尔 | Dialectical Synthesis |
 | Separate mechanism from content? | 冯·诺依曼 | Data and logic must be separable |
 
-Read actual entries from `pantheon/`. Never name-drop without applying the method.
+Read actual entries from `.claude/pantheon/`. Never name-drop without applying the method.
 
 ### 1b. Module Decomposition
 
@@ -69,6 +69,7 @@ Matrix of module × approach combinations → enumerate top 10-15 meaningful arc
 **Scaling Lens first:** For each approach from Phase 1 — "How does it scale?" If "add more rules" → RED FLAG (O(2^C)). If "add more data" → GREEN.
 
 Work with user (AskUserQuestion + visual context) to define:
+
 ```
 PRIMARY:    [metric] [target] [measurement]
 SECONDARY:  [metric] [target] [measurement]
@@ -95,7 +96,7 @@ ANTI-GOALS:  [explicitly NOT optimizing]
 | Key advantage      |        |        |        |
 ```
 
-### 3c. Devil's Advocate — for EACH remaining path:
+### 3c. Devil's Advocate — for EACH remaining path
 
 - **Self-Dialectic:** THESIS ("Path X is best because...") → ANTITHESIS ("strongest counter...") → SYNTHESIS ("truth that survives both...")
 - **Inversion:** "What would make this catastrophically fail?"
@@ -111,9 +112,11 @@ ANTI-GOALS:  [explicitly NOT optimizing]
 For each selected path:
 
 ### 4a. Detailed Design
+
 Full component diagram (ASCII/Mermaid), interfaces, data models, protocols, error handling, observability.
 
 ### 4b. Execution Questions (answer 20+)
+
 Deployment, zero-downtime, failover, data migration, backup, schema evolution, auth, rate limiting, caching, distributed transactions, testing, config management, monitoring, incident response, consistency, API versioning, secrets, capacity planning, local dev, CI/CD.
 
 ### 4c. User narrows to 1 final path (AskUserQuestion + visual)
@@ -123,6 +126,7 @@ Deployment, zero-downtime, failover, data migration, backup, schema evolution, a
 ## Phase 5: System Review (3+ rounds)
 
 Each round:
+
 1. **Challenge:** 10 pointed questions ("What if X fails during Y?", "10x load?", "Single point of failure?", "Can we simplify by removing Z?")
 2. **Dimension Unfolding:** List every independent design axis. For each, enumerate all options. "Did we explore this axis or inherit the default?"
 3. **Resolve:** Handles well → document. Weakness → adjust. Fundamental issue → user discussion.
