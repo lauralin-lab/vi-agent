@@ -59,6 +59,10 @@ members:
     name: "yuang-yang"
     role: backend-engineer
     github: yuang-yang
+  - id: szj
+    name: "szj"
+    role: realtime-engineer
+    github: initialneil
   - id: xxLe
     name: "xxLe"
     role: frontend-engineer

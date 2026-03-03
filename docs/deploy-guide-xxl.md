@@ -17,7 +17,7 @@ Claude 会自动判断当前分支、打 tag、构建、部署、验证，全程
 | 项目 | 值 |
 |------|-----|
 | SSH | `ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61` |
-| 分支 | `features/xxl_dev` |
+| 分支 | 当前分支（`git branch --show-current`） |
 | Slot | 6 |
 | 实例目录 | `/opt/vi-agent/instances/xxl/` |
 | 服务器代码 | `~/vi-agent-repos/xxl/` |
@@ -58,7 +58,7 @@ Claude 会自动判断当前分支、打 tag、构建、部署、验证，全程
 
 ```bash
 git status --porcelain          # 确保干净
-git push                        # 确保已推送到 features/xxl_dev
+git push                        # 确保当前分支已推送到 remote
 ssh-add -l || ssh-add ~/.ssh/id_rsa   # 确保 SSH agent 有 key
 ```
 
