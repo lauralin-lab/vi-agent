@@ -364,23 +364,27 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     if (!roomRef.current) return;
     const newFacing = facingMode === 'environment' ? 'user' : 'environment';
     try {
+      // Create new track FIRST so there's no blank gap
+      const [newTrack] = await createLocalTracks({
+        audio: false,
+        video: {
+          facingMode: { exact: newFacing },
+          resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, frameRate: CAMERA_FPS },
+        },
+      });
+
+      // Now unpublish and stop the old track
       const currentTrack = roomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
       if (currentTrack?.track) {
         await roomRef.current.localParticipant.unpublishTrack(currentTrack.track);
         currentTrack.track.stop();
       }
 
-      const [newTrack] = await createLocalTracks({
-        audio: false,
-        video: {
-          facingMode: newFacing,
-          resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, frameRate: CAMERA_FPS },
-        },
-      });
+      // Publish the new track and update state immediately
       await roomRef.current.localParticipant.publishTrack(newTrack);
       setLocalVideoTrack(newTrack);
       setFacingMode(newFacing);
-      setTorchEnabled(false); // Reset torch on camera switch
+      setTorchEnabled(false);
     } catch (e) {
       console.warn('[LiveKit] Camera switch failed:', e.message);
     }

@@ -27,11 +27,12 @@ function Toast({ message, onDone }) {
   useEffect(() => { const t = setTimeout(onDone, 2000); return () => clearTimeout(t); }, [onDone]);
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.9 }}
+      initial={{ opacity: 0, y: 12, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.9 }}
+      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
       className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] px-5 py-2.5 rounded-full font-medium shadow-lg"
-      style={{ fontSize: 'var(--text-sm)', background: '#000', color: '#fff' }}
+      style={{ fontSize: 'var(--text-sm)', background: '#000', color: '#fff', willChange: 'transform, opacity' }}
     >
       {message}
     </motion.div>
@@ -180,8 +181,8 @@ function ActiveHtmlBlock({ block, onAction, streamingChunks }) {
           <motion.div
             className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
             animate={{ x: ['-100%', '100%'] }}
-            transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-            style={{ width: '40%' }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
+            style={{ width: '40%', willChange: 'transform' }}
           />
         </div>
       )}
@@ -258,10 +259,13 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
   if (!expanded && !isLatest) {
     return (
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        layout
+        initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+        exit={{ opacity: 0, scale: 0.97 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         className="mb-2"
+        style={{ willChange: 'transform, opacity' }}
       >
         <button
           onClick={onToggle}
@@ -289,10 +293,13 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
   // Expanded view: full content
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      layout
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      exit={{ opacity: 0, y: -4, scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 32 }}
       className="mb-3"
+      style={{ willChange: 'transform, opacity' }}
     >
       {/* Collapse button for non-latest expanded cards */}
       {!isLatest && isDone && (
@@ -403,12 +410,12 @@ function ConversationPill({ messages }) {
         {expanded ? (
           <motion.div
             key="expanded"
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 35 }}
             className="backdrop-blur-xl overflow-hidden max-h-[280px]"
-            style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.1)' }}
+            style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.1)', willChange: 'transform, opacity' }}
           >
             <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
               <div className="flex items-center gap-2">
@@ -450,12 +457,13 @@ function ConversationPill({ messages }) {
         ) : (
           <motion.div
             key="pill"
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 35 }}
             onClick={() => setExpanded(true)}
             className="cursor-pointer"
+            style={{ willChange: 'transform, opacity' }}
           >
             <div className="backdrop-blur-xl px-4 py-2.5 flex items-center gap-2.5"
               style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}
@@ -497,11 +505,12 @@ function ActionBar({ actionCard, onSelect }) {
   if (!actionCard || !actionCard.options?.length) return null;
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 10 }}
-      transition={{ duration: 0.2 }}
+      exit={{ opacity: 0, y: 6 }}
+      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
       className="px-4 pb-2"
+      style={{ willChange: 'transform, opacity' }}
     >
       {actionCard.title && (
         <p className="mb-1.5 font-medium" style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.3)' }}>
@@ -540,10 +549,12 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
   const message = taskProgress?.message || infoBar?.message || 'Analyzing...';
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
+      initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className="flex items-center justify-center gap-2.5 py-8"
+      style={{ willChange: 'transform, opacity' }}
     >
       <div className="flex items-center gap-2 px-4 py-2 rounded-full" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.04)' }}>
         <Loader2 size={14} className="animate-spin" style={{ color: 'rgba(0,0,0,0.3)' }} />
@@ -1103,11 +1114,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   useEffect(() => {
     if (scrollContainerRef.current) {
       const el = scrollContainerRef.current;
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
       if (isNearBottom) {
         requestAnimationFrame(() => {
-          const hasStreamingBlock = canvasBlocks.some(b => b.status === 'streaming' || b.status === 'loading');
-          el.scrollTo({ top: el.scrollHeight, behavior: hasStreamingBlock ? 'auto' : 'smooth' });
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
         });
       }
     }
@@ -1130,11 +1140,12 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 50 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 50 }}
+      exit={{ opacity: 0, y: 16 }}
+      transition={{ type: 'spring', stiffness: 350, damping: 30 }}
       className="w-full h-full flex flex-col relative z-50"
-      style={{ background: '#fff' }}
+      style={{ background: '#fff', willChange: 'transform, opacity' }}
     >
       {/* Header */}
       <div className="safe-area-top w-full flex items-center px-4 pb-2 shrink-0 relative z-10">
@@ -1229,7 +1240,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}
       >
         {/* Canvas cards: stacked artifacts */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {canvasBlocks.map((block, i) => {
             const isLatest = i === canvasBlocks.length - 1;
             const isExpanded = isLatest || expandedCardIds.has(block.id);
@@ -1322,10 +1333,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         <AnimatePresence>
           {showAddMenu && (
             <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              initial={{ opacity: 0, y: 6, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
+              exit={{ opacity: 0, y: 4, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 550, damping: 35 }}
               className="absolute bottom-full left-4 mb-2 backdrop-blur-xl overflow-hidden shadow-2xl"
               style={{ borderRadius: 22, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(40px)', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
             >
@@ -1436,9 +1447,9 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
                 {livekit?.isMicEnabled && (
                   <motion.div
                     className="absolute inset-0 rounded-full"
-                    style={{ border: '2px solid rgba(0,0,0,0.2)' }}
-                    animate={{ scale: [1, 1.5, 1], opacity: [0.6, 0, 0.6] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ border: '2px solid rgba(0,0,0,0.2)', willChange: 'transform, opacity' }}
+                    animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0, 0.5] }}
+                    transition={{ duration: 2.4, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
                   />
                 )}
                 {livekit?.isMicEnabled ? <Mic size={16} strokeWidth={2.2} /> : <Mic size={16} strokeWidth={1.8} />}

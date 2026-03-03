@@ -4,7 +4,7 @@ import {
   ArrowLeft, Mic, MicOff, Wifi, WifiOff,
   Loader2, Upload, Check, ScanLine, CheckCircle2, X, Edit3,
   Search, Languages, Eye, Sparkles, Receipt, ShoppingBag,
-  Zap, RefreshCw
+  RefreshCw
 } from 'lucide-react';
 
 // Map detected intent → icon component for dynamic shutter
@@ -978,17 +978,8 @@ export default function LiveCameraView({
           </div>
         </div>
 
-        {/* Torch + Flip */}
+        {/* Flip Camera */}
         <div className="flex items-center gap-1.5 pointer-events-auto">
-          {livekit.facingMode === 'environment' && (
-            <button
-              onClick={() => livekit.toggleTorch?.()}
-              className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.08] backdrop-blur-xl active:scale-90 transition-all"
-              style={{ background: livekit.torchEnabled ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.06)' }}
-            >
-              <Zap size={16} strokeWidth={1.8} className={livekit.torchEnabled ? 'text-yellow-300' : 'text-white/50'} />
-            </button>
-          )}
           <button
             onClick={() => livekit.switchCamera?.()}
             className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.08] backdrop-blur-xl active:scale-90 transition-all"
