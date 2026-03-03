@@ -1439,10 +1439,11 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
             await publish_transcript(assistant.room, "gateway", "✅ Website HTML generated and streamed to display.")
             assistant.record_timeline_entry("gateway", "✅ Website HTML generated and streamed to display.")
 
-            # Update task status to complete — include actual HTML for DB persistence
+            # Update task status to complete — include full HTML for DB persistence
+            full_html = data.get("html", "") or text or ""
             asyncio.create_task(assistant.update_session_status(
                 "complete",
-                result={"type": "html", "html": text or "", "chars": len(text) if text else 0},
+                result={"type": "html", "html": full_html, "summary": text or "", "chars": len(full_html)},
             ))
 
             # Tell agent to speak a brief confirmation
@@ -1621,7 +1622,7 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
 
         # Persist task to DB if this is a dispatch message
         if is_dispatch:
-            asyncio.create_task(assistant.persist_session(text))
+            await assistant.persist_session(text)
 
             # Extract and store GCS photo URLs for reference
             photo_urls = assistant._GCS_URL_RE.findall(text)

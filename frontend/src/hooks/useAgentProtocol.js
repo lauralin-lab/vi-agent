@@ -696,12 +696,12 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   const sendDispatch = useCallback(async (intention, photoUrls = []) => {
     if (!roomRef.current) {
       console.warn('[LiveKit] Cannot send dispatch: no room');
-      return;
+      return false;
     }
     const identity = resolveAgentIdentity();
     if (!identity) {
       console.warn('[LiveKit] Cannot send dispatch: agent identity not resolved');
-      return;
+      return false;
     }
     try {
       // Build [USER_DISPATCH] message that handle_f2b_send_message expects
@@ -720,8 +720,10 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
         responseTimeoutMs: 10000,
       });
       console.log('[LiveKit] Dispatch sent via RPC:', { intention: intention?.substring(0, 50), photoCount: photoUrls.length });
+      return true;
     } catch (e) {
       console.error('[LiveKit] Failed to send dispatch:', e);
+      return false;
     }
   }, [roomRef, resolveAgentIdentity]);
 

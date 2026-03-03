@@ -736,6 +736,7 @@ export class GatewayService {
             rpcPayload = {
               taskId,
               text: summary.text || 'Website generated successfully.',
+              html: accumulatedHtml,
               error: null,
               isHtmlStream: true,
               timestamp: Date.now(),

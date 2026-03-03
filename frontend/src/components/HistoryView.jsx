@@ -277,8 +277,10 @@ export default function HistoryView({
             setLiveSessions(prev => prev.map(t =>
                 t.id === latest.task_id ? { ...t, status: latest.status || 'complete', result: latest.result } : t
             ));
+            // Re-fetch from API to get full result_html (DataChannel event only has status)
+            fetchSessions(false);
         }
-    }, [livekit?.taskEvents]);
+    }, [livekit?.taskEvents, fetchSessions]);
 
     // SSE real-time events
     const lastSseEventRef = useRef(0);

@@ -145,6 +145,9 @@ export default function LiveCameraView({
   // Stack status animation
   const [stackStatus, setStackStatus] = useState('IDLE');
 
+  // Dispatching overlay (shown while waiting for upload + RPC)
+  const [isDispatching, setIsDispatching] = useState(false);
+
   // Scanning effect
   const [isScanning, setIsScanning] = useState(false);
   const scanTimerRef = useRef(null);
@@ -542,35 +545,41 @@ export default function LiveCameraView({
     // User-edited intention takes priority, then agent intention, then card text
     const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
 
-    // Navigate to session immediately — loading happens in session view (optimistic)
-    play('session.enter');
-    onViewResult(null, capturedMedia, finalIntention);
+    // Show "Sending to agent..." overlay while we upload + dispatch
+    setIsDispatching(true);
 
     // Capture sendDispatch ref before potential unmount
     const dispatch = livekit.sendDispatch;
 
-    // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
-    // NOTE: After onViewResult navigates away, this component unmounts and setState
-    // calls in upload callbacks become no-ops. So we read URLs directly from the
-    // promise resolve values instead of relying on capturedMediaRef state updates.
-    const pendingPromises = [...uploadPromisesRef.current];
-    let allUrls = [];
-    if (pendingPromises.length > 0) {
-      const settled = await Promise.race([
-        Promise.allSettled(pendingPromises),
-        new Promise(resolve => setTimeout(resolve, 10000)),
-      ]);
-      if (Array.isArray(settled)) {
-        allUrls = settled
-          .filter(r => r.status === 'fulfilled' && r.value)
-          .map(r => r.value);
+    try {
+      // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
+      const pendingPromises = [...uploadPromisesRef.current];
+      let allUrls = [];
+      if (pendingPromises.length > 0) {
+        const settled = await Promise.race([
+          Promise.allSettled(pendingPromises),
+          new Promise(resolve => setTimeout(resolve, 10000)),
+        ]);
+        if (Array.isArray(settled)) {
+          allUrls = settled
+            .filter(r => r.status === 'fulfilled' && r.value)
+            .map(r => r.value);
+        }
       }
+      // Fallback: check ref in case some uploads completed before unmount
+      if (allUrls.length === 0) {
+        allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
+      }
+
+      // Dispatch to agent and wait for RPC to complete
+      await dispatch(finalIntention, allUrls);
+    } finally {
+      // Always clear overlay and navigate, even if dispatch failed
+      setIsDispatching(false);
     }
-    // Fallback: check ref in case some uploads completed before unmount
-    if (allUrls.length === 0) {
-      allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
-    }
-    dispatch(finalIntention, allUrls);
+
+    play('session.enter');
+    onViewResult(null, capturedMedia, finalIntention);
   };
 
   // ── Action card option handler ──
@@ -930,6 +939,20 @@ export default function LiveCameraView({
           )}
         </AnimatePresence>
 
+        {/* Dispatching overlay — shown while uploads + RPC complete */}
+        <AnimatePresence>
+          {isDispatching && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center"
+            >
+              <Loader2 size={36} className="text-white animate-spin mb-3" />
+              <span className="text-white/80 text-sm font-medium">Sending to agent...</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Action Card Overlay */}
         <AnimatePresence>
