@@ -53,6 +53,17 @@ export default function LiveCameraView({
   const { play } = useSound();
   const videoRef = useRef(null);
 
+  // Detect if front camera is active (mirror the preview like native camera)
+  const isFrontCamera = (() => {
+    const track = livekit.localVideoTrack;
+    if (!track) return false;
+    // Check actual hardware facingMode from track settings
+    const settings = track.mediaStreamTrack?.getSettings?.();
+    if (settings?.facingMode) return settings.facingMode === 'user';
+    // Fallback: desktop webcams have no facingMode → treat as front camera
+    return livekit.facingMode !== 'environment' || !('ontouchstart' in window);
+  })();
+
   // Card state — driven by agent transcripts
   const [showCard, setShowCard] = useState(true);
   const [cardText, setCardText] = useState("Connecting to AI...");
@@ -324,20 +335,31 @@ export default function LiveCameraView({
     return promise;
   }, []);
 
+  // ── Helper: draw video frame to canvas, mirror if front camera ──
+  const drawVideoToCanvas = useCallback((video, canvas, ctx) => {
+    if (isFrontCamera) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (isFrontCamera) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
+    }
+  }, [isFrontCamera]);
+
   // ── Photo capture from real video stream ──
   const capturePhotoFromVideo = useCallback(async () => {
-    const dataUrl = await livekit.capturePhoto();
-    if (dataUrl) return dataUrl;
+    // Skip livekit.capturePhoto() — it doesn't mirror for front camera
     if (videoRef.current) {
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth || 640;
       canvas.height = videoRef.current.videoHeight || 480;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      drawVideoToCanvas(videoRef.current, canvas, ctx);
       return canvas.toDataURL('image/jpeg', 0.8);
     }
     return null;
-  }, [livekit]);
+  }, [drawVideoToCanvas]);
 
   // ── Shutter handlers ──
   const captureVideoThumbnail = useCallback(() => {
@@ -346,11 +368,11 @@ export default function LiveCameraView({
       canvas.width = videoRef.current.videoWidth || 640;
       canvas.height = videoRef.current.videoHeight || 480;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      drawVideoToCanvas(videoRef.current, canvas, ctx);
       return canvas.toDataURL('image/jpeg', 0.6);
     }
     return null;
-  }, []);
+  }, [drawVideoToCanvas]);
 
   const stopVideoRecording = useCallback(() => {
     clearTimeout(autoStopTimerRef.current);
@@ -583,6 +605,7 @@ export default function LiveCameraView({
             playsInline
             muted
             className="absolute inset-0 w-full h-full object-cover"
+            style={isFrontCamera ? { transform: 'scaleX(-1)' } : undefined}
           />
         ) : (
           /* ── Beautiful no-camera fallback ── */

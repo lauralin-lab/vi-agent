@@ -1211,7 +1211,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-      className="fixed inset-0 flex flex-col z-50"
+      className="absolute inset-0 flex flex-col z-50"
       style={{ background: '#fff', willChange: 'transform, opacity' }}
     >
       {/* Header — pinned at top via visualViewport on iOS */}
