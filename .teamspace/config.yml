@@ -52,6 +52,10 @@ members:
     name: "Liya Song"
     role: infra-engineer
     github: lysfighting
+  - id: yuang-yang
+    name: "yuang-yang"
+    role: backend-engineer
+    github: yuang-yang
   - id: xxLe
     name: "xxLe"
     role: frontend-engineer
