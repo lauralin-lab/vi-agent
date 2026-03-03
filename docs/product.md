@@ -6,7 +6,27 @@
 
 ## 1. Product Vision
 
-**Personal Intelligence in Your Camera** — a visual AI agent that lives in your camera, understands what you see, predicts what you need, and delivers structured artifacts in seconds.
+**Video Call with Your Claude Code** — a personal AI that sees what you see, knows your memories and preferences, and proactively suggests what to do next. The camera is your always-on video call with your own Claude Code instance.
+
+### The Master-Spokesperson Model
+
+The product has a split-brain architecture that the user never sees:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ What the user experiences:                                │
+│   "I'm talking to a smart AI that sees what I see"        │
+│                                                           │
+│ What's actually happening:                                │
+│   🧠 Claude Code (Master) — thinks, remembers, executes  │
+│   🎤 Gemini (Spokesperson) — talks, listens, sees         │
+│                                                           │
+│ User value comes from: Claude Code + Skills               │
+│ User interacts with: the Spokesperson (natural voice)     │
+└──────────────────────────────────────────────────────────┘
+```
+
+The user never knows there are two AIs. They experience a single, seamless intelligence: one that can chat naturally in real-time (Gemini) AND execute complex tasks with tools and memory (Claude Code). The Spokesperson is the face; the Master is the brain.
 
 ### Core Axiom
 
@@ -23,18 +43,27 @@ Three growth levers:
 ### The Loop
 
 ```
-Input [Visual + Intention] → Agent → Output [Artifact] → Grow [Memory, Skill]
+See [Spokesperson's eyes] → Predict [Master's brain] → Execute [Master's skills] → Speak [Spokesperson's voice] → Grow [Master's memory]
 ```
 
-Every interaction follows this loop. The camera is both input device and intelligence interface.
+Every interaction follows this loop. The Spokesperson captures multimodal input and delivers output through natural voice. The Master does all the thinking, remembering, predicting, and executing.
+
+### Four Pillars
+
+| Pillar | What | Why |
+|--------|------|-----|
+| **Master-Spokesperson** | Claude Code drives strategy; Gemini delivers the experience | Value creation and value delivery are separated — best of both models |
+| **Multimodal Input** | Photos, video clips, live keyframes, voice | The richer the Spokesperson's perception, the smarter the Master's prediction |
+| **Pluggable Skills** | Each skill = a use case, pre-installed or user-created | Every skill is a product feature; the Master executes, the Spokesperson presents |
+| **Intention Prediction** | Master predicts what you need; Spokesperson suggests it naturally | "Video call with your Claude Code" — it suggests before you ask |
 
 ---
 
 ## 2. The Talking Camera
 
-The central product innovation is the **Talking Camera** — a camera that sees, listens, and predicts simultaneously.
+The central product innovation is the **Talking Camera** — a camera that sees, listens, and predicts simultaneously. It's your video call interface with your personal Claude Code.
 
-> **IMPORTANT:** The camera is not a shutter. It is a multi-modal input interface that combines **Vision + Voice + Gesture** into a single continuous interaction.
+> **IMPORTANT:** The camera is not a shutter. It is a multi-modal input interface that combines **Vision + Voice + Video + Gesture** into a single continuous interaction. The Spokesperson (Gemini) handles the real-time dialogue and visual sensing. The Master (Claude Code) receives the visual stream, predicts intentions, and tells the Spokesperson what to suggest — all invisible to the user.
 
 ### Why It Matters
 
@@ -120,8 +149,9 @@ The user journey flows through four views:
 
 ```
 Camera View → Session View → History
-                               ↓
-                           Memory View
+  (photo/video     (summary →        ↓
+   + AI viewing)    intentions →   Profile View
+                    output)        (Skills + Memory)
 ```
 
 ---
@@ -157,16 +187,18 @@ The floating card is the core innovation. It displays:
 #### Capture Flow
 
 ```
-User points camera → AI VIEWING... (observation card appears)
+User points camera → AI VIEWING... (observation card appears with intention predictions)
   → User taps shutter (photo captured, added to media stack)
+  → User long-press shutter (video recording, max 30s, red ring indicator)
   → User taps Done (✓)
-  → Navigate to Session View with photos + intention
+  → Navigate to Session View with photos/videos + predicted intentions
 ```
 
 #### Media Stack
 
-- Captured photos stack as thumbnails above the shutter
-- Show count badge ("1 items", "3 items")
+- Captured photos and video clips stack as thumbnails above the shutter
+- Show count badge ("1 items", "3 items") with media type indicator
+- Video thumbnails show duration overlay
 - Supports gallery view with delete/clear-all
 
 #### Camera Controls
@@ -174,37 +206,59 @@ User points camera → AI VIEWING... (observation card appears)
 - Zoom (pinch or slider)
 - Front/back camera switch
 - Flash toggle
+- **Long-press shutter**: Start/stop video recording (max 30s)
+- **Observation card**: Now shows predicted Intention Cards based on what AI sees
 
 ---
 
-### 4.2 Session View — Canvas-First Artifact Display
+### 4.2 Session View — Summary → Intentions → Output
 
 **Component:** `LiveSessionView.jsx`
 
-The session view uses a **canvas-first** design where agent-generated artifacts are the hero content, not conversation.
+The session view is redesigned around a three-zone layout: **Summary → Intention Cards → Output**. This replaces the previous canvas-first approach with a prediction-driven workflow.
 
-#### Canvas Zone (scrollable, hero content)
+#### Zone 1: Session Summary (top)
 
-The main content area renders a stack of artifact blocks:
+A compact header showing session context:
+- What was captured: "3 photos, 1 video clip"
+- Current state: "Analyzing nutrition..." or "Ready for next action"
+- Active time: "2 min"
 
-- **CanvasCard** components: collapsed/expanded wrappers for each block
-- **HtmlBlock**: `ActiveHtmlBlock` (streaming via `PersistentHtmlRenderer`) or `StaticHtmlBlock`
-- **ModuleRenderer**: native React components for structured data (8 types)
-- **ImageBlock**: displayed images
-- Multiple blocks per session — each gateway task produces one block
-- Only the latest block is expanded by default
+#### Zone 2: Intention Cards (horizontal scroll)
 
-#### Conversation Pill (floating, transient)
+Predicted actions the user can execute with a single tap:
 
-- Floating pill showing the latest agent message
-- Expandable to show last 5 messages
-- Can be dismissed — conversation is secondary to artifacts
+- **Each card** = one predicted intention mapped to a Skill
+- Shows: icon, skill name, confidence %, estimated time
+- **Tap to execute**: directly dispatches the Skill to NanoClaw
+- Cards auto-update every 30s as context changes (new keyframes, actions)
+- Replaces the previous `action_card` DataChannel mechanism
 
-#### Action Bar (bottom)
+```
+┌────────┐ ┌────────┐ ┌────────┐
+│ 📊     │ │ 📕     │ │ 🎬     │
+│Nutrition│ │XiaoHong│ │ Video  │
+│Analysis │ │  Shu   │ │ Create │
+│ 85%    │ │ 60%    │ │ 40%    │
+│ ~10s   │ │ ~30s   │ │ ~60s   │
+└────────┘ └────────┘ └────────┘
+```
 
-- Agent-driven action options (clickable suggestions)
-- Chat input with photo attachment and send
+#### Zone 3: Output + Intermediate Results (scrollable, hero content)
+
+Results from Skill execution stream into this zone:
+
+- **Progress blocks**: step-by-step execution progress with percentage bar
+- **Intermediate blocks**: partial results shown as they arrive (e.g., OCR text, detected objects)
+- **Final result blocks**: `ModuleRenderer` components or `PersistentHtmlRenderer` HTML artifacts
+- Multiple blocks per session — each Skill execution produces a stream of blocks
+- Completed Intention Card shows mini-preview of its result
+
+#### Conversation & Input (bottom)
+
+- Chat input with photo/video attachment and send
 - Voice input capability
+- Floating conversation pill (minimized, expandable)
 
 #### Session Caching
 
@@ -241,15 +295,56 @@ Tapping a card opens the full Session View with expanded artifact.
 
 ---
 
-### 4.4 Memory View
+### 4.4 Profile View — Skills + Memory
 
-**Component:** `MemoryView.jsx`
+**Component:** `ProfileView.jsx` (evolves from `MemoryView.jsx`)
 
-Memory management interface for viewing, editing, and deleting memories organized by layer:
+The Profile View is the user's personal AI configuration page, organized into two tabs:
+
+#### Skills Tab
+
+Manages the user's installed and available Skills:
+
+- **My Skills**: Installed skills with usage stats, enable/disable toggle, configure button
+- **Available Skills**: Pre-installed skills ready to activate, with OAuth requirement badges
+- **Create Custom Skill**: Guided wizard or raw .md editor for power users
+
+```
+┌──────────────────────────────────────┐
+│ 📎 Skills                    🧠 Memory│
+├──────────────────────────────────────┤
+│ My Skills                            │
+│ ┌──────────┐ ┌──────────┐           │
+│ │ 📊       │ │ 📕       │           │
+│ │ Nutrition │ │ XiaoHong │           │
+│ │ Analyzer  │ │ Shu      │           │
+│ │ Used 12x  │ │ Used 5x  │           │
+│ │ [Config]  │ │ [Config]  │           │
+│ └──────────┘ └──────────┘           │
+│                                      │
+│ Available Skills                     │
+│ ┌──────────┐ ┌──────────┐           │
+│ │ 🎬       │ │ 👗       │           │
+│ │ Remotion  │ │ Style    │           │
+│ │ Video     │ │ Advisor  │           │
+│ │ [Install] │ │ [Install] │           │
+│ └──────────┘ └──────────┘           │
+│                                      │
+│ [+ Create Custom Skill]             │
+└──────────────────────────────────────┘
+```
+
+#### Memory Tab
+
+Existing memory management, organized by layer:
 
 - **Identity**: Who the user is (preferences, profile)
 - **Semantic**: Facts and knowledge accumulated over time
 - **Episodic**: Specific past interactions and events
+
+#### Connections (sub-section)
+
+OAuth connection management (Google, Notion, Slack, etc.) — required by certain Skills.
 
 ---
 
@@ -270,8 +365,12 @@ Memory management interface for viewing, editing, and deleting memories organize
 
 ```
 App.jsx (Router + State + Auth + Notifications)
-├── LiveCameraView.jsx (LiveKit camera + capture + observation)
-├── LiveSessionView.jsx (Canvas-first artifact display)
+├── LiveCameraView.jsx (LiveKit camera + photo/video capture + observation)
+│   └── IntentionOverlay.jsx (Observation card with predicted intentions)
+├── LiveSessionView.jsx (Summary → Intention Cards → Output)
+│   ├── SessionSummary.jsx (Session context header)
+│   ├── IntentionCards.jsx (Horizontal scrollable prediction cards)
+│   ├── OutputZone.jsx (Streaming results + intermediate blocks)
 │   ├── PersistentHtmlRenderer.jsx (Streaming HTML iframe)
 │   └── modules/
 │       ├── ModuleRenderer.jsx (Dispatcher)
@@ -285,9 +384,14 @@ App.jsx (Router + State + Auth + Notifications)
 │       ├── InfoCardModule.jsx
 │       └── ImageGalleryModule.jsx
 ├── HistoryView.jsx (Session grid + search)
-├── MemoryView.jsx (Memory management)
+├── ProfileView.jsx (Skills + Memory management)
+│   ├── SkillsTab.jsx (Installed + available skills)
+│   ├── MemoryTab.jsx (Memory layers: identity/semantic/episodic)
+│   └── ConnectionsTab.jsx (OAuth provider management)
 └── hooks/
-    └── useAgentProtocol.js (LiveKit RPC + DataChannel protocol)
+    ├── useAgentProtocol.js (LiveKit RPC + DataChannel protocol)
+    ├── useIntentionCards.js (Intention prediction subscription)
+    └── useNanoClawResults.js (Skill execution result streaming)
 ```
 
 ### Routing
@@ -296,16 +400,118 @@ App.jsx (Router + State + Auth + Notifications)
 'camera'         → LiveCameraView
 'live-session'   → LiveSessionView
 'home'/'history' → HistoryView
-'memory'         → MemoryView
+'profile'        → ProfileView (Skills + Memory + Connections)
 ```
 
 ---
 
-## 6. Artifact System
+## 6. Skill System — Productized Use Cases
+
+### 6.1 What is a Skill?
+
+A Skill is a **productized use case** — a specific, well-designed scenario that a user can execute with one tap. Each Skill is independently deployable as a feature and directly marketable.
+
+```
+Skill = What the AI can do for you in a specific scenario
+     = Claude Code System Prompt + Tools + Examples
+     = One tap from Intention Card → Full execution → Artifact
+```
+
+### 6.2 Pre-installed Skills (Phase 1)
+
+| Skill | User Sees | What Happens |
+|-------|-----------|--------------|
+| **Nutrition Analyzer** 📊 | "Tap to analyze calories" | Photo → Claude Vision → nutrition breakdown module |
+| **Xiaohongshu Publisher** 📕 | "Tap to create a post" | Photo → AI caption + hashtags → preview → publish |
+| **Remotion Video** 🎬 | "Tap to create a video" | Photos/clips → Remotion template → MP4 export |
+| **Document Scanner** 📄 | "Tap to scan and extract" | Photo → OCR → structured text/table |
+| **Travel Planner** ✈️ | "Tap to plan your trip" | Photo of landmark → travel guide + itinerary |
+| **Style Advisor** 👗 | "Tap for outfit advice" | Photo of clothes → styling suggestions |
+
+### 6.3 Skill Lifecycle (User Perspective)
+
+```
+1. User opens Profile → Skills Tab
+2. Sees installed skills + available skills
+3. Installs a skill (one-tap, may require OAuth setup)
+4. Next time on camera: AI predicts when this skill is relevant
+5. Intention Card appears → User taps → Skill executes
+6. Result appears in Session View → Memory updated
+```
+
+### 6.4 Custom Skills
+
+Power users can create their own Skills:
+
+- **Guided wizard**: Choose inputs → describe the task → set output format
+- **Raw .md editor**: Write Claude Code-compatible system prompt directly
+- Custom skills appear alongside pre-installed ones in Intention predictions
+
+---
+
+## 7. Intention Prediction — The Core Differentiator
+
+### 7.1 The "Video Call" Mental Model
+
+> You are on a video call with your personal Claude Code.
+> The Spokesperson (Gemini) is the face you talk to — natural, real-time, human-like.
+> The Master (Claude Code) is the brain behind the face — it sees through the Spokesperson's eyes,
+> thinks with your memories and preferences, and tells the Spokesperson what to suggest.
+> You experience one seamless AI. In reality, the Master is pulling all the strings.
+
+This is the key difference between VI Agent and a regular camera app or chatbot. The AI is **proactive**, not reactive — because the Master is continuously analyzing and predicting, and the Spokesperson is continuously delivering those predictions as natural conversation.
+
+### 7.2 How Intention Prediction Works (User Perspective)
+
+```
+1. User points camera at a plate of pasta
+2. AI continuously analyzes the scene (every 5 seconds)
+3. AI checks: What skills are available? What does the user usually do?
+4. Observation card updates: "I see Italian pasta. Want me to..."
+5. Session View shows Intention Cards:
+   📊 Nutrition Analysis (85%) | 📕 Share on XiaoHongShu (60%) | 🎬 Make Video (40%)
+6. User taps one → Skill executes immediately
+```
+
+### 7.3 Prediction Signals
+
+The AI combines multiple signals to predict intentions:
+
+| Signal | Source | Example |
+|--------|--------|---------|
+| **Visual context** | LiveKit keyframe | "I see food on a plate" |
+| **User memory** | Stored preferences | "User tracks calories daily" |
+| **Recent actions** | Session history | "User just took 3 food photos" |
+| **Available skills** | Installed skills | "Nutrition Analyzer is installed" |
+| **Time & context** | System clock + location | "Lunchtime, at a restaurant" |
+
+### 7.4 Intention Cards
+
+The primary interaction element in Session View:
+
+- **Appearance**: Horizontal scrollable cards below the summary
+- **Content**: Icon + Skill name + Confidence % + Estimated time
+- **Interaction**: Single tap = dispatch skill execution immediately
+- **Updates**: Re-ranked every 30 seconds as context changes
+- **Post-execution**: Shows "Complete" with mini result preview
+
+### 7.5 Voice Integration — The Spokesperson Delivers
+
+The Spokesperson (Gemini) receives intention predictions from the Master (Claude Code) via context injection and naturally incorporates them into conversation — the user hears a suggestion, not a command:
+
+- High confidence (>80%): Spokesperson says "I see pasta — want me to analyze the nutrition?" (Master's prediction, Spokesperson's words)
+- Medium confidence: Spokesperson mentions capabilities naturally without pushing
+- Low confidence: Spokesperson stays silent, cards only appear in Session View
+
+The user never knows the suggestion came from the Master. It feels like a natural observation from the AI they're talking to.
+
+---
+
+## 8. Artifact System
 
 The agent generates rich content through two rendering paths:
 
-### 6.1 HTML Artifacts — PersistentHtmlRenderer
+### 8.1 HTML Artifacts — PersistentHtmlRenderer
 
 Streaming HTML rendered inside a managed iframe:
 
@@ -317,7 +523,7 @@ Streaming HTML rendered inside a managed iframe:
 
 This path handles freeform, visually rich content that the agent generates as HTML/Tailwind markup.
 
-### 6.2 Native Modules — ModuleRenderer
+### 8.2 Native Modules — ModuleRenderer
 
 Eight structured data types rendered as native React components:
 
@@ -334,7 +540,7 @@ Eight structured data types rendered as native React components:
 
 The agent chooses between HTML artifacts and native modules based on the task. Structured, interactive data (places, recipes, checklists) uses native modules. Freeform analysis, reports, and custom layouts use HTML artifacts.
 
-### 6.3 Glassmorphism Design System
+### 8.3 Glassmorphism Design System
 
 A shared visual language across both rendering paths:
 
@@ -352,7 +558,7 @@ A shared visual language across both rendering paths:
 
 ---
 
-## 7. Agent Protocol
+## 9. Agent Protocol
 
 Communication between the frontend and agent runs over LiveKit, implemented in `useAgentProtocol.js`.
 
@@ -373,18 +579,20 @@ Real-time data flows over named DataChannel topics:
 
 | Topic | Format | Purpose |
 |---|---|---|
-| `vi-agent` | JSON | Intention prediction, session plan, action suggestions |
-| `vi-gateway` | JSON | Task lifecycle: started, progress, result, error |
+| `vi-agent` | JSON | Intention prediction cards, session plan, action suggestions |
+| `vi-gateway` | JSON | Task/Skill lifecycle: started, progress, intermediate, result, error |
 | `gateway_html_stream` | Chunks | Streaming HTML artifact content |
 | `gateway_text_stream` | Chunks | Streaming text content |
 | `task_progress` | JSON | Progress updates with stage and message |
 | `task_events` | JSON | Task state history |
 | `session_header` | JSON | Session metadata (title, summary) |
+| `intention_update` | JSON | Updated intention cards from prediction system (NEW) |
+| `skill_status` | JSON | Skill execution status updates (NEW) |
 | `memory_updated` | Signal | Notification that memories changed |
 
 ---
 
-## 8. Sound Design
+## 10. Sound Design
 
 The app uses a custom `SoundLibrary.js` (`frontend/src/sounds/`) with contextual audio feedback:
 
@@ -399,7 +607,7 @@ The app uses a custom `SoundLibrary.js` (`frontend/src/sounds/`) with contextual
 
 ---
 
-## 9. Authentication
+## 11. Authentication
 
 Dual authentication modes:
 
@@ -410,7 +618,7 @@ The `useAuth` hook manages the token lifecycle. Expired tokens trigger auto-refr
 
 ---
 
-## 10. Notifications
+## 12. Notifications
 
 Toast notifications provide feedback across the app:
 
@@ -425,32 +633,40 @@ All toasts auto-dismiss with a progress bar after 3 seconds.
 
 ---
 
-## 11. Agent Economics
+## 13. Agent Economics
 
 | Item | Detail |
 |---|---|
 | **Monthly Salary** | $20 base |
 | **Bonus** | Pay for token credit, no upper limit |
-| **Cost per Loop** | ~$0.02–0.08 |
-| **Monthly (10 loops/day)** | ~$6–24 |
-| **Models** | Gemini Live 2.5 Flash (real-time), Gemini 2.5 Flash (fast execution), Claude Sonnet 4.6 (thorough execution) |
+| **Cost per Skill Execution** | ~$0.02–0.10 (varies by skill complexity) |
+| **Intention Prediction** | ~$0.50/user/day (optimized, Claude Haiku) |
+| **Keyframe Sampling** | ~$0.05/user/day (S3 storage, minimal) |
+| **Monthly (10 loops/day)** | ~$6–24 (execution) + ~$15 (prediction) |
+| **Models** | Gemini Live 2.5 Flash (real-time), Claude Haiku (intention prediction), Claude Sonnet 4.6 (skill execution) |
 
 ---
 
-## 12. Key Source Files
+## 14. Key Source Files
 
 | File | Purpose |
 |---|---|
 | `frontend/src/App.jsx` | Main router, auth, view transitions, notifications |
-| `frontend/src/components/LiveCameraView.jsx` | Live camera via LiveKit, observation, capture |
-| `frontend/src/components/LiveSessionView.jsx` | Canvas-first session: artifacts + conversation + actions |
+| `frontend/src/components/LiveCameraView.jsx` | Live camera via LiveKit, photo/video capture, observation |
+| `frontend/src/components/LiveSessionView.jsx` | Summary → Intention Cards → Output session view |
+| `frontend/src/components/IntentionCards.jsx` | Horizontal scrollable prediction cards (NEW) |
+| `frontend/src/components/SessionSummary.jsx` | Session context header (NEW) |
+| `frontend/src/components/OutputZone.jsx` | Streaming results + intermediate blocks (NEW) |
 | `frontend/src/components/PersistentHtmlRenderer.jsx` | Streaming HTML iframe renderer |
 | `frontend/src/components/iframeDesignSystem.js` | Glassmorphism CSS tokens for iframes |
 | `frontend/src/components/modules/ModuleRenderer.jsx` | Native module type dispatcher |
 | `frontend/src/components/modules/shared.jsx` | Glassmorphism design primitives |
 | `frontend/src/components/modules/*.jsx` | 8 specialized module components |
 | `frontend/src/components/HistoryView.jsx` | Session grid, search, navigation |
-| `frontend/src/components/MemoryView.jsx` | Memory management UI |
+| `frontend/src/components/ProfileView.jsx` | Skills + Memory + Connections (NEW, evolves MemoryView) |
+| `frontend/src/components/SkillsTab.jsx` | Skill management UI (NEW) |
 | `frontend/src/hooks/useAgentProtocol.js` | LiveKit RPC + DataChannel protocol |
-| `frontend/src/services/api.js` | API client, auth, S3 upload |
+| `frontend/src/hooks/useIntentionCards.js` | Intention prediction subscription (NEW) |
+| `frontend/src/hooks/useNanoClawResults.js` | Skill execution result streaming (NEW) |
+| `frontend/src/services/api.js` | API client, auth, S3 upload, skill management |
 | `frontend/src/sounds/` | Sound effects (SoundLibrary.js) |

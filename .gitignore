@@ -41,3 +41,6 @@ ssl
 CLAUDE.md
 CLOUD_ACCESS.md
 test_results/
+# Teamwork ephemeral contracts (active/ is per-developer local state)
+.teamwork/active/
+.teamspace/active/

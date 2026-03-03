@@ -1100,16 +1100,27 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       case 'deep_link':
         window.location.href = payload.href;
         break;
+      case 'vi_select': {
+        // Action card button clicked in gateway HTML — forward to LiveKit agent
+        const selected = payload.option || '';
+        const title = payload.title || '';
+        const allOptions = (payload.allOptions || '').split('|').filter(Boolean);
+        const optionsStr = allOptions.length ? ` (options: ${allOptions.join(', ')})` : '';
+        livekit?.sendMessage?.(`[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}`);
+        showToast(selected || 'Selected');
+        break;
+      }
       case 'toggle':
         break;
       default:
         showToast('Done');
     }
-  }, [showToast]);
+  }, [showToast, livekit]);
 
   // ── Action card handler ──
   const handleActionSelect = useCallback((option) => {
     livekit?.sendMessage?.(option);
+    livekit?.dismissActionCard?.();
   }, [livekit]);
 
   // ── Scroll handling ──
@@ -1211,6 +1222,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+      className="absolute inset-0 flex flex-col z-50"
       className="relative w-full h-full flex flex-col z-50"
       style={{ background: '#fff', willChange: 'transform, opacity' }}
     >

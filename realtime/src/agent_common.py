@@ -275,6 +275,43 @@ async def publish_intention_prompt(room: rtc.Room, intention: str):
     )
 
 
+# ── Action Card reply_hint templates ──
+# Use inline styles to survive Tailwind v4 CDN resets in iframes.
+_BTN_STYLE = (
+    "display:inline-flex;align-items:center;justify-content:center;gap:8px;"
+    "padding:0.55em 1.1em;border-radius:14px;border:1px solid rgba(0,0,0,0.06);"
+    "background:#fff;color:rgba(0,0,0,0.6);font-weight:500;font-size:13px;"
+    "cursor:pointer;transition:all 0.2s"
+)
+ACTION_CARD_INTENT_HINT = (
+    "Analyze the photos and user intention. Generate an action card as HTML.\n"
+    "The card should:\n"
+    "1. Show a brief observation about what you see (1-2 sentences) as a <p>\n"
+    "2. Present 2-4 contextually relevant action buttons\n"
+    "   Examples: Product → 'Search prices', 'Find reviews'; Place → 'Get directions', 'Find nearby'\n"
+    "3. Keep options specific and relevant to what you see — never generic.\n\n"
+    "IMPORTANT — Use this exact HTML structure:\n"
+    "<div style=\"background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:20px;padding:1em\">\n"
+    "  <p style=\"margin-bottom:0.8em;color:rgba(0,0,0,0.6);font-size:14px\">Your observation here</p>\n"
+    "  <div style=\"display:flex;flex-wrap:wrap;gap:8px\">\n"
+    f'    <button style="{_BTN_STYLE}" data-action="vi_select" data-title="What would you like to do?" '
+    'data-option="Option 1" data-all-options="Option 1|Option 2|Option 3">Option 1</button>\n'
+    f'    <button style="{_BTN_STYLE}" data-action="vi_select" data-title="What would you like to do?" '
+    'data-option="Option 2" data-all-options="Option 1|Option 2|Option 3">Option 2</button>\n'
+    "  </div>\n"
+    "</div>\n\n"
+    "Rules:\n"
+    "- Use INLINE STYLES on every button (copy the style exactly from the example above)\n"
+    "- Do NOT use class attributes on buttons — only inline style\n"
+    "- Buttons MUST have: data-action=\"vi_select\", data-title, data-option, data-all-options\n"
+    "- data-title = a short description of the card context\n"
+    "- data-all-options = ALL button texts joined by | (pipe)\n"
+    "- Do NOT add any other elements, scripts, or wrapper HTML\n"
+    "- Max 4 buttons"
+)
+
+
+
 class Assistant(Agent):
     """Base voice assistant — delegates to VI Gateway."""
 
@@ -313,6 +350,10 @@ class Assistant(Agent):
         self._conversation_timeline: list[dict] = []
         self._conversation_session_lock = asyncio.Lock()
         self._conversation_timeline_last_flush: float = 0.0
+        # Action card: stores original [USER_DISPATCH] text for gateway context on [ActionCard]
+        self._pending_dispatch_text: str | None = None
+        # Tracks whether gateway is generating an action card (suppress "website ready" speech)
+        self._awaiting_action_card: bool = False
 
         logger.info(f"Assistant initialized for room: {room_name}, vi_user_id: {self._vi_user_id}")
 
@@ -1386,6 +1427,14 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
         # via data channel. Agent just needs to speak a summary, not process the HTML.
         if is_html_stream:
             logger.info("[rpc_g2b_send_reply] HTML stream response — HTML already delivered to frontend via data channel")
+
+            # If this was an action card (not a final deliverable), skip "website ready" speech
+            if assistant._awaiting_action_card:
+                assistant._awaiting_action_card = False
+                logger.info("[rpc_g2b_send_reply] Action card delivered — suppressing 'website ready' speech")
+                await publish_transcript(assistant.room, "gateway", "Action card displayed.")
+                return json.dumps({"ok": True, "received": True})
+
             # Publish a brief transcript (not raw HTML)
             await publish_transcript(assistant.room, "gateway", "✅ Website HTML generated and streamed to display.")
             assistant.record_timeline_entry("gateway", "✅ Website HTML generated and streamed to display.")
@@ -1509,13 +1558,69 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
         images = data.get("images", [])
         log_info(f"[rpc_f2b_send_message] Received message from user: {text[:100]}", "user")
 
+        # ── ACTION CARD FLOW (gateway-generated HTML cards) ──
+        # Simple flow:
+        #   [USER_DISPATCH] → gateway generates action card HTML → user clicks button →
+        #   [ActionCard] message sent to LiveKit → LiveKit calls gateway to act on it
+        is_dispatch = text.strip().startswith("[USER_DISPATCH]")
+        is_confirmed = text.strip().startswith("[ActionCard]")
+
+        if is_confirmed:
+            # User clicked a button in a gateway-generated action card.
+            # Format: "[ActionCard] {title}, user click on {option} (options: ...)"
+            # No confirmation step — dispatch directly to gateway.
+            confirmed_text = text.strip()
+            log_info(f"[action_card] {confirmed_text}", "user")
+
+            # Parse the clicked option
+            click_match = re.search(r'user click on (.+?)(?:\s*\(options?:|\s*$)', confirmed_text)
+            clicked_option = click_match.group(1).strip() if click_match else ""
+            dispatch_context = assistant._pending_dispatch_text or ""
+
+            async def _action_dispatch():
+                try:
+                    logger.info(f"[action_card] User selected '{clicked_option}' — dispatching to gateway")
+                    await assistant.rpc_b2g_dispatch_message(
+                        context=None,
+                        text=(
+                            f"The user selected: \"{clicked_option}\"\n\n"
+                            f"Original context: {dispatch_context}"
+                        ),
+                        reply_hint=(
+                            f"The user chose \"{clicked_option}\" from the action card. "
+                            "Generate a rich, informative HTML page about this topic. "
+                            "Use clean semantic HTML with inline styles. "
+                            "Start your output with an HTML tag like <div> or <h2> — do NOT start with JSON or markdown."
+                        ),
+                        stream_to_frontend=True,
+                    )
+                    logger.info("[action_card] Gateway dispatch complete")
+                except Exception as e:
+                    logger.error(f"[action_card] Gateway dispatch failed: {e}", exc_info=True)
+
+            asyncio.create_task(_action_dispatch())
+
+            try:
+                if assistant._agent_session:
+                    assistant._agent_session.generate_reply(
+                        user_input=(
+                            f"[SYSTEM] The user selected: '{clicked_option}'. "
+                            f"Tell the user briefly you're working on it. "
+                            f"Do NOT call any tools. Keep it under 15 words."
+                        )
+                    )
+            except Exception as e:
+                logger.warning(f"[action_card] Failed to prompt after selection: {e}")
+
+            return json.dumps({"ok": True, "status": "dispatched"})
+
         # Record all non-action user text messages to conversation timeline
-        if text and not text.strip().startswith("[USER_DISPATCH]"):
+        if text and not is_dispatch and not is_confirmed:
             assistant.record_timeline_entry("user", text)
             asyncio.create_task(assistant.ensure_conversation_session())
 
         # Persist task to DB if this is a dispatch message
-        if text.strip().startswith("[USER_DISPATCH]"):
+        if is_dispatch:
             asyncio.create_task(assistant.persist_session(text))
 
             # Extract and store GCS photo URLs for reference
@@ -1524,39 +1629,52 @@ def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
                 assistant._pending_photo_urls = photo_urls
                 logger.info(f"[rpc_f2b_send_message] Stored {len(photo_urls)} photo URL(s) for gateway dispatch")
 
-            # ── DIRECT GATEWAY DISPATCH ──
-            # CRITICAL FIX: Dispatch directly to the gateway instead of relying on
-            # Gemini's tool selection. By the time USER_DISPATCH arrives, the page
-            # context has already switched to "session" which only has query tools,
-            # not create tools. Direct dispatch bypasses this limitation entirely.
-            async def _direct_dispatch():
+            # ── ACTION CARD INTENT DISCOVERY (via gateway HTML) ──
+            # Ask gateway to generate an action card with contextual options.
+            # The card is streamed to the user as normal HTML (CanvasCard).
+            # When user clicks a button, frontend sends "[ActionCard] ..." to LiveKit.
+            assistant._pending_dispatch_text = text
+            assistant._awaiting_action_card = True
+
+            async def _request_intent_card():
                 try:
-                    logger.info("[rpc_f2b_send_message] Direct gateway dispatch started")
-                    result = await assistant.rpc_b2g_dispatch_message(
+                    logger.info("[action_card] Requesting intent discovery card from gateway")
+                    await assistant.rpc_b2g_dispatch_message(
                         context=None,
                         text=text,
+                        reply_hint=ACTION_CARD_INTENT_HINT,
                         stream_to_frontend=True,
                     )
-                    logger.info(f"[rpc_f2b_send_message] Direct gateway dispatch complete: {str(result)[:200]}")
+                    logger.info("[action_card] Intent discovery card dispatched to gateway")
                 except Exception as e:
-                    logger.error(f"[rpc_f2b_send_message] Direct gateway dispatch failed: {e}", exc_info=True)
+                    logger.error(f"[action_card] Failed to request intent card: {e}", exc_info=True)
+                    assistant._awaiting_action_card = False
+                    # Fallback: dispatch directly without action card
+                    assistant._pending_dispatch_text = None
+                    try:
+                        await assistant.rpc_b2g_dispatch_message(
+                            context=None, text=text, stream_to_frontend=True,
+                        )
+                    except Exception as de:
+                        logger.error(f"[action_card] Fallback dispatch failed: {de}", exc_info=True)
 
-            asyncio.create_task(_direct_dispatch())
+            asyncio.create_task(_request_intent_card())
 
-            # Tell Gemini to acknowledge the task verbally (short feedback only)
+            # Tell Gemini to speak briefly about what it sees
             try:
                 if assistant._agent_session:
                     assistant._agent_session.generate_reply(
                         user_input=(
-                            "[SYSTEM] A task has been dispatched to the backend. "
-                            "Tell the user briefly that you're working on it. "
-                            "Do NOT call any tools. Keep it under 15 words."
+                            "[SYSTEM] The user captured photos and pressed Done. "
+                            "Say 1-2 sentences about what you see. "
+                            "Options are being generated — do NOT call any tools."
                         )
                     )
+                    logger.info("[action_card] Brief observation prompt sent to Gemini")
             except Exception as e:
-                logger.warning(f"[rpc_f2b_send_message] Failed to prompt agent after dispatch: {e}")
+                logger.warning(f"[action_card] Failed to prompt Gemini for observation: {e}")
 
-            return json.dumps({"ok": True, "status": "dispatched"})
+            return json.dumps({"ok": True, "status": "intent_discovery"})
 
         try:
             if assistant._agent_session:

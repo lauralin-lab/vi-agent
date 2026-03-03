@@ -6,7 +6,7 @@ import { useImagePreloader } from '../hooks/useImagePreloader';
 import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
 import PromotionBlock from './PromotionBlock';
-import { MOCK_SESSIONS } from '../data/mockSessions';
+
 
 const POLL_INTERVAL = 10000;
 const POLL_INTERVAL_SSE_ACTIVE = 30000;
@@ -200,7 +200,7 @@ export default function HistoryView({
         const viUserId = api.getViUserId();
         if (!isAuthenticated && !api.getToken() && !viUserId) {
             if (isInitial) {
-                setLiveSessions(MOCK_SESSIONS);
+                setLiveSessions([]);
                 setLoading(false);
             }
             return;
@@ -229,11 +229,11 @@ export default function HistoryView({
                     const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
                     return tb - ta;
                 });
-                setLiveSessions(normalized.length > 0 ? normalized : MOCK_SESSIONS);
+                setLiveSessions(normalized);
             }
         } catch (err) {
             console.error('Failed to fetch sessions:', err);
-            if (mountedRef.current && isInitial) setLiveSessions(MOCK_SESSIONS);
+            if (mountedRef.current && isInitial) setLiveSessions([]);
         } finally {
             if (mountedRef.current && isInitial) setLoading(false);
         }
