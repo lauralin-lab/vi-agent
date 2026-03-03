@@ -1166,7 +1166,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         <div className="px-4 pb-3 shrink-0" style={{ zIndex: 5 }}>
           <div
             className="relative overflow-hidden"
-            style={{ borderRadius: 24, border: '1px solid rgba(0,0,0,0.04)' }}
+            style={{ borderRadius: 24, border: '1px solid rgba(0,0,0,0.04)', background: '#f0f0f0' }}
           >
             {/* Carousel scroller */}
             <div
@@ -1184,13 +1184,24 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
                   <div
                     key={i}
                     className="relative"
-                    style={{ width: `${100 / images.length}%`, scrollSnapAlign: 'start', aspectRatio: '4/3' }}
+                    style={{ width: `${100 / images.length}%`, scrollSnapAlign: 'start', aspectRatio: '4/3', background: '#e8e8e8' }}
                   >
+                    {/* Skeleton shimmer while image loads */}
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background: 'linear-gradient(90deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%)',
+                        backgroundSize: '200% 100%',
+                        animation: 'shimmer 1.5s infinite',
+                      }}
+                    />
                     <img
                       src={img.src}
                       alt=""
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover relative"
                       loading={i === 0 ? 'eager' : 'lazy'}
+                      style={{ opacity: 0, transition: 'opacity 0.3s ease' }}
+                      onLoad={(e) => { e.target.style.opacity = '1'; }}
                     />
                   </div>
                 ))}

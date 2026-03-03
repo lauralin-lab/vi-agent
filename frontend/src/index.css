@@ -187,6 +187,12 @@ body {
   animation: shimmer-line 1.5s ease-in-out infinite;
 }
 
+/* ═══ Shimmer — skeleton loading placeholder ═══ */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* ═══ Float drift — media stack idle wobble ═══ */
 @keyframes float-drift {
 
