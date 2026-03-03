@@ -8,7 +8,7 @@ from livekit.agents import AgentSession, JobContext, cli, room_io
 from google.genai import types as gemini_types
 from livekit.plugins import google, noise_cancellation
 
-from agent_common import AGENT_INSTRUCTIONS, Assistant, run_agent, server
+from agent_common import AGENT_INSTRUCTIONS, VI_AGENT_NAME, Assistant, run_agent, server
 
 GEMINI_REALTIME_MODEL = os.getenv(
     "GEMINI_REALTIME_MODEL",
@@ -65,7 +65,7 @@ def create_session(
     )
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=VI_AGENT_NAME)
 async def my_agent(ctx: JobContext):
     assistant = GeminiAssistant(ctx.room.name, ctx.room)
     await run_agent(ctx, assistant, create_session)

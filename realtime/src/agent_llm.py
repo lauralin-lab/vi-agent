@@ -12,7 +12,7 @@ from livekit.agents.utils.images import encode, EncodeOptions, ResizeOptions
 from livekit.plugins import cartesia, deepgram, openai, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from agent_common import Assistant, logger, run_agent, server
+from agent_common import VI_AGENT_NAME, Assistant, logger, run_agent, server
 
 STT_MODEL = os.getenv("STT_MODEL", "nova-3")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5o-mini")
@@ -149,7 +149,7 @@ def create_session(ctx: JobContext) -> AgentSession:
     )
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=VI_AGENT_NAME)
 async def my_agent(ctx: JobContext):
     assistant = LLMAssistant(ctx.room.name, ctx.room)
     await run_agent(ctx, assistant, create_session)
