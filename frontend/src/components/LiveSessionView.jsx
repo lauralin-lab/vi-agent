@@ -336,163 +336,158 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
 
 
 // ═══════════════════════════════════════════════════════════
-// Conversation Pill — floating transient messages
+// Chat Popups — 弹幕 that auto-dismiss after 3 seconds
 // ═══════════════════════════════════════════════════════════
 
-function ConversationPill({ messages }) {
-  const [visible, setVisible] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [latestMsg, setLatestMsg] = useState(null);
-  const timerRef = useRef(null);
-  const prevCountRef = useRef(messages.length);
+function ChatPopups({ messages }) {
+  const [visible, setVisible] = useState([]);
+  const prevLenRef = useRef(messages.length);
 
-  // Detect new messages
   useEffect(() => {
-    if (messages.length <= prevCountRef.current) {
-      prevCountRef.current = messages.length;
-      return;
+    if (messages.length > prevLenRef.current) {
+      const newMsgs = messages.slice(prevLenRef.current);
+      setVisible((v) => [...v, ...newMsgs.map((m) => m.id)]);
+      const ids = newMsgs.map((m) => m.id);
+      setTimeout(() => {
+        setVisible((v) => v.filter((id) => !ids.includes(id)));
+      }, 3000);
     }
-    prevCountRef.current = messages.length;
-
-    const newest = messages[messages.length - 1];
-    if (!newest) return;
-
-    setLatestMsg(newest);
-    setVisible(true);
-
-    // Auto-hide timer
-    clearTimeout(timerRef.current);
-    const duration = newest.role === 'user' ? 1500 : 3000;
-    timerRef.current = setTimeout(() => {
-      setVisible(false);
-    }, duration);
-
-    return () => clearTimeout(timerRef.current);
+    prevLenRef.current = messages.length;
   }, [messages]);
 
-  // Clear timer on expanded state change
-  useEffect(() => {
-    if (expanded) {
-      clearTimeout(timerRef.current);
-      setVisible(true);
-    }
-  }, [expanded]);
-
-  // Close on outside tap
-  const containerRef = useRef(null);
-  useEffect(() => {
-    if (!expanded) return;
-    const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setExpanded(false);
-        setVisible(false);
-      }
-    };
-    // Delay to prevent immediate close
-    const t = setTimeout(() => document.addEventListener('pointerdown', handler), 100);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('pointerdown', handler);
-    };
-  }, [expanded]);
-
-  if (!visible && !expanded) return null;
-
-  const recentMessages = messages.slice(-5);
+  const shown = messages.filter((m) => visible.includes(m.id));
+  if (shown.length === 0) return null;
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute left-4 right-4 z-30"
-      style={{ bottom: '72px' }}
+    <div className="absolute left-4 right-16 z-10 flex flex-col gap-1.5 pointer-events-none"
+      style={{ bottom: 80 }}
     >
-      <AnimatePresence mode="wait">
-        {expanded ? (
+      <AnimatePresence initial={false} mode="popLayout">
+        {shown.map((msg) => (
           <motion.div
-            key="expanded"
-            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            key={msg.id}
+            layout
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            className="backdrop-blur-xl overflow-hidden max-h-[280px]"
-            style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 40px rgba(0,0,0,0.1)', willChange: 'transform, opacity' }}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2">
-                <MessageCircle size={14} style={{ color: 'rgba(0,0,0,0.25)' }} />
-                <span className="font-medium" style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.35)' }}>
-                  Conversation
-                </span>
-              </div>
-              <button
-                onClick={() => { setExpanded(false); setVisible(false); }}
-                className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
-              >
-                <X size={14} style={{ color: 'rgba(0,0,0,0.25)' }} />
-              </button>
+            <div
+              className="max-w-[75%] pointer-events-auto"
+              style={{
+                padding: '8px 14px',
+                borderRadius: 16,
+                background: msg.role === 'user'
+                  ? 'rgba(0,0,0,0.45)'
+                  : 'rgba(255,255,255,0.55)',
+                backdropFilter: 'blur(40px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+                border: msg.role === 'user'
+                  ? '1px solid rgba(255,255,255,0.1)'
+                  : '1px solid rgba(255,255,255,0.6)',
+                boxShadow: msg.role === 'user'
+                  ? '0 4px 24px rgba(0,0,0,0.12)'
+                  : '0 4px 24px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.4)',
+              }}
+            >
+              <p style={{
+                fontSize: 'var(--text-sm)',
+                lineHeight: 'var(--leading-normal)',
+                color: msg.role === 'user' ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.65)',
+                margin: 0,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}>
+                {msg.content}
+              </p>
             </div>
-            <div className="overflow-y-auto px-4 py-3 space-y-2.5" style={{ maxHeight: '220px' }}>
-              {recentMessages.map((msg) => (
-                <div key={msg.id} className={msg.role === 'user' ? 'flex justify-end' : ''}>
-                  <p
-                    className={msg.role === 'user'
-                      ? 'rounded-2xl px-3 py-1.5 font-light max-w-[85%]'
-                      : 'font-light'
-                    }
-                    style={{
-                      fontSize: 'var(--text-sm)',
-                      lineHeight: 'var(--leading-relaxed)',
-                      ...(msg.role === 'user'
-                        ? { background: 'rgba(0,0,0,0.06)', color: 'rgba(0,0,0,0.7)' }
-                        : { color: 'rgba(0,0,0,0.55)' }
-                      ),
-                    }}
-                  >
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Chat Panel — expandable fixed-height conversation history
+// ═══════════════════════════════════════════════════════════
+
+function ChatPanel({ messages, open, onClose, scrollRef }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: '35vh', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+          className="shrink-0 flex flex-col overflow-hidden"
+          style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <MessageCircle size={13} style={{ color: 'rgba(0,0,0,0.2)' }} />
+              <span className="font-medium" style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.3)' }}>
+                Conversation
+              </span>
+              <span style={{ fontSize: 'var(--text-2xs)', color: 'rgba(0,0,0,0.2)' }}>
+                {messages.length}
+              </span>
+            </div>
+            <button onClick={onClose} className="w-6 h-6 rounded-full flex items-center justify-center"
+              style={{ background: 'rgba(0,0,0,0.04)' }}>
+              <X size={12} style={{ color: 'rgba(0,0,0,0.35)' }} />
+            </button>
+          </div>
+
+          {/* Scrollable messages */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-3 space-y-1.5"
+            style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+            {messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className="max-w-[80%]" style={{
+                  padding: '6px 12px',
+                  borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                  background: msg.role === 'user'
+                    ? 'rgba(0,0,0,0.06)'
+                    : 'rgba(0,0,0,0.02)',
+                  border: msg.role === 'user'
+                    ? 'none'
+                    : '1px solid rgba(0,0,0,0.04)',
+                }}>
+                  <p className="font-medium" style={{
+                    fontSize: 'var(--text-2xs)',
+                    color: msg.role === 'user' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.22)',
+                    marginBottom: 1,
+                  }}>
+                    {msg.role === 'user' ? 'You' : 'Agent'}
+                  </p>
+                  <p style={{
+                    fontSize: 'var(--text-sm)',
+                    lineHeight: 'var(--leading-relaxed)',
+                    color: msg.role === 'user' ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.55)',
+                    margin: 0,
+                  }}>
                     {msg.content}
                   </p>
                 </div>
-              ))}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="pill"
-            initial={{ opacity: 0, y: 8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            onClick={() => setExpanded(true)}
-            className="cursor-pointer"
-            style={{ willChange: 'transform, opacity' }}
-          >
-            <div className="backdrop-blur-xl px-4 py-2.5 flex items-center gap-2.5"
-              style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}
-            >
-              {latestMsg?.role === 'user' ? (
-                <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-                  <p className="font-light truncate flex-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.4)' }}>
-                    Heard: &ldquo;{latestMsg.content.slice(0, 40)}{latestMsg.content.length > 40 ? '...' : ''}&rdquo;
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#000' }} />
-                  <p className="font-light truncate flex-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.55)' }}>
-                    {latestMsg?.content?.slice(0, 60)}{(latestMsg?.content?.length || 0) > 60 ? '...' : ''}
-                  </p>
-                </>
-              )}
-              {messages.length > 1 && (
-                <span className="shrink-0" style={{ fontSize: 'var(--text-2xs)', color: 'rgba(0,0,0,0.2)' }}>
-                  {messages.length}
-                </span>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -574,6 +569,7 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
 export default function LiveSessionView({ result, photos, intention, onBack, livekit, sessionData, onAddPhoto, sessionCacheRef }) {
   const { play } = useSound();
   const scrollContainerRef = useRef(null);
+  const chatScrollRef = useRef(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const imageScrollerRef = useRef(null);
   const fromHome = sessionData?.fromHome;
@@ -582,6 +578,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // ── Chat Input ──
   const [chatText, setChatText] = useState('');
   const [chatImages, setChatImages] = useState([]);
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const chatInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -954,10 +951,48 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         type: 'bubble',
         status: 'done',
         content: livekit.lastAgentText,
+        role: 'agent',
         collapsible: true,
       });
     }
   }, [livekit.lastAgentText, upsertBlock]);
+
+  // User speech transcripts → bubble blocks (deduplicate by content)
+  const prevTranscriptCountRef = useRef(0);
+  const recentUserBubblesRef = useRef(new Set());
+  useEffect(() => {
+    const transcripts = livekit.transcripts || [];
+    if (transcripts.length <= prevTranscriptCountRef.current) {
+      prevTranscriptCountRef.current = transcripts.length;
+      return;
+    }
+    // Process only new entries
+    const newEntries = transcripts.slice(prevTranscriptCountRef.current);
+    prevTranscriptCountRef.current = transcripts.length;
+
+    for (const entry of newEntries) {
+      if (entry.type !== 'user') continue; // agent transcripts already handled by lastAgentText
+      if (!entry.content) continue;
+      if (recentUserBubblesRef.current.has(entry.content)) continue;
+      // Also skip if the same text was already typed by user (handleSendMessage)
+      if (recentBubblesRef.current.has(entry.content)) continue;
+
+      recentUserBubblesRef.current.add(entry.content);
+      if (recentUserBubblesRef.current.size > 50) {
+        const first = recentUserBubblesRef.current.values().next().value;
+        recentUserBubblesRef.current.delete(first);
+      }
+
+      upsertBlock({
+        id: `user_speech_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'bubble',
+        status: 'done',
+        content: entry.content,
+        role: 'user',
+        collapsible: true,
+      });
+    }
+  }, [livekit.transcripts, upsertBlock]);
 
   // ── Initial result from Home navigation ──
   useEffect(() => {
@@ -978,7 +1013,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         .forEach((entry, i) => {
           // Skip gateway responses — they duplicate the HTML canvas content
           if (entry.type === 'gateway') return;
-          const role = entry.type === 'user' ? 'user' : undefined;
+          const role = entry.type === 'user' ? 'user' : 'agent';
           upsertBlock({
             id: `tl_${i}`,
             type: 'bubble',
@@ -1126,6 +1161,15 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     }
   }, [canvasBlocks]);
 
+  // Auto-scroll conversation pane on new messages
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      requestAnimationFrame(() => {
+        chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
+      });
+    }
+  }, [conversationMessages]);
+
 
   // ═══════════════════════════════════════════════════════════
   // RENDER
@@ -1251,7 +1295,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         ref={scrollContainerRef}
         onScroll={handleContentScroll}
         className="flex-1 overflow-y-auto px-5 pt-4 pb-28"
-        style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}
+        style={{
+          overscrollBehavior: 'none',
+          WebkitOverflowScrolling: 'touch',
+        }}
       >
         {/* Canvas cards: stacked artifacts */}
         <AnimatePresence initial={false}>
@@ -1307,10 +1354,55 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
             <p className="font-light" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.25)' }}>Waiting for results...</p>
           </div>
         )}
+
       </div>
 
-      {/* ═══ FLOATING CONVERSATION PILL ═══ */}
-      <ConversationPill messages={conversationMessages} />
+      {/* ═══ CHAT POPUPS — 弹幕 (auto-dismiss after 3s) ═══ */}
+      {!chatDrawerOpen && <ChatPopups messages={conversationMessages} />}
+
+      {/* ═══ CHAT BUBBLE BUTTON — opens full conversation ═══ */}
+      {!chatDrawerOpen && conversationMessages.length > 0 && (
+        <button
+          onClick={() => setChatDrawerOpen(true)}
+          className="absolute z-20 flex items-center justify-center"
+          style={{
+            bottom: 80,
+            right: 16,
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            background: 'rgba(0,0,0,0.06)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            border: '1px solid rgba(0,0,0,0.06)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+          }}
+        >
+          <MessageCircle size={18} style={{ color: 'rgba(0,0,0,0.4)' }} />
+          <span
+            className="absolute -top-1 -right-1 flex items-center justify-center font-semibold"
+            style={{
+              minWidth: 18,
+              height: 18,
+              borderRadius: 9,
+              fontSize: 'var(--text-2xs)',
+              background: 'rgba(0,0,0,0.55)',
+              color: '#fff',
+              padding: '0 5px',
+            }}
+          >
+            {conversationMessages.length}
+          </span>
+        </button>
+      )}
+
+      {/* ═══ CHAT PANEL — expandable full conversation ═══ */}
+      <ChatPanel
+        messages={conversationMessages}
+        open={chatDrawerOpen}
+        onClose={() => setChatDrawerOpen(false)}
+        scrollRef={chatScrollRef}
+      />
 
       {/* Toast */}
       <AnimatePresence>
