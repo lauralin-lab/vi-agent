@@ -52,6 +52,10 @@ members:
     name: "Liya Song"
     role: infra-engineer
     github: lysfighting
+  - id: xxLe
+    name: "xxLe"
+    role: frontend-engineer
+    github: xxLe
 
 # Kanban 状态定义（顺序即流转方向）
 # Backlog → Queued → WIP → Blocked / In Review → Done → Archive
