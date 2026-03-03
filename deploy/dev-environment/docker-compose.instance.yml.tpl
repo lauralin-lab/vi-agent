@@ -78,6 +78,7 @@ services:
       - API_BASE_URL=http://${SERVER_IP}:__API_PORT__
       - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,https://${SERVER_IP}:__FRONTEND_HTTPS_PORT__,http://localhost:__FRONTEND_PORT__
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - VI_AGENT_NAME=vi-__DEV_NAME__
       - IMAGE_TAG=__SLOT__-build
     depends_on:
       postgres:
@@ -177,6 +178,8 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - API_BASE_URL=http://api-server:8000
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - GATEWAY_URL=http://vi-gateway:18789
+      - VI_AGENT_NAME=vi-__DEV_NAME__
     deploy:
       resources:
         limits:

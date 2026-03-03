@@ -33,6 +33,7 @@ load_dotenv(".env")
 
 AGENT_NAME = os.getenv("AGENT_NAME", "VI")
 GATEWAY_URL = os.getenv("GATEWAY_URL", "")
+VI_AGENT_NAME = os.getenv("VI_AGENT_NAME", "")
 B2G_RPC_TIMEOUT_SECONDS = 60.0
 
 # --- Redis cached context for instant greeting ---
