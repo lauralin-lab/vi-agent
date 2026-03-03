@@ -550,16 +550,26 @@ export default function LiveCameraView({
     const dispatch = livekit.sendDispatch;
 
     // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
+    // NOTE: After onViewResult navigates away, this component unmounts and setState
+    // calls in upload callbacks become no-ops. So we read URLs directly from the
+    // promise resolve values instead of relying on capturedMediaRef state updates.
     const pendingPromises = [...uploadPromisesRef.current];
+    let allUrls = [];
     if (pendingPromises.length > 0) {
-      await Promise.race([
+      const settled = await Promise.race([
         Promise.allSettled(pendingPromises),
         new Promise(resolve => setTimeout(resolve, 10000)),
       ]);
+      if (Array.isArray(settled)) {
+        allUrls = settled
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => r.value);
+      }
     }
-
-    // Collect all successfully uploaded S3 URLs
-    const allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
+    // Fallback: check ref in case some uploads completed before unmount
+    if (allUrls.length === 0) {
+      allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
+    }
     dispatch(finalIntention, allUrls);
   };
 
