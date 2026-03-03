@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Loader2, AlertCircle, Mic, MicOff, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import useSound from '../hooks/useSound';
+import { useImagePreloader } from '../hooks/useImagePreloader';
 import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
 import PromotionBlock from './PromotionBlock';
@@ -150,6 +151,12 @@ export default function HistoryView({
     const mountedRef = useRef(true);
     const longPressTimerRef = useRef(null);
     const longPressStartRef = useRef(null);
+
+    // ── Preload all session photos into browser cache ──
+    const allPhotoUrls = useMemo(() => {
+        return liveSessions.flatMap(s => extractPhotos(s));
+    }, [liveSessions]);
+    useImagePreloader(allPhotoUrls);
 
     // ── Long-press handlers ──
     const handlePointerDown = useCallback((session, e) => {

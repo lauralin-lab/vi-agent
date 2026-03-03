@@ -569,6 +569,7 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
 export default function LiveSessionView({ result, photos, intention, onBack, livekit, sessionData, onAddPhoto, sessionCacheRef }) {
   const { play } = useSound();
   const scrollContainerRef = useRef(null);
+  const headerRef = useRef(null);
   const chatScrollRef = useRef(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const imageScrollerRef = useRef(null);
@@ -623,6 +624,25 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       }
     };
   }, [blocks, cacheKey]);
+
+  // ── iOS keyboard fix: only keep header pinned when keyboard opens ──
+  // On iOS Safari, the keyboard pushes fixed containers up. We counter-
+  // transform just the header so it stays visible; content scrolls naturally.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const el = headerRef.current;
+      if (!el) return;
+      el.style.transform = `translateY(${vv.offsetTop}px)`;
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
 
   // ── Toast ──
   const [toast, setToast] = useState(null);
@@ -1191,11 +1211,11 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-      className="w-full h-full flex flex-col relative z-50"
+      className="fixed inset-0 flex flex-col z-50"
       style={{ background: '#fff', willChange: 'transform, opacity' }}
     >
-      {/* Header */}
-      <div className="safe-area-top w-full flex items-center px-4 pb-2 shrink-0 relative z-10">
+      {/* Header — pinned at top via visualViewport on iOS */}
+      <div ref={headerRef} className="safe-area-top w-full flex items-center px-4 pb-2 shrink-0 z-30" style={{ background: '#fff' }}>
         <button
           onClick={() => { play('nav.back'); onBack(); }}
           className="p-2 rounded-full hover:bg-black/[0.04] transition-colors z-10"
@@ -1208,98 +1228,97 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         </h1>
       </div>
 
-      {/* Photo Gallery — simple rounded image */}
-      {images.length > 0 && (
-        <div className="px-4 pb-3 shrink-0" style={{ zIndex: 5 }}>
-          <div
-            className="relative overflow-hidden"
-            style={{ borderRadius: 24, border: '1px solid rgba(0,0,0,0.04)', background: '#f0f0f0' }}
-          >
-            {/* Carousel scroller */}
-            <div
-              ref={imageScrollerRef}
-              onScroll={handleImageScroll}
-              className="w-full overflow-x-auto no-scrollbar"
-              style={{
-                scrollSnapType: 'x mandatory',
-                scrollbarWidth: 'none',
-                WebkitOverflowScrolling: 'touch',
-              }}
-            >
-              <div className="flex" style={{ width: `${images.length * 100}%` }}>
-                {images.map((img, i) => (
-                  <div
-                    key={i}
-                    className="relative"
-                    style={{ width: `${100 / images.length}%`, scrollSnapAlign: 'start', aspectRatio: '4/3', background: '#e8e8e8' }}
-                  >
-                    {/* Skeleton shimmer while image loads */}
-                    <div
-                      className="absolute inset-0"
-                      style={{
-                        background: 'linear-gradient(90deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%)',
-                        backgroundSize: '200% 100%',
-                        animation: 'shimmer 1.5s infinite',
-                      }}
-                    />
-                    <img
-                      src={img.src}
-                      alt=""
-                      className="w-full h-full object-cover relative"
-                      loading={i === 0 ? 'eager' : 'lazy'}
-                      style={{ opacity: 0, transition: 'opacity 0.3s ease' }}
-                      onLoad={(e) => { e.target.style.opacity = '1'; }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Photo counter badge */}
-            {images.length > 1 && (
-              <div
-                className="absolute top-3 right-3 px-2.5 py-1 rounded-full backdrop-blur-sm"
-                style={{ fontSize: 'var(--text-xs)', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.06)' }}
-              >
-                <span className="font-medium" style={{ color: 'rgba(0,0,0,0.7)' }}>{activeImageIndex + 1}</span>
-                <span style={{ color: 'rgba(0,0,0,0.3)' }}> / {images.length}</span>
-              </div>
-            )}
-
-            {/* Dot indicators */}
-            {images.length > 1 && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                {images.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      imageScrollerRef.current?.scrollTo({
-                        left: i * imageScrollerRef.current.offsetWidth,
-                        behavior: 'smooth',
-                      });
-                    }}
-                    className={`rounded-full transition-all duration-300 ${i === activeImageIndex
-                      ? 'w-6 h-1.5 bg-white/90'
-                      : 'w-1.5 h-1.5 bg-white/50 hover:bg-white/70'
-                      }`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ CANVAS ZONE ═══ */}
+      {/* ═══ SCROLLABLE AREA: Photo Gallery + Canvas ═══ */}
       <div
         ref={scrollContainerRef}
         onScroll={handleContentScroll}
-        className="flex-1 overflow-y-auto px-5 pt-4 pb-28"
-        style={{
-          overscrollBehavior: 'none',
-          WebkitOverflowScrolling: 'touch',
-        }}
+        className="flex-1 overflow-y-auto pb-28"
+        style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}
       >
+        {/* Photo Gallery — inside scroll area so it scrolls with content */}
+        {images.length > 0 && (
+          <div className="px-4 pb-3" style={{ zIndex: 5 }}>
+            <div
+              className="relative overflow-hidden"
+              style={{ borderRadius: 24, border: '1px solid rgba(0,0,0,0.04)', background: '#f0f0f0' }}
+            >
+              {/* Carousel scroller */}
+              <div
+                ref={imageScrollerRef}
+                onScroll={handleImageScroll}
+                className="w-full overflow-x-auto no-scrollbar"
+                style={{
+                  scrollSnapType: 'x mandatory',
+                  scrollbarWidth: 'none',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                <div className="flex" style={{ width: `${images.length * 100}%` }}>
+                  {images.map((img, i) => (
+                    <div
+                      key={i}
+                      className="relative"
+                      style={{ width: `${100 / images.length}%`, scrollSnapAlign: 'start', aspectRatio: '4/3', background: '#e8e8e8' }}
+                    >
+                      {/* Skeleton shimmer while image loads */}
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          background: 'linear-gradient(90deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%)',
+                          backgroundSize: '200% 100%',
+                          animation: 'shimmer 1.5s infinite',
+                        }}
+                      />
+                      <img
+                        src={img.src}
+                        alt=""
+                        className="w-full h-full object-cover relative"
+                        loading={i === 0 ? 'eager' : 'lazy'}
+                        style={{ opacity: 0, transition: 'opacity 0.3s ease' }}
+                        onLoad={(e) => { e.target.style.opacity = '1'; }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Photo counter badge */}
+              {images.length > 1 && (
+                <div
+                  className="absolute top-3 right-3 px-2.5 py-1 rounded-full backdrop-blur-sm"
+                  style={{ fontSize: 'var(--text-xs)', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.06)' }}
+                >
+                  <span className="font-medium" style={{ color: 'rgba(0,0,0,0.7)' }}>{activeImageIndex + 1}</span>
+                  <span style={{ color: 'rgba(0,0,0,0.3)' }}> / {images.length}</span>
+                </div>
+              )}
+
+              {/* Dot indicators */}
+              {images.length > 1 && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+                  {images.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        imageScrollerRef.current?.scrollTo({
+                          left: i * imageScrollerRef.current.offsetWidth,
+                          behavior: 'smooth',
+                        });
+                      }}
+                      className={`rounded-full transition-all duration-300 ${i === activeImageIndex
+                        ? 'w-6 h-1.5 bg-white/90'
+                        : 'w-1.5 h-1.5 bg-white/50 hover:bg-white/70'
+                        }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+      {/* ═══ CANVAS ZONE ═══ */}
+        <div className="px-5 pt-4">
         {/* Canvas cards: stacked artifacts */}
         <AnimatePresence initial={false}>
           {canvasBlocks.map((block, i) => {
@@ -1355,6 +1374,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
           </div>
         )}
 
+        </div>
       </div>
 
       {/* ═══ CHAT POPUPS — 弹幕 (auto-dismiss after 3s) ═══ */}
@@ -1475,36 +1495,12 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
             className="relative overflow-hidden"
             style={{
               borderRadius: 28,
-              background: livekit?.isMicEnabled
-                ? 'rgba(0,0,0,0.03)'
-                : 'rgba(255,255,255,0.85)',
+              background: 'rgba(255,255,255,0.85)',
               backdropFilter: 'blur(40px)',
               WebkitBackdropFilter: 'blur(40px)',
-              boxShadow: livekit?.isMicEnabled
-                ? '0 0 0 1.5px rgba(0,0,0,0.12), 0 8px 32px rgba(0,0,0,0.08)'
-                : '0 0 0 1px rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.06)',
-              transition: 'all 0.4s cubic-bezier(0.23, 1, 0.32, 1)',
+              boxShadow: '0 0 0 1px rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.06)',
             }}
           >
-            {/* Animated gradient border when mic is active */}
-            {livekit?.isMicEnabled && (
-              <motion.div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  borderRadius: 28,
-                  background: 'linear-gradient(270deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02), rgba(0,0,0,0.06))',
-                  backgroundSize: '300% 100%',
-                }}
-                animate={{
-                  backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: 'linear',
-                }}
-              />
-            )}
 
             <div className="relative flex items-center gap-1.5 px-2 py-1.5">
               {/* + button */}
@@ -1526,7 +1522,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
                 value={chatText}
                 onChange={e => setChatText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                placeholder={livekit?.isMicEnabled ? 'Listening...' : 'Ask anything...'}
+                placeholder="Ask anything..."
                 className="flex-1 bg-transparent outline-none min-w-0"
                 style={{
                   fontSize: 15,
@@ -1536,50 +1532,19 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
                 }}
               />
 
-              {/* Mic button — Siri-like animated orb */}
-              <motion.button
-                onClick={() => livekit?.toggleMic?.()}
-                whileTap={{ scale: 0.88 }}
-                className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center relative overflow-hidden transition-all duration-300"
+              {/* Send button — always visible, prominent */}
+              <button
+                onClick={handleSendMessage}
+                disabled={!chatText.trim() && chatImages.length === 0}
+                className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-all duration-200"
                 style={{
-                  background: livekit?.isMicEnabled
-                    ? '#000'
-                    : 'rgba(0,0,0,0.04)',
-                  color: livekit?.isMicEnabled ? '#fff' : 'rgba(0,0,0,0.25)',
-                  boxShadow: livekit?.isMicEnabled ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
+                  background: (chatText.trim() || chatImages.length > 0) ? '#000' : 'rgba(0,0,0,0.08)',
+                  color: (chatText.trim() || chatImages.length > 0) ? '#fff' : 'rgba(0,0,0,0.3)',
+                  boxShadow: (chatText.trim() || chatImages.length > 0) ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
                 }}
               >
-                {/* Pulse ring when active */}
-                {livekit?.isMicEnabled && (
-                  <motion.div
-                    className="absolute inset-0 rounded-full"
-                    style={{ border: '2px solid rgba(0,0,0,0.2)', willChange: 'transform, opacity' }}
-                    animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0, 0.5] }}
-                    transition={{ duration: 2.4, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
-                  />
-                )}
-                {livekit?.isMicEnabled ? <Mic size={16} strokeWidth={2.2} /> : <Mic size={16} strokeWidth={1.8} />}
-              </motion.button>
-
-              {/* Send button — only visible when there's content */}
-              <AnimatePresence>
-                {(chatText.trim() || chatImages.length > 0) && (
-                  <motion.button
-                    initial={{ scale: 0, opacity: 0, width: 0 }}
-                    animate={{ scale: 1, opacity: 1, width: 40 }}
-                    exit={{ scale: 0, opacity: 0, width: 0 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    onClick={handleSendMessage}
-                    className="h-10 shrink-0 rounded-full flex items-center justify-center overflow-hidden"
-                    style={{
-                      background: '#000',
-                      color: '#fff',
-                    }}
-                  >
-                    <ArrowUp size={18} strokeWidth={2.2} />
-                  </motion.button>
-                )}
-              </AnimatePresence>
+                <ArrowUp size={18} strokeWidth={2.5} />
+              </button>
             </div>
           </motion.div>
         </div>

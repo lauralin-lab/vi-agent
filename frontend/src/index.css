@@ -193,6 +193,12 @@ body {
   100% { background-position: -200% 0; }
 }
 
+/* ═══ Promo video shimmer — dark theme loading ═══ */
+@keyframes promo-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* ═══ Float drift — media stack idle wobble ═══ */
 @keyframes float-drift {
 

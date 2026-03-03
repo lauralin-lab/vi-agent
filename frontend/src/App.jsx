@@ -12,6 +12,7 @@ import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useRealtimeEvents } from './hooks/useRealtimeEvents';
 import { api } from './services/api';
+import './utils/videoPreloader'; // side-effect: preload promo video at app boot
 
 // ── Toast notification types ──
 const TOAST_CONFIG = {

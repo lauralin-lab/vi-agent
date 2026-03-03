@@ -1,29 +1,41 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { User } from 'lucide-react';
+import { isVideoReady, onVideoReady, getVideoElement } from '../utils/videoPreloader';
 
 export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAuthenticated }) {
     const [expanded, setExpanded] = useState(true);
-    const [videoLoaded, setVideoLoaded] = useState(false);
-    const videoReadyRef = useRef(false);
+    const [videoVisible, setVideoVisible] = useState(isVideoReady());
+    const videoContainerRef = useRef(null);
 
-    const handleVideoReady = useCallback(() => {
-        videoReadyRef.current = true;
-        setVideoLoaded(true);
-        setExpanded(false);
+    // Attach the shared persistent video element to our container
+    useEffect(() => {
+        const video = getVideoElement();
+        const container = videoContainerRef.current;
+        if (container) {
+            container.appendChild(video);
+        }
+        // On unmount: detach but don't destroy — keeps buffered & playing
+        return () => { video.remove(); };
     }, []);
 
+    // Sync video ready state
     useEffect(() => {
-        // Start shrink when video loads, or after max 1.5s
-        const maxTimer = setTimeout(() => setExpanded(false), 1500);
-
-        if (videoReadyRef.current) {
-            clearTimeout(maxTimer);
-            const t = setTimeout(() => setExpanded(false), 200);
-            return () => { clearTimeout(maxTimer); clearTimeout(t); };
+        if (videoVisible) {
+            setExpanded(false);
+            return;
         }
+        onVideoReady(() => {
+            setVideoVisible(true);
+            setExpanded(false);
+        });
+    }, [videoVisible]);
 
-        return () => clearTimeout(maxTimer);
+    useEffect(() => {
+        // Fallback: shrink after 1.5s even if video still buffering
+        if (isVideoReady()) return;
+        const t = setTimeout(() => setExpanded(false), 1500);
+        return () => clearTimeout(t);
     }, []);
 
     const firstName = user?.displayName?.split(' ')[0] || null;
@@ -48,35 +60,41 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
                 height: expanded ? '100vh' : 'auto',
             }}
             transition={{
-                duration: 2.6,
-                ease: [0.22, 1, 0.36, 1],
+                type: 'spring',
+                stiffness: 60,
+                damping: 18,
             }}
             className="relative overflow-hidden"
             style={{
-                background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+                background: '#0f1628',
+                willChange: 'height, border-radius',
             }}
         >
-            {/* ═══ Video background — looping ═══ */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <video
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    onCanPlayThrough={handleVideoReady}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    style={{ opacity: videoLoaded ? 1 : 0, transition: 'opacity 0.6s ease' }}
-                >
-                    <source src="/promo-bg.mp4" type="video/mp4" />
-                </video>
-            </div>
+            {/* ═══ Shimmer placeholder — visible while video buffers ═══ */}
+            {!videoVisible && (
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        background: 'linear-gradient(110deg, #0f1628 30%, #1a2540 50%, #0f1628 70%)',
+                        backgroundSize: '200% 100%',
+                        animation: 'promo-shimmer 1.8s ease-in-out infinite',
+                    }}
+                />
+            )}
+
+            {/* ═══ Video background — shared persistent element ═══ */}
+            <div
+                ref={videoContainerRef}
+                className="absolute inset-0 overflow-hidden pointer-events-none"
+                style={{ opacity: videoVisible ? 1 : 0, transition: 'opacity 0.5s ease' }}
+            />
 
             {/* ═══ Glass border ═══ */}
             <motion.div
                 className="absolute inset-0 pointer-events-none"
                 initial={{ borderRadius: 0 }}
                 animate={{ borderRadius: expanded ? 0 : 48 }}
-                transition={{ duration: 2.6, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ type: 'spring', stiffness: 60, damping: 18 }}
                 style={{
                     border: '1px solid rgba(255, 255, 255, 0.06)',
                     boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(255, 255, 255, 0.02)',
@@ -92,8 +110,9 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
                     paddingBottom: expanded ? 48 : 22,
                 }}
                 transition={{
-                    duration: 2.6,
-                    ease: [0.22, 1, 0.36, 1],
+                    type: 'spring',
+                    stiffness: 60,
+                    damping: 18,
                 }}
             >
                 <motion.p
