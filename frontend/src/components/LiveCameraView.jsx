@@ -145,9 +145,6 @@ export default function LiveCameraView({
   // Stack status animation
   const [stackStatus, setStackStatus] = useState('IDLE');
 
-  // Dispatching overlay (shown while waiting for upload + RPC)
-  const [isDispatching, setIsDispatching] = useState(false);
-
   // Scanning effect
   const [isScanning, setIsScanning] = useState(false);
   const scanTimerRef = useRef(null);
@@ -537,49 +534,47 @@ export default function LiveCameraView({
   useEffect(() => {
     doneClickedRef.current = false;
   }, []);
-  const handleDone = async () => {
+  const handleDone = () => {
     if (doneClickedRef.current) return;
     doneClickedRef.current = true;
-    play('camera.shutter');
+    play('session.send');
 
     // User-edited intention takes priority, then agent intention, then card text
     const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
 
-    // Show "Sending to agent..." overlay while we upload + dispatch
-    setIsDispatching(true);
-
-    // Capture sendDispatch ref before potential unmount
+    // Capture refs before navigation unmounts this component
     const dispatch = livekit.sendDispatch;
+    const pendingPromises = [...uploadPromisesRef.current];
+    const mediaSnapshot = capturedMediaRef.current.slice();
 
-    try {
-      // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
-      const pendingPromises = [...uploadPromisesRef.current];
-      let allUrls = [];
-      if (pendingPromises.length > 0) {
-        const settled = await Promise.race([
-          Promise.allSettled(pendingPromises),
-          new Promise(resolve => setTimeout(resolve, 10000)),
-        ]);
-        if (Array.isArray(settled)) {
-          allUrls = settled
-            .filter(r => r.status === 'fulfilled' && r.value)
-            .map(r => r.value);
-        }
-      }
-      // Fallback: check ref in case some uploads completed before unmount
-      if (allUrls.length === 0) {
-        allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
-      }
-
-      // Dispatch to agent and wait for RPC to complete
-      await dispatch(finalIntention, allUrls);
-    } finally {
-      // Always clear overlay and navigate, even if dispatch failed
-      setIsDispatching(false);
-    }
-
+    // Navigate immediately — session view streams content via LiveKit data channel
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
+
+    // Detached: upload + dispatch runs independently of component lifecycle.
+    // Agent-side `await persist_session` ensures session exists before gateway dispatch.
+    (async () => {
+      try {
+        let allUrls = [];
+        if (pendingPromises.length > 0) {
+          const settled = await Promise.race([
+            Promise.allSettled(pendingPromises),
+            new Promise(resolve => setTimeout(resolve, 10000)),
+          ]);
+          if (Array.isArray(settled)) {
+            allUrls = settled
+              .filter(r => r.status === 'fulfilled' && r.value)
+              .map(r => r.value);
+          }
+        }
+        if (allUrls.length === 0) {
+          allUrls = mediaSnapshot.filter(m => m.s3Url).map(m => m.s3Url);
+        }
+        await dispatch(finalIntention, allUrls);
+      } catch (e) {
+        console.error('[handleDone] Background dispatch failed:', e);
+      }
+    })();
   };
 
   // ── Action card option handler ──
@@ -936,21 +931,6 @@ export default function LiveCameraView({
                 className="absolute z-40 overflow-hidden shadow-2xl border border-white/30 pointer-events-none bg-neutral-800"
               />
             </>
-          )}
-        </AnimatePresence>
-
-        {/* Dispatching overlay — shown while uploads + RPC complete */}
-        <AnimatePresence>
-          {isDispatching && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center"
-            >
-              <Loader2 size={36} className="text-white animate-spin mb-3" />
-              <span className="text-white/80 text-sm font-medium">Sending to agent...</span>
-            </motion.div>
           )}
         </AnimatePresence>
 

@@ -14,6 +14,8 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
         const container = videoContainerRef.current;
         if (container) {
             container.appendChild(video);
+            // Browsers pause videos removed from DOM — resume after re-attach
+            video.play().catch(() => {});
         }
         // On unmount: detach but don't destroy — keeps buffered & playing
         return () => { video.remove(); };
