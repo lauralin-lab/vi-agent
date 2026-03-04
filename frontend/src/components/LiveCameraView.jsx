@@ -6,6 +6,7 @@ import {
   Search, Languages, Eye, Sparkles, Receipt, ShoppingBag,
   RefreshCw
 } from 'lucide-react';
+import MatrixScanOverlay from './MatrixScanOverlay';
 
 // Map detected intent → icon component for dynamic shutter
 const INTENT_ICONS = {
@@ -190,7 +191,7 @@ export default function LiveCameraView({
     switch (livekit.connectionState) {
       case 'connected':
         setIsScanning(true);
-        scanTimerRef.current = setTimeout(() => setIsScanning(false), 2000);
+        scanTimerRef.current = setTimeout(() => setIsScanning(false), 2500);
         break;
       case 'connecting':
         if (!livekit.lastAgentText) {
@@ -832,29 +833,8 @@ export default function LiveCameraView({
         {/* Status text removed — card + top icon already show connection state */}
 
 
-        {/* AI Scanning Effect */}
-        <AnimatePresence>
-          {isScanning && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-20 pointer-events-none overflow-hidden"
-            >
-              <motion.div
-                initial={{ top: '0%' }}
-                animate={{ top: '100%' }}
-                transition={{ duration: 1.8, ease: 'linear', repeat: 0 }}
-                className="absolute left-0 right-0 h-[2px]"
-                style={{
-                  background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.7), rgba(147,197,253,1), rgba(59,130,246,0.7), transparent)',
-                  boxShadow: '0 0 30px 6px rgba(59,130,246,0.4), 0 0 80px 12px rgba(59,130,246,0.2)'
-                }}
-              />
-              <div className="absolute inset-0 bg-blue-500/[0.03]" />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* AI Matrix Scan Effect */}
+        <MatrixScanOverlay active={isScanning} duration={2500} columns={24} />
 
         {/* Emoji Rain Overlay */}
         <AnimatePresence>
