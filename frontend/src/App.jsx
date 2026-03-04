@@ -11,6 +11,7 @@ import MemoryView from './components/MemoryView';
 import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useRealtimeEvents } from './hooks/useRealtimeEvents';
+import { useNanoClawResults } from './hooks/useNanoClawResults';
 import { api } from './services/api';
 import './utils/videoPreloader'; // side-effect: preload promo video at app boot
 
@@ -89,6 +90,9 @@ function App() {
   // LiveKit state
   const livekit = useLiveKit();
 
+  // V4: NanoClaw results from SSE
+  const nanoClaw = useNanoClawResults();
+
   // View state
   const [viewState, setViewState] = useState(() => {
     const path = window.location.pathname;
@@ -154,7 +158,7 @@ function App() {
   // ── SSE real-time events (global — active on ALL pages when LiveKit is disconnected) ──
   const viUserId = api.getViUserId();
   const livekitConnected = livekit.connectionState === 'connected';
-  const { events: sseEvents, sseConnected } = useRealtimeEvents(viUserId, livekitConnected);
+  const { events: sseEvents, sseConnected } = useRealtimeEvents(viUserId, livekitConnected, nanoClaw.processEvent);
 
   // Process SSE events for global toast/badge notifications
   const lastSseRef = useRef(0);
@@ -340,6 +344,7 @@ function App() {
                 intention={lastIntention}
                 onBack={handleBackToHistory}
                 livekit={livekit}
+                nanoClaw={nanoClaw}
                 sessionData={sessionData}
                 onAddPhoto={handleAddPhotoToSession}
                 sessionCacheRef={sessionCacheRef}

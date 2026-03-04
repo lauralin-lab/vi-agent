@@ -5,14 +5,15 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
+import SkillsView from './SkillsView';
+import ConnectionsView from './ConnectionsView';
 
 const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
 
-const SORT_OPTIONS = [
-  { key: 'updated', label: 'Last Updated' },
-  { key: 'identity', label: 'Identity' },
-  { key: 'semantic', label: 'Semantic' },
-  { key: 'episodic', label: 'Episodic' },
+const PROFILE_TABS = [
+  { key: 'skills', label: 'Skills' },
+  { key: 'memory', label: 'Memory' },
+  { key: 'connections', label: 'Connections' },
 ];
 
 // ── Memory Block Card (like the reference image) ──
@@ -75,8 +76,8 @@ function formatDate(isoStr) {
   } catch { return ''; }
 }
 
-// ── Main MemoryView Component ──
-export default function MemoryView({ onBack, livekit }) {
+// ── Memory Tab Content (inner component) ──
+function MemoryTabContent({ livekit }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
@@ -480,6 +481,68 @@ export default function MemoryView({ onBack, livekit }) {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── ProfileView — tabbed container (Skills + Memory) ──
+// Exported as default; replaces the old MemoryView in App.jsx routing.
+export default function MemoryView({ onBack, livekit }) {
+  const [activeTab, setActiveTab] = useState('skills');
+
+  return (
+    <motion.div
+      key="profile"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="w-full h-full flex flex-col"
+      style={{ background: '#F2F2F7' }}
+    >
+      {/* Header */}
+      <div className="safe-area-top shrink-0 px-6 pb-2">
+        <div className="flex items-center gap-3 mb-3">
+          <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
+            <ChevronLeft size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
+          </button>
+          <h1 className="font-bold" style={{ fontSize: 28, color: '#000' }}>Profile</h1>
+        </div>
+
+        {/* Tab bar */}
+        <div
+          className="flex rounded-xl p-0.5"
+          style={{ background: 'rgba(0,0,0,0.04)' }}
+        >
+          {PROFILE_TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="flex-1 py-2 rounded-lg font-medium transition-all duration-200"
+              style={{
+                fontSize: 14,
+                color: activeTab === tab.key ? '#000' : 'rgba(0,0,0,0.35)',
+                background: activeTab === tab.key ? '#fff' : 'transparent',
+                boxShadow: activeTab === tab.key
+                  ? '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)'
+                  : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-hidden pt-2">
+        {activeTab === 'skills' ? (
+          <SkillsView />
+        ) : activeTab === 'connections' ? (
+          <ConnectionsView />
+        ) : (
+          <MemoryTabContent livekit={livekit} />
+        )}
+      </div>
     </motion.div>
   );
 }

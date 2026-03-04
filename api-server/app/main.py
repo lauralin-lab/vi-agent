@@ -17,11 +17,15 @@ from .limiter import limiter
 from .models import Session, engine, init_db
 from .routes.auth import router as auth_router
 from .routes.events import router as events_router
+from .routes.fs import router as fs_router
 from .routes.internal import router as internal_router
 from .routes.livekit import router as livekit_router
 from .routes.memory import router as memory_router
+from .routes.skills import router as skills_router
+from .routes.tokens import router as tokens_router
 from .routes.upload import router as upload_router
 from .routes.users import router as users_router
+from .services.event_aggregator import run_event_aggregator
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +68,19 @@ async def lifespan(app: FastAPI):
         logger.warning("Redis unavailable — SSE events disabled", exc_info=True)
 
     cleanup_task = asyncio.create_task(cleanup_stale_sessions())
+
+    # V4: Start event aggregator if Redis is available
+    aggregator_task = None
+    if app.state.redis is not None:
+        aggregator_task = asyncio.create_task(run_event_aggregator(app.state.redis))
+        logger.info("Event aggregator started")
+
     try:
         yield
     finally:
         cleanup_task.cancel()
+        if aggregator_task is not None:
+            aggregator_task.cancel()
 
         # Close Redis
         if getattr(app.state, "redis", None) is not None:
@@ -97,6 +110,10 @@ app.include_router(upload_router, prefix="/api/upload", tags=["upload"])
 app.include_router(users_router, prefix="/api/users", tags=["users"])
 app.include_router(memory_router, prefix="/api/users", tags=["memory"])
 app.include_router(events_router, prefix="/api/users", tags=["events"])
+# V4 routes
+app.include_router(tokens_router, prefix="/api/tokens", tags=["tokens"])
+app.include_router(fs_router, prefix="/api/fs", tags=["fs"])
+app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
 
 
 @app.get("/health")

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Post-deployment test suite for dev instances
-# Usage: ./test-instance.sh <server_ip> <frontend_port> <api_port> <gateway_port> [frontend_https_port]
+# Usage: ./test-instance.sh <server_ip> <frontend_port> <api_port> <nanoclaw_port> [frontend_https_port]
 #
 # Runs 3-4 layers of tests:
 #   Layer 1: Smoke — services reachable
@@ -14,11 +14,11 @@ set -o pipefail
 SERVER_IP="$1"
 F_PORT="$2"
 A_PORT="$3"
-G_PORT="$4"
+NC_PORT="$4"
 HTTPS_PORT="${5:-}"
 
-if [ -z "$G_PORT" ]; then
-    echo "Usage: $0 <server_ip> <frontend_port> <api_port> <gateway_port> [frontend_https_port]"
+if [ -z "$NC_PORT" ]; then
+    echo "Usage: $0 <server_ip> <frontend_port> <api_port> <nanoclaw_port> [frontend_https_port]"
     exit 1
 fi
 
@@ -58,8 +58,8 @@ check "API /health" \
 
 check "API /docs reachable" http_ok "http://$SERVER_IP:$A_PORT/docs"
 
-check "Gateway /health" \
-    curl -sf --max-time 10 "http://$SERVER_IP:$G_PORT/health"
+check "NanoClaw /health" \
+    curl -sf --max-time 10 "http://$SERVER_IP:$NC_PORT/health"
 
 check "API /api/config returns JSON" \
     bash -c "curl -sf --max-time 10 http://$SERVER_IP:$A_PORT/api/config | python3 -c 'import json,sys; json.load(sys.stdin)'"

@@ -1,0 +1,16 @@
+{
+  "name": "Recipe Analyzer",
+  "slug": "recipe-analyzer",
+  "icon": "🍳",
+  "description": "Analyze food photos to identify dishes, estimate nutritional info, and suggest recipes",
+  "category": "food",
+  "version": "1.0.0",
+  "requirements": {
+    "input_types": ["image"]
+  },
+  "ui": {
+    "card_color": "#FF6B35",
+    "preview_template": "Analyzing your meal..."
+  },
+  "tags": ["food", "nutrition", "cooking", "photo"]
+}

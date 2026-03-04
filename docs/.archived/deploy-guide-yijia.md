@@ -14,7 +14,7 @@
 | Frontend (HTTP) | http://34.172.9.61:3200 |
 | API | http://34.172.9.61:3201 |
 | API Docs | http://34.172.9.61:3201/docs |
-| Gateway | http://34.172.9.61:3202 |
+| NanoClaw | http://34.172.9.61:3202 |
 | Docker Hub Org | `collov` |
 | 服务器代码目录 | `~/vi-agent-repos/yijia/` |
 | 实例目录 | `/opt/vi-agent/instances/yijia/` |
@@ -59,7 +59,7 @@ git diff
 git add -A
 git commit -m "feat(api): add upload endpoint"
 # 或 fix(frontend): fix camera permission
-# 或 refactor(gateway): simplify routing
+# 或 refactor(nanoclaw): simplify routing
 
 # 推送到远程
 git push
@@ -94,7 +94,7 @@ ssh -A -i ~/.ssh/id_ed25519 yijiazhou@34.172.9.61 \
 这个命令会：
 1. `git fetch --all --tags` 拉取最新代码
 2. `git checkout tags/$TAG` 切到你的 tag
-3. 逐个构建 4 个服务镜像：`api-server`, `frontend`, `gateway`, `realtime`
+3. 逐个构建 4 个服务镜像：`api-server`, `frontend`, `nanoclaw`, `realtime`
 4. 推送到 Docker Hub (`collov/vi-agent-*:$TAG`)
 
 预计耗时 2-5 分钟（取决于改动范围，Docker 有层缓存）。
@@ -107,7 +107,7 @@ ssh -A -i ~/.ssh/id_ed25519 yijiazhou@34.172.9.61 \
   Images:
     collov/vi-agent-api-server:dev-20260303-ad8a03a
     collov/vi-agent-frontend:dev-20260303-ad8a03a
-    collov/vi-agent-gateway:dev-20260303-ad8a03a
+    collov/vi-agent-nanoclaw:dev-20260303-ad8a03a
     collov/vi-agent-realtime:dev-20260303-ad8a03a
 ```
 
@@ -168,7 +168,7 @@ sudo docker compose up -d api-server
 |----------|----------|--------|----------------|
 | Python API | `./api-server` | `collov/vi-agent-api-server` | `api-server` |
 | React 前端 | `./frontend` | `collov/vi-agent-frontend` | `frontend` |
-| Node Gateway | `./gateway` | `collov/vi-agent-gateway` | `vi-gateway` |
+| NanoClaw | `./nanoclaw` | `collov/vi-agent-nanoclaw` | `nanoclaw` |
 | LiveKit Agent | `./realtime` | `collov/vi-agent-realtime` | `vi-realtime` |
 
 ---
@@ -191,7 +191,7 @@ cd /opt/vi-agent/instances/yijia && sudo docker compose logs -f
 # 只看某个服务
 sudo docker compose logs -f api-server
 sudo docker compose logs -f frontend
-sudo docker compose logs -f vi-gateway
+sudo docker compose logs -f nanoclaw
 ```
 
 ### 重启服务

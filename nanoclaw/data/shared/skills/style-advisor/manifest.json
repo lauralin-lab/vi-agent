@@ -1,0 +1,16 @@
+{
+  "name": "Style Advisor",
+  "slug": "style-advisor",
+  "icon": "👔",
+  "description": "Get personalized fashion advice and outfit suggestions from photos",
+  "category": "lifestyle",
+  "version": "1.0.0",
+  "requirements": {
+    "input_types": ["image"]
+  },
+  "ui": {
+    "card_color": "#9B59B6",
+    "preview_template": "Analyzing your style..."
+  },
+  "tags": ["fashion", "style", "outfit", "photo"]
+}

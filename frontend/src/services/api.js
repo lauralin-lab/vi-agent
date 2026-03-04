@@ -45,6 +45,20 @@ class ApiClient {
     }
   }
 
+  // --- Standard headers builder ---
+
+  _headers() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const deviceId = this.getDeviceId();
+    if (deviceId) {
+      headers['X-Device-Id'] = deviceId;
+    }
+    return headers;
+  }
+
   // --- Auth token management ---
 
   setToken(token) {
@@ -283,6 +297,28 @@ class ApiClient {
     throw lastErr;
   }
 
+  /**
+   * Notify API server that an upload is complete.
+   * This publishes a vi:media:{uid} event to Redis so NanoClaw can auto-trigger.
+   */
+  async _notifyUploadComplete(publicUrl, key, mediaType) {
+    try {
+      const viUserId = this.getViUserId();
+      const qs = viUserId ? `?vi_user_id=${encodeURIComponent(viUserId)}` : '';
+      await this.request(`/api/upload/complete${qs}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          key: key || '',
+          media_type: mediaType,
+          media_url: publicUrl,
+        }),
+      });
+      console.log(`[redis][frontend] Upload complete notified: ${mediaType}`);
+    } catch (err) {
+      console.warn('[redis][frontend] Failed to notify upload complete:', err);
+    }
+  }
+
   async uploadDataUrl(dataUrl) {
     const resp = await fetch(dataUrl);
     const blob = await resp.blob();
@@ -292,6 +328,43 @@ class ApiClient {
 
   async uploadBlob(blob, ext = 'webm') {
     return this._uploadToS3(blob, ext);
+  }
+
+  /**
+   * Dispatch a task to NanoClaw via REST.
+   * Use when LiveKit RPC is unavailable (e.g., skill tap without active session).
+   * Results stream back via SSE.
+   */
+  async dispatchExec({ prompt, skillSlug, mediaUrls, sessionId, priority, params } = {}) {
+    const viUserId = this.getViUserId();
+    const body = { prompt };
+    if (skillSlug) body.skill_slug = skillSlug;
+    if (mediaUrls) body.media_urls = mediaUrls;
+    if (sessionId) body.session_id = sessionId;
+    if (priority) body.priority = priority;
+    if (params) body.params = params;
+
+    const res = await fetch(`${this.baseUrl}/api/users/exec?vi_user_id=${viUserId}`, {
+      method: 'POST',
+      headers: this._headers(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Exec dispatch failed: ${res.status}`);
+    return res.json();
+  }
+
+  // OAuth token endpoints
+
+  async getTokenStatus(provider) {
+    return this.request(`/api/tokens/${encodeURIComponent(provider)}/status`);
+  }
+
+  async connectToken(provider) {
+    return this.request(`/api/tokens/connect/${encodeURIComponent(provider)}`, { method: 'POST' });
+  }
+
+  async disconnectToken(provider) {
+    return this.request(`/api/tokens/${encodeURIComponent(provider)}`, { method: 'DELETE' });
   }
 
   logout() {

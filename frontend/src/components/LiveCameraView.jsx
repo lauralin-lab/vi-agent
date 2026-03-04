@@ -110,7 +110,7 @@ export default function LiveCameraView({
     agentIdentity: livekit.agentIdentity,
     greetingReceived: livekit.greetingReceived,
     userSpeaking: false, // TODO: wire up actual VAD signal; isMicOn is mic-enabled, not speaking
-    agentGenerating: livekit.isHtmlStreaming || livekit.isTextStreaming || !!livekit.taskProgress,
+    agentGenerating: !!livekit.taskProgress,
     cameraActive: !!livekit.localVideoTrack,
     connectionQuality: livekit.connectionQuality,
   });
@@ -556,39 +556,30 @@ export default function LiveCameraView({
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
 
-    // Detached: upload all media on Done, then dispatch to agent
-    (async () => {
-      try {
-        // Upload all media now (deferred from capture time)
-        const uploadPromises = mediaSnapshot.map(async (item) => {
-          if (item.s3Url) return item.s3Url; // already uploaded (e.g. video)
-          if (item.type === 'video' && item.blob) {
-            const ext = 'webm';
-            return await api.uploadBlob(item.blob, ext);
-          }
-          if (item.src) {
-            return await api.uploadDataUrl(item.src);
-          }
-          return null;
-        });
+    // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
+    const pendingPromises = [...uploadPromisesRef.current];
+    if (pendingPromises.length > 0) {
+      await Promise.race([
+        Promise.allSettled(pendingPromises),
+        new Promise(resolve => setTimeout(resolve, 10000)),
+      ]);
+    }
 
-        const settled = await Promise.race([
-          Promise.allSettled(uploadPromises),
-          new Promise(resolve => setTimeout(resolve, 15000)),
-        ]);
+    // Collect all successfully uploaded S3 URLs
+    const allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
 
-        let allUrls = [];
-        if (Array.isArray(settled)) {
-          allUrls = settled
-            .filter(r => r.status === 'fulfilled' && r.value)
-            .map(r => r.value);
-        }
+    // V4: Notify Redis about captured media — NanoClaw auto-triggers analysis.
+    // Each URL gets a vi:media event; NanoClaw debounces and batches them.
+    for (const url of allUrls) {
+      const mediaType = url.match(/\.(mp4|webm)/) ? 'video' : 'image';
+      api._notifyUploadComplete(url, '', mediaType);
+    }
+    console.log('[redis][frontend] Done: notified', allUrls.length, 'media files');
 
-        await dispatch(finalIntention, allUrls);
-      } catch (e) {
-        console.error('[handleDone] Upload + dispatch failed:', e);
-      }
-    })();
+    // Notify LiveKit for voice acknowledgment (optional — works without it)
+    if (finalIntention) {
+      livekit.sendMessage?.(`Processing: ${finalIntention}`);
+    }
   };
 
   // ── Action card option handler ──

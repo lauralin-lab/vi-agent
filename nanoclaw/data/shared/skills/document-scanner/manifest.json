@@ -1,0 +1,16 @@
+{
+  "name": "Document Scanner",
+  "slug": "document-scanner",
+  "icon": "📄",
+  "description": "Extract and structure text from document photos, receipts, and handwritten notes",
+  "category": "productivity",
+  "version": "1.0.0",
+  "requirements": {
+    "input_types": ["image"]
+  },
+  "ui": {
+    "card_color": "#4A90D9",
+    "preview_template": "Scanning document..."
+  },
+  "tags": ["ocr", "document", "text", "productivity"]
+}

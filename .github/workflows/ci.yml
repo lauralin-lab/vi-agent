@@ -63,9 +63,9 @@ jobs:
         run: |
           python -m pytest tests/ -v --tb=short
 
-  # Gateway checks
-  gateway:
-    name: Gateway (TypeScript)
+  # NanoClaw checks (V4 — replaces gateway)
+  nanoclaw:
+    name: NanoClaw (TypeScript)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,16 +75,12 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies
-        working-directory: gateway/plugin
+        working-directory: nanoclaw
         run: npm ci
 
       - name: Type check
-        working-directory: gateway/plugin
-        run: npm run type-check
-
-      - name: Lint
-        working-directory: gateway/plugin
-        run: npm run lint
+        working-directory: nanoclaw
+        run: npx tsc --noEmit
 
   # Frontend checks
   frontend:
@@ -138,14 +134,14 @@ jobs:
   # Branch protection summary
   ci-summary:
     name: CI Summary
-    needs: [api-server, gateway, frontend, realtime]
+    needs: [api-server, nanoclaw, frontend, realtime]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check results
         run: |
           if [ "${{ needs.api-server.result }}" = "failure" ] || \
-             [ "${{ needs.gateway.result }}" = "failure" ] || \
+             [ "${{ needs.nanoclaw.result }}" = "failure" ] || \
              [ "${{ needs.frontend.result }}" = "failure" ] || \
              [ "${{ needs.realtime.result }}" = "failure" ]; then
             echo "CI failed"

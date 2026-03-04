@@ -25,7 +25,7 @@ VI Agent 是一个以**相机为入口**的全栈 AI 助手。核心交互范式
 | 系统 | 类人脑类比 | 实现 | 响应速度 |
 |------|-----------|------|---------|
 | **System 1** 直觉反应 | 快速直觉 | Gemini Live 实时语音+视觉 (`vi-realtime`) | 毫秒级 |
-| **System 2** 深度思考 | 深度推理 | 多模型执行引擎 (`vi-gateway`) | 秒到分钟 |
+| **System 2** 深度思考 | 深度推理 | Claude Agent SDK 执行引擎 (`nanoclaw`) | 秒到分钟 |
 | **System 3** 长期记忆 | 长期记忆 | 三层记忆金字塔 (`api-server`) | 跨会话持久 |
 
 ### 架构总览
@@ -40,14 +40,14 @@ VI Agent 是一个以**相机为入口**的全栈 AI 助手。核心交互范式
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │  vi-realtime │    │  api-server  │    │    Redis 7   │
 │ (Gemini Live)│    │  (FastAPI)   │◄──►│   Pub/Sub    │
-└──────┬───────┘    └──────┬───────┘    └──────────────┘
-       │ LiveKit RPC        │
-       ▼                    ▼
-┌──────────────┐    ┌──────────────┐
-│  vi-gateway  │    │ PostgreSQL 16│
-│ (Claude/     │    │   用户/会话   │
-│  Gemini)     │    │   /记忆存储   │
-└──────────────┘    └──────────────┘
+└──────────────┘    └──────┬───────┘    └──────┬───────┘
+                           │                    │
+                           ▼                    ▼
+                    ┌──────────────┐    ┌──────────────┐
+                    │ PostgreSQL 16│    │   NanoClaw   │
+                    │   用户/会话   │    │ (Claude SDK) │
+                    │   /记忆存储   │    │  1:1 per user│
+                    └──────────────┘    └──────────────┘
 ```
 
 ### 四个服务
@@ -56,7 +56,7 @@ VI Agent 是一个以**相机为入口**的全栈 AI 助手。核心交互范式
 |------|--------|------|------|
 | **api-server** | Python / FastAPI / SQLAlchemy | 用户认证、会话管理、三层记忆系统、文件存储、SSE 事件流 | 8000 |
 | **vi-realtime** | Python / LiveKit Agents SDK | 实时语音+视觉 AI 代理，工具调用，前端控制 | — (LiveKit) |
-| **vi-gateway** | TypeScript / Node.js / Express | 复杂任务执行，LLM 路由（Claude / Gemini），HTML/模块流式输出 | 18789 |
+| **nanoclaw** | Python / Claude Agent SDK | 复杂任务执行（1:1 per user），通过 Redis 接收任务，流式输出结果 | 3100 |
 | **frontend** | React 19 / Vite 7 / Tailwind 4 | 相机/会话/历史/记忆四视图界面，LiveKit 客户端 | 5173 (dev) |
 
 ### 通信协议
@@ -64,12 +64,12 @@ VI Agent 是一个以**相机为入口**的全栈 AI 助手。核心交互范式
 | 源 → 目标 | 协议 | 用途 |
 |-----------|------|------|
 | Frontend ↔ vi-realtime | LiveKit RPC + DataChannel | 实时双向交互（语音、视频、RPC 调用） |
-| Frontend ↔ vi-gateway | LiveKit DataChannel | 任务结果流式传输（HTML/模块） |
-| Frontend → api-server | HTTP REST | 认证、会话 CRUD、记忆管理 |
-| Frontend ← api-server | SSE (Redis Pub/Sub) | 实时事件推送（会话更新、记忆变更） |
-| vi-realtime → vi-gateway | HTTP + LiveKit RPC | 邀请 gateway 加入房间，派发任务 |
+| Frontend → api-server | HTTP REST | 认证、会话 CRUD、记忆管理、任务派发 |
+| Frontend ← api-server | SSE (Redis Pub/Sub) | 实时事件推送（会话更新、记忆变更、任务结果流） |
 | vi-realtime → api-server | HTTP REST (Internal API) | 会话持久化、记忆写入 |
-| vi-gateway → api-server | HTTP REST (Internal API) | 记忆批量更新 |
+| vi-realtime ↔ Redis | Redis Pub/Sub | 上下文快照发布、任务派发 |
+| NanoClaw ↔ Redis | Redis Pub/Sub | 任务消费（vi:exec）、结果流式输出（vi:stream）、意图推送（vi:intent） |
+| NanoClaw → api-server | HTTP REST (Internal API) | 记忆批量更新、会话状态 |
 
 ---
 
@@ -114,19 +114,13 @@ vi-agent-team-version/
 │   ├── pyproject.toml
 │   └── Dockerfile
 │
-├── gateway/                       # AI 任务执行网关
-│   └── plugin/
-│       ├── src/
-│       │   ├── main.ts            #   Express HTTP 服务 + GatewayService 初始化
-│       │   ├── gateway-service.ts #   核心：房间管理、RPC 处理、任务执行（960 行）
-│       │   └── executors/
-│       │       ├── types.ts       #     接口定义（TaskRequest, TaskChunk, ExecutionAdapter）
-│       │       ├── executor-selector.ts  # 执行器选择（优先级/提示/降级）
-│       │       ├── gemini-flash-executor.ts  # Gemini 2.5 Flash（快速 HTML 生成）
-│       │       └── nanoclaw-executor.ts      # Claude Sonnet（深度分析）
-│       ├── package.json
-│       ├── tsconfig.json
-│       └── Dockerfile
+├── nanoclaw/                      # V4 任务执行引擎（Claude Agent SDK）
+│   ├── src/
+│   │   ├── main.py                #   入口，Redis 任务消费循环
+│   │   ├── executor.py            #   Claude SDK 执行器
+│   │   ├── tools/                 #   工具定义
+│   │   └── channels/              #   Redis 频道类型定义
+│   └── Dockerfile
 │
 ├── frontend/                      # React 前端应用
 │   ├── src/
@@ -246,10 +240,10 @@ cd realtime
 uv sync
 uv run python src/agent.py dev
 
-# 4. vi-gateway（终端 3）
-cd gateway/plugin
-npm install
-npm run start
+# 4. nanoclaw（终端 3）
+cd nanoclaw
+uv sync
+uv run python src/main.py
 
 # 5. 前端（终端 4）
 cd frontend
@@ -294,16 +288,15 @@ Docker 模式下端口：前端 `80`/`443`，API `8000`，PostgreSQL `5432`，Re
 | 噪音消除 | Silero VAD + LiveKit 噪音消除插件 |
 | 包管理 | uv |
 
-### 执行网关 (gateway)
+### 执行引擎 (nanoclaw)
 
 | 层 | 技术 |
 |----|------|
-| 运行时 | Node.js 22 + tsx |
-| HTTP 框架 | Express 4.18 |
-| 执行器 1 | Gemini 2.5 Flash（快速 HTML 生成） |
-| 执行器 2 | Claude Sonnet 4.6（深度分析） |
-| 实时通信 | @livekit/rtc-node |
-| 语言 | TypeScript (strict mode) |
+| 运行时 | Python 3.11+ |
+| AI 框架 | Claude Agent SDK (Anthropic) |
+| 任务消费 | Redis Pub/Sub (vi:exec) |
+| 结果输出 | Redis Pub/Sub (vi:stream, vi:intent) |
+| 部署模式 | 1:1 per user |
 
 ### 前端 (frontend)
 
@@ -360,13 +353,9 @@ Agent 有两种输出路径：
 
 内部服务间通信使用 `X-Internal-Token` 头认证。
 
-### Gateway 执行器选择
+### NanoClaw 任务执行
 
-任务路由到合适的 LLM 通过四步级联：
-
-```
-executorHint（显式指定）→ priority 映射（fast/thorough/code）→ 环境变量默认值 → 第一个在线执行器
-```
+NanoClaw 通过 Redis `vi:exec:{uid}` 频道接收任务，使用 Claude Agent SDK 执行，结果通过 `vi:stream:{uid}` 流式输出。支持 `fast`（快速）和 `thorough`（深度）两种优先级模式。
 
 ---
 
@@ -450,8 +439,8 @@ uv run python -m pytest tests/ -v
 | `LIVEKIT_URL` | 全部 | LiveKit WebSocket URL (`wss://...`) |
 | `LIVEKIT_API_KEY` | 全部 | LiveKit API Key |
 | `LIVEKIT_API_SECRET` | 全部 | LiveKit API Secret |
-| `GOOGLE_API_KEY` | realtime, gateway | Gemini API Key |
-| `ANTHROPIC_API_KEY` | gateway | Claude API Key |
+| `GOOGLE_API_KEY` | realtime | Gemini API Key |
+| `ANTHROPIC_API_KEY` | nanoclaw | Claude API Key |
 
 ### API 服务器
 
@@ -548,8 +537,8 @@ cd api-server && .venv/bin/python -m pytest tests/ -v
 # Frontend
 cd frontend && npm run lint
 
-# Gateway
-cd gateway/plugin && npm run type-check
+# NanoClaw
+cd nanoclaw && uv run python -m pytest tests/ -v
 ```
 
 详细贡献指南见 `CONTRIBUTING.md`。
@@ -565,7 +554,7 @@ cd gateway/plugin && npm run type-check
 | 产品文档 | `docs/product.md` | 产品愿景、设计原则、用户旅程、产物系统、经济模型 |
 | 系统架构 | `docs/system_v3.md` | V3 四服务架构、通信矩阵、完整环境变量、典型用户流 |
 | 部署指南 | `deploy/README.md` | GCE 部署、SSL、域名配置 |
-| Gateway 详解 | `gateway/plugin/AGENTS.md` | Gateway 项目知识库（执行器、协议、代码细节） |
+| NanoClaw 详解 | `nanoclaw/README.md` | NanoClaw 执行引擎知识库（Claude SDK、Redis 协议） |
 | QA 测试系统 | `tests/qa/README.md` | QA 架构、测试执行方法、评判标准 |
 | 提示词管理 | `prompts/README.md` | Agent 提示词索引和同步方法 |
 
@@ -579,5 +568,5 @@ cd gateway/plugin && npm run type-check
 | 登录提示 `Invalid credentials` | 确认 PostgreSQL 运行中且 `vi_db` 已创建 |
 | LiveKit Token 错误 | 检查 `LIVEKIT_API_KEY` 和 `LIVEKIT_API_SECRET` 是否来自同一项目 |
 | 前端无法连接 API | 检查 `VITE_API_URL`，dev 模式下 Vite 代理 `/api` 到 `localhost:8000` |
-| vi-gateway 不处理任务 | 确认 `ANTHROPIC_API_KEY` 和 `GOOGLE_API_KEY` 已设置，检查 gateway 日志 |
+| NanoClaw 不处理任务 | 确认 `ANTHROPIC_API_KEY` 已设置，检查 NanoClaw 日志及 Redis 连接 |
 | SSE 事件不推送 | 确认 Redis 运行中；Redis 不可用时 SSE 自动降级但 API 仍可用 |

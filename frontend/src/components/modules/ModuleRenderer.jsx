@@ -1,7 +1,7 @@
 /**
  * ModuleRenderer — dispatches module_type to specific React component.
  *
- * Receives { module_type, data } from the gateway and renders the
+ * Receives { module_type, data } from NanoClaw execution and renders the
  * appropriate native module component with error boundary protection.
  */
 

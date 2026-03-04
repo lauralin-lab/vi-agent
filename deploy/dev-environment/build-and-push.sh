@@ -25,7 +25,7 @@ fi
 
 REPO_DIR="${REPO_DIR:-$HOME/vi-agent-repo}"
 DOCKER_ORG="collov"
-SERVICES=(api-server frontend gateway realtime)
+SERVICES=(api-server frontend nanoclaw realtime)
 
 cd "$REPO_DIR"
 

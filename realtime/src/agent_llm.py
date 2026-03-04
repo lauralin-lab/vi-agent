@@ -15,7 +15,7 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from agent_common import VI_AGENT_NAME, Assistant, logger, run_agent, server
 
 STT_MODEL = os.getenv("STT_MODEL", "nova-3")
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5o-mini")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 TTS_MODEL = os.getenv("TTS_MODEL", "sonic-3")
 TTS_VOICE = os.getenv("TTS_VOICE", "f786b574-daa5-4673-aa0c-cbe3e8534c02")
 

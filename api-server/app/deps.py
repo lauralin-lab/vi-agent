@@ -65,19 +65,37 @@ async def get_current_user_or_device(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     vi_user_id: str | None = Query(None),
+    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Authenticate via JWT bearer token OR vi_user_id query param.
+    """Authenticate via JWT bearer token, vi_user_id query param, or internal token.
 
-    If a JWT token is provided but invalid, raises 401 immediately.
-    Only falls back to device-based auth when no JWT is present at all.
+    Priority:
+    1. JWT bearer token (strict — invalid JWT is an error)
+    2. X-Internal-Token + vi_user_id query param (internal service calls)
+    3. vi_user_id query param alone (device auth)
     """
+    import os
+
     # If JWT credentials are provided, validate them strictly
     if credentials and credentials.credentials:
         try:
             return await get_current_user(credentials=credentials, db=db)
         except HTTPException:
             raise  # Don't fall through — invalid JWT is an error
+
+    # Internal service auth: X-Internal-Token + vi_user_id
+    if x_internal_token and vi_user_id:
+        expected_token = os.getenv("INTERNAL_API_TOKEN", "")
+        if not expected_token:
+            expected_token = "vi-internal-dev-token"
+        if x_internal_token == expected_token:
+            result = await db.execute(
+                select(User).where(User.vi_user_id == vi_user_id)
+            )
+            user = result.scalar_one_or_none()
+            if user is not None:
+                return user
 
     # No JWT provided — try device auth via query param
     if vi_user_id:

@@ -11,7 +11,12 @@ COPY . .
 
 EXPOSE 8000
 
-RUN useradd -m -r appuser
+RUN useradd -m -r appuser \
+    && mkdir -p /data/users \
+    && chown -R appuser:appuser /data
+
+ENV USER_DATA_DIR=/data/users
+
 USER appuser
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1

@@ -6,8 +6,8 @@
 
 跟 Claude 说：
 - `部署` 或 `全量部署` → 执行场景 A
-- `部署 frontend` / `部署 gateway` / `部署 api-server` / `部署 realtime` → 执行场景 B
-- `重启` / `重启 gateway` → 执行场景 C
+- `部署 frontend` / `部署 nanoclaw` / `部署 api-server` / `部署 realtime` → 执行场景 B
+- `重启` / `重启 nanoclaw` → 执行场景 C
 - `查日志 realtime` → 运维命令
 
 Claude 会自动判断当前分支、打 tag、构建、部署、验证，全程不需要手动操作。
@@ -32,7 +32,7 @@ Claude 会自动判断当前分支、打 tag、构建、部署、验证，全程
 | Frontend HTTP | 3600 | `http://34.172.9.61:3600` |
 | API | 3601 | `http://34.172.9.61:3601` |
 | API Docs | 3601 | `http://34.172.9.61:3601/docs` |
-| Gateway | 3602 | `http://34.172.9.61:3602` |
+| NanoClaw | 3602 | `http://34.172.9.61:3602` |
 | Realtime | 3603 | |
 | PostgreSQL | 5438 | |
 | Redis | 6385 | |
@@ -43,7 +43,7 @@ Claude 会自动判断当前分支、打 tag、构建、部署、验证，全程
 |----------------------|----------|--------|
 | `api-server` | `api-server/` | `collov/vi-agent-api-server` |
 | `frontend` | `frontend/` | `collov/vi-agent-frontend` |
-| `vi-gateway` | `gateway/` | `collov/vi-agent-gateway` |
+| `nanoclaw` | `nanoclaw/` | `collov/vi-agent-nanoclaw` |
 | `vi-realtime` | `realtime/` | `collov/vi-agent-realtime` |
 | `postgres` | — | `postgres:16-alpine` |
 | `redis` | — | `redis:7-alpine` |
@@ -71,7 +71,7 @@ ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61 \
   "sudo cp ~/vi-templates-tmp/* /opt/vi-agent/templates/ && sudo chmod +x /opt/vi-agent/templates/*.sh"
 ```
 
-> 如果只改了业务代码（frontend/api-server/gateway/realtime），跳过此步。
+> 如果只改了业务代码（frontend/api-server/nanoclaw/realtime），跳过此步。
 
 ### 2. 打 Tag
 
@@ -94,7 +94,7 @@ $SSH "cd ~/vi-agent-repos/xxl && git fetch --all --tags && git checkout tags/$TA
 # 构建 4 个服务
 $SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-api-server:$TAG ./api-server"
 $SSH "cd ~/vi-agent-repos/xxl && docker build --build-arg VITE_API_URL= --build-arg VITE_LIVEKIT_URL= -t collov/vi-agent-frontend:$TAG ./frontend"
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-gateway:$TAG ./gateway"
+$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-nanoclaw:$TAG ./nanoclaw"
 $SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-realtime:$TAG ./realtime"
 ```
 
@@ -104,7 +104,7 @@ $SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-realtime:$TAG .
 $SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i \
   's|collov/vi-agent-api-server:[^ ]*|collov/vi-agent-api-server:$TAG|g; \
    s|collov/vi-agent-frontend:[^ ]*|collov/vi-agent-frontend:$TAG|g; \
-   s|collov/vi-agent-gateway:[^ ]*|collov/vi-agent-gateway:$TAG|g; \
+   s|collov/vi-agent-nanoclaw:[^ ]*|collov/vi-agent-nanoclaw:$TAG|g; \
    s|collov/vi-agent-realtime:[^ ]*|collov/vi-agent-realtime:$TAG|g' docker-compose.yml"
 ```
 
@@ -150,11 +150,11 @@ $SSH "sudo bash /opt/vi-agent/templates/test-instance.sh 34.172.9.61 3600 3601 3
 ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61 "grep 'image:.*collov' /opt/vi-agent/instances/xxl/docker-compose.yml | head -1"
 
 # 对比当前 HEAD 和上次部署的 tag（假设上次是 dev-20260303-c819af0）
-git diff --stat dev-20260303-c819af0..HEAD -- frontend/ api-server/ gateway/ realtime/
+git diff --stat dev-20260303-c819af0..HEAD -- frontend/ api-server/ nanoclaw/ realtime/
 ```
 
 - 只有 `frontend/` 有改动 → 场景 B（只部署 frontend）
-- 只有 `gateway/` 有改动 → 场景 B（只部署 gateway）
+- 只有 `nanoclaw/` 有改动 → 场景 B（只部署 nanoclaw）
 - 多个目录有改动 → 场景 A（全量部署）或多次场景 B
 - 没有改动 → 场景 C（只重启）
 
@@ -197,12 +197,12 @@ $SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-api-serve
 $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps api-server"
 ```
 
-#### 只改了 gateway
+#### 只改了 nanoclaw
 
 ```bash
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-gateway:$TAG ./gateway"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-gateway:[^ ]*|collov/vi-agent-gateway:$TAG|g' docker-compose.yml"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps vi-gateway"
+$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-nanoclaw:$TAG ./nanoclaw"
+$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-nanoclaw:[^ ]*|collov/vi-agent-nanoclaw:$TAG|g' docker-compose.yml"
+$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps nanoclaw"
 ```
 
 #### 只改了 realtime
@@ -228,7 +228,7 @@ SSH="ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61"
 $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart"
 
 # 只重启某个服务
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart vi-gateway"
+$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart nanoclaw"
 $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart vi-realtime"
 $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart api-server"
 $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart frontend"
@@ -252,11 +252,11 @@ $SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=50"
 
 # 查看某个服务日志
 $SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 vi-realtime"
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 vi-gateway"
+$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 nanoclaw"
 $SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 api-server"
 
 # 实时跟踪日志
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs -f vi-gateway"
+$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs -f nanoclaw"
 
 # 停止所有
 $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose down"
