@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Task, TaskCreate, TaskUpdate, TaskList, TaskGet, TaskOutput, AskUserQuestion, NotebookEdit, EnterPlanMode, TeamCreate, TeamDelete, SendMessage
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Task, TaskCreate, TaskUpdate, TaskList, TaskGet, TaskOutput, NotebookEdit, EnterPlanMode, TeamCreate, TeamDelete, SendMessage
 description: High-drive autonomous execution mode - take ownership and drive to completion. Use when the user says "drive", "ralph", "ralph loop", "keep going until done", or "loop until complete".
 ---
 
@@ -172,7 +172,7 @@ For larger missions, create team early (TeamCreate) and use a `researcher` teamm
 - Never auto-answer — empty return = no user input, re-ask
 - Visual context BEFORE every AskUserQuestion (diagrams, tables, code snippets)
 - Gate 2 (⚡ MY POSITION) BEFORE every AskUserQuestion
-- **⛔ Permission Setup:** Main session uses `bypassPermissions`. AskUserQuestion 由 PreToolUse hook 输出 `permissionDecision:"ask"` 强制弹出终端原生交互 UI，不会被自动跳过。Teammates use `mode: "bypassPermissions"` (they don't need AskUserQuestion).
+- **⛔ Permission Setup:** AskUserQuestion 不在 `allowed-tools` 中，确保始终弹出终端原生交互 UI，不会被自动跳过。Teammates use `mode: "bypassPermissions"` (they don't need AskUserQuestion).
 
 **Rhythm per round:**
 1. **Output** Gate 2 (MY POSITION) + visual context (diagrams/tables/code)
