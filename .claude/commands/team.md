@@ -969,21 +969,47 @@ If API fails (permissions) → warn but continue. These can be set manually in G
 
 ### 5c: Branch protection (if enabled)
 
+Read config flags to build the protection rule dynamically:
+
 ```bash
 BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 RELEASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.release_branch "" 2>/dev/null)
 RELEASE_BRANCH="${RELEASE_BRANCH:-$BASE_BRANCH}"
 
+# Read quality flags — protection rule adapts to team's config
+CI_ENABLED=$(bash ~/.claude/commands/scripts/tw-config.sh quality.ci "false" 2>/dev/null)
+REVIEW_REQUIRED=$(bash ~/.claude/commands/scripts/tw-config.sh quality.review_required "false" 2>/dev/null)
+
+# Build status checks: null if CI not enabled, "quality" context if enabled
+if [ "$CI_ENABLED" = "true" ]; then
+  STATUS_CHECKS='"required_status_checks": {"strict": true, "contexts": ["quality"]}'
+else
+  STATUS_CHECKS='"required_status_checks": null'
+fi
+
+# Build review requirement: 1 if review_required, 0 if not (still requires PR, blocks direct push)
+if [ "$REVIEW_REQUIRED" = "true" ]; then
+  REVIEW_COUNT=1
+else
+  REVIEW_COUNT=0
+fi
+```
+
+Apply protection to base branch:
+
+```bash
 # Protect base branch (where PRs merge)
 gh api "repos/$REPO/branches/$BASE_BRANCH/protection" \
   --method PUT \
   --input - <<EOF
 {
-  "required_status_checks": {"strict": true, "contexts": ["quality"]},
+  $STATUS_CHECKS,
   "enforce_admins": false,
-  "required_pull_request_reviews": {"required_approving_review_count": 1},
-  "restrictions": null
+  "required_pull_request_reviews": {"required_approving_review_count": $REVIEW_COUNT},
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
 }
 EOF
 ```
@@ -996,14 +1022,25 @@ if [ "$RELEASE_BRANCH" != "$BASE_BRANCH" ]; then
     --method PUT \
     --input - <<EOF
 {
-  "required_status_checks": {"strict": true, "contexts": ["quality"]},
+  $STATUS_CHECKS,
   "enforce_admins": false,
-  "required_pull_request_reviews": {"required_approving_review_count": 1},
-  "restrictions": null
+  "required_pull_request_reviews": {"required_approving_review_count": $REVIEW_COUNT},
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
 }
 EOF
 fi
 ```
+
+**Config → Protection mapping:**
+
+| `quality.ci` | `quality.review_required` | Result |
+|---|---|---|
+| true | true | CI must pass + 1 reviewer required |
+| true | false | CI must pass + PR required (no reviewer) |
+| false | true | No CI check + 1 reviewer required |
+| false | false | No CI check + PR required (blocks direct push + force push) |
 
 If branch protection fails (e.g., free plan limitations), warn but continue — it's not a blocker.
 

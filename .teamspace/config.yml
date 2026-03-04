@@ -207,4 +207,4 @@ quality:
   hooks: false
   ci: true
   review_required: false
-  branch_protection: false
+  branch_protection: true
