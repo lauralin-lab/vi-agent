@@ -1,6 +1,6 @@
 ---
 description: "Claim Issue → Contract → Branch. Try: /team-claim help"
-version: "2.4.1"
+version: "2.7.0"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -222,25 +222,25 @@ Default: `"mission/{issue}-{slug}-{user}"`.
 
 Read worktree config: if `worktree:` section exists in config → treat as enabled (unless `worktree.enabled` is explicitly `false`). If no `worktree:` section → disabled.
 
-Generate branch name:
+Ensure you're on `base_branch` and up to date before creating the feature branch:
+```bash
+bash ~/.claude/commands/scripts/tw-git.sh ensure-base
+```
+
+Generate branch name and create branch:
 ```bash
 # Slugify the title: lowercase, replace spaces with hyphens, remove special chars, truncate
 SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 30)
 
-# Read branch pattern from config
-BRANCH_PATTERN=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.branch_pattern "" 2>/dev/null)
-[ -z "$BRANCH_PATTERN" ] && BRANCH_PATTERN=$(bash ~/.claude/commands/scripts/tw-config.sh worktree.branch_pattern "mission/{issue}-{slug}-{user}" 2>/dev/null)
-[ -z "$BRANCH_PATTERN" ] && BRANCH_PATTERN="mission/{issue}-{slug}-{user}"
-
-# Substitute placeholders: {issue}→ISSUE_NUMBER, {slug}→SLUG, {user}→GH_USER, {type}→"mission"
-BRANCH=$(echo "$BRANCH_PATTERN" | sed "s/{issue}/$ISSUE_NUMBER/;s/{slug}/$SLUG/;s/{user}/$GH_USER/;s/{type}/mission/;s/{task-id}/$ISSUE_NUMBER/")
+# Create branch from config pattern (handles pattern substitution + existing branch detection)
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
 ```
 
 **If worktree enabled:**
 ```bash
 REPO_NAME=$(basename $(pwd))
 WORKTREE_PATH="../${REPO_NAME}-wt-${SLUG}"
-git worktree add -b "$BRANCH" "$WORKTREE_PATH"
+bash ~/.claude/commands/scripts/tw-git.sh worktree-add "$BRANCH" "$WORKTREE_PATH"
 echo "{issue}" > "$WORKTREE_PATH/.mission"
 
 # Contract is gitignored (active/), so copy it into the worktree
@@ -249,21 +249,18 @@ cp "$TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md" "$WORKTREE_PATH/$TEAMWORK_DIR
 ```
 
 **If worktree disabled (default):**
-```bash
-if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-  echo "Branch '$BRANCH' already exists. Switching to it."
-  git checkout "$BRANCH"
-else
-  git checkout -b "$BRANCH"
-fi
-```
+Branch already created/switched by `tw-git.sh create-branch` above.
 
 ---
 
 ## Step 6: Assign Issue on GitHub
 
 ```bash
-gh issue edit {issue} --add-assignee "$GH_USER" --remove-label "status:queued" --add-label "status:wip"
+# Assign Issue to user
+gh issue edit {issue} --add-assignee "$GH_USER" 2>/dev/null || echo "WARNING: Could not assign Issue (permissions)"
+
+# Label transition: queued → wip (reads prefix from config automatically)
+bash ~/.claude/commands/scripts/tw-label.sh transition {issue} queued wip
 ```
 
 If assignee add fails (permissions), warn but continue — the local Contract is the source of truth for the claim.

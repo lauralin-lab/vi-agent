@@ -22,30 +22,44 @@ if [[ -z "$REPO" ]]; then
   exit 1
 fi
 
-# Read label prefixes from config (if available)
+# Read label prefixes and mc_label from config (prefer tw-config.sh if available)
 STATUS_PREFIX="status:"
 PRIORITY_PREFIX="priority:"
+MC_LABEL="mission"
 
-for CONF in .teamwork/config.yml .teamspace/config.yml; do
-  if [[ -f "$CONF" ]]; then
-    _S=$(grep '^\s*status:' "$CONF" | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
-    _P=$(grep '^\s*priority:' "$CONF" | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
-    [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
-    [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
-    break
-  fi
-done
+TW_CONFIG="$HOME/.claude/commands/scripts/tw-config.sh"
+if [[ -x "$TW_CONFIG" ]] || [[ -f "$TW_CONFIG" ]]; then
+  _S=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
+  _P=$(bash "$TW_CONFIG" label_prefix.priority "" 2>/dev/null)
+  _M=$(bash "$TW_CONFIG" github.mc_label "" 2>/dev/null)
+  [[ -z "$_M" ]] && _M=$(bash "$TW_CONFIG" mc_label "" 2>/dev/null)
+  [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
+  [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
+  [[ -n "$_M" ]] && MC_LABEL="$_M"
+else
+  # Fallback: grep from config files directly
+  for CONF in .teamwork/config.yml .teamspace/config.yml; do
+    if [[ -f "$CONF" ]]; then
+      _S=$(grep -v '^\s*#' "$CONF" | grep '^\s*status:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
+      _P=$(grep -v '^\s*#' "$CONF" | grep '^\s*priority:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
+      [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
+      [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
+      break
+    fi
+  done
+fi
 
 echo "Creating teamwork labels for $REPO"
+echo "  Mission label:   ${MC_LABEL}"
 echo "  Status prefix:   ${STATUS_PREFIX}"
 echo "  Priority prefix: ${PRIORITY_PREFIX}"
 echo ""
 
-# Category label
-gh label create "mission" \
+# Category label (read from config, default: "mission")
+gh label create "$MC_LABEL" \
   --color "0075ca" --description "Team mission contract" \
   --repo "$REPO" --force
-echo "✅ mission"
+echo "✅ $MC_LABEL"
 
 # Status labels
 gh label create "${STATUS_PREFIX}queued" \

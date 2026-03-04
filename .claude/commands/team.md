@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "2.5.2"
+version: "2.7.0"
 ---
 
 # /team — Init + Dashboard (Teamwork v2)
@@ -54,7 +54,7 @@ DAILY WORKFLOW:
 AFTER MERGE:
   /team-ship done       Close Issue, update labels, clean up
   /team-ship review     AI code review on current PR
-  /team-ship sync       Rebase branch on latest main
+  /team-ship sync       Rebase branch on latest base branch
 
 VERSION LIFECYCLE:
   /team-release         Close milestone → git tag → GitHub Release → next version
@@ -63,7 +63,7 @@ LIFECYCLE:
   /team-issue → Issue → /team-claim → Contract + branch
                      → /team-drive → implement + test + commit
                      → /team-ship  → PR (Closes #N)
-                     → /team-ship done → Issue closed, back to main
+                     → /team-ship done → Issue closed, back to base branch
   All missions done? → /team-release → tag + release + next milestone
 
 CONFIG:
@@ -116,7 +116,7 @@ PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.prio
 gh issue list --label "$MISSION_LABEL" --state open --json number,title,labels,assignees --limit 100
 ```
 
-Filter to issues that are unassigned OR have `status:queued` label. Sort by priority: P0 first → P1 → P2 → P3 → no priority last.
+Filter to issues that are unassigned OR have `${STATUS_PREFIX}queued` label. Sort by priority: P0 first → P1 → P2 → P3 → no priority last.
 
 Output formatted list:
 
@@ -179,21 +179,34 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 ## Step 1: Route — Init or Dashboard?
 
 ```bash
-# Check for existing teamwork config (support both directory names)
-if [ -f .teamwork/config.yml ]; then
-  echo "DASHBOARD"
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  echo "DASHBOARD"
-  TEAMWORK_DIR=".teamspace"
-else
+# Force init if $ARGUMENTS == "init"
+if [ "$ARGUMENTS" = "init" ]; then
   echo "INIT"
-  TEAMWORK_DIR=".teamwork"
+  # Preserve existing TEAMWORK_DIR if config found
+  if [ -f .teamwork/config.yml ]; then
+    TEAMWORK_DIR=".teamwork"
+  elif [ -f .teamspace/config.yml ]; then
+    TEAMWORK_DIR=".teamspace"
+  else
+    TEAMWORK_DIR=".teamwork"
+  fi
+else
+  # Auto-detect: config exists → dashboard, otherwise → init
+  if [ -f .teamwork/config.yml ]; then
+    echo "DASHBOARD"
+    TEAMWORK_DIR=".teamwork"
+  elif [ -f .teamspace/config.yml ]; then
+    echo "DASHBOARD"
+    TEAMWORK_DIR=".teamspace"
+  else
+    echo "INIT"
+    TEAMWORK_DIR=".teamwork"
+  fi
 fi
 ```
 
 - If `DASHBOARD` → Continue to **Step 1b: Check Membership**
-- If `INIT` → Jump to **Step 2: Initialize**
+- If `INIT` → Jump to **Step 2: Initialize** (Step 4b merge mode handles existing config)
 
 **Note**: Both `.teamwork/` and `.teamspace/` are supported as config directories. The system uses whichever exists. New installations default to `.teamwork/`.
 
@@ -266,8 +279,10 @@ After confirming membership, verify that the config has the fields needed by oth
 | `project.test_command` | team-drive, team-ship | warn "No test command" |
 | `project.lint_command` | git hooks | warn "No lint command" |
 | `conventions.branch_pattern` | team-claim | `"mission/{issue}-{slug}-{user}"` |
-| `conventions.base_branch` | team-ship | `"main"` |
-| `label_prefix` or `github.label_prefix` | all skills | `status:`, `priority:` |
+| `conventions.base_branch` | team-claim, team-ship, team-drive | `"main"` |
+| `conventions.release_branch` | team-release | `base_branch` value |
+| `deploy.staging_workflow` | team-release | `""` (skip staging check) |
+| `label_prefix` or `github.label_prefix` | all skills, post-merge Action | `status:`, `priority:` |
 
 If critical fields are missing (no `project:` section at all, no `conventions.branch_pattern`), output a warning:
 
@@ -364,7 +379,7 @@ options:
   - label: "GitHub Actions CI"
     description: "Remote quality gates: lint + test + build on every PR"
   - label: "Branch protection"
-    description: "Require CI pass + PR review before merge to main"
+    description: "Require CI pass + PR review before merge to base branch"
   - label: "All of the above (Recommended)"
     description: "Full defense-in-depth: hooks + Actions + branch protection"
 ```
@@ -412,21 +427,17 @@ Preserve all existing content. Only update `skill_version` and append missing to
 
 ```bash
 # Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 2.5.0/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 2.5.0/" $TEAMWORK_DIR/config.yml
+sed -i '' "s/^skill_version:.*/skill_version: 2.7.0/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 2.7.0/" $TEAMWORK_DIR/config.yml
 ```
 
 **Step 2 — Detect which top-level sections are missing:**
 
 ```bash
-python3 -c "
-import yaml, sys
-with open('$TEAMWORK_DIR/config.yml') as f:
-    d = yaml.safe_load(f) or {}
-missing = [s for s in ['project', 'conventions', 'label_prefix', 'quality']
-           if s not in d]
-print('\n'.join(missing))
-"
+# Detect missing top-level sections (no PyYAML dependency — pure grep)
+for section in project conventions label_prefix quality; do
+  grep -q "^${section}:" $TEAMWORK_DIR/config.yml || echo "$section"
+done
 ```
 
 **Step 3 — Append only missing sections to the file:**
@@ -448,6 +459,7 @@ project:
 conventions:
   branch_pattern: "mission/{issue}-{slug}-{user}"
   base_branch: main
+  # release_branch: main  # Set different from base_branch for dual-branch model (e.g. "main" when base_branch is "develop")
   commit_format: "type(scope): description | Mission: #{issue}"
 ```
 
@@ -470,7 +482,7 @@ quality:
 
 ```
 ✅ Config updated (merge mode — existing config preserved)
-   skill_version → 2.5.0
+   skill_version → 2.6.1
    Preserved sections: {list of sections kept}
    Added sections: {list of sections appended, or "(none — already complete)"}
 ```
@@ -485,7 +497,7 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 1
-skill_version: 2.5.0
+skill_version: 2.7.0
 
 team:
   - github: {GH_USER}
@@ -501,7 +513,12 @@ project:
 conventions:
   branch_pattern: "mission/{issue}-{slug}-{user}"
   base_branch: main
+  # release_branch: main  # Set different from base_branch for dual-branch model
   commit_format: "type(scope): description | Mission: #{issue}"
+
+# Optional: Deployment pipeline (required for staging gate in /team-release)
+# deploy:
+#   staging_workflow: "deploy-staging.yml"  # GitHub Actions workflow name
 
 label_prefix:
   status: "status:"
@@ -546,7 +563,7 @@ If not exists → generate.
 ```yaml
 name: Mission Contract
 description: Structured task for team execution
-labels: ["{MISSION_LABEL}", "status:queued"]
+labels: ["{MISSION_LABEL}", "{STATUS_PREFIX}queued"]
 body:
   - type: dropdown
     id: priority
@@ -636,7 +653,25 @@ ls .github/workflows/ci.yml .github/workflows/CI.yml .github/workflows/*.yml 2>/
 ```
 
 - If `.github/workflows/ci.yml` (or similar) already exists → **DO NOT overwrite**. Read the existing file, display a summary, and ask: "CI workflow already exists. Keep existing? Or regenerate?" (via AskUserQuestion). If the user keeps existing, skip to Step 4e.
-- If no CI workflow exists → generate based on detected language:
+- If no CI workflow exists → generate based on detected language.
+
+**Branch triggers**: Use `{BASE_BRANCH}` from config (not hardcoded `main`). In dual-branch mode (when `RELEASE_BRANCH != BASE_BRANCH`), include both branches in `push` triggers so CI runs on release branch merges too:
+
+```yaml
+# Single-branch mode (default):
+on:
+  pull_request:
+    branches: [{BASE_BRANCH}]
+  push:
+    branches: [{BASE_BRANCH}]
+
+# Dual-branch mode (RELEASE_BRANCH configured):
+on:
+  pull_request:
+    branches: [{BASE_BRANCH}]
+  push:
+    branches: [{BASE_BRANCH}, {RELEASE_BRANCH}]
+```
 
 **For monorepo projects** (`IS_MONOREPO=true`), generate a multi-service CI that runs each service's checks in a separate job:
 
@@ -644,9 +679,9 @@ ls .github/workflows/ci.yml .github/workflows/CI.yml .github/workflows/*.yml 2>/
 name: CI
 on:
   pull_request:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
   push:
-    branches: [main]
+    branches: [{BASE_BRANCH}]  # add {RELEASE_BRANCH} if dual-branch mode
 
 jobs:
   # One job per detected service
@@ -666,9 +701,9 @@ jobs:
 name: CI
 on:
   pull_request:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
   push:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
 
 jobs:
   quality:
@@ -690,9 +725,9 @@ jobs:
 name: CI
 on:
   pull_request:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
   push:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
 
 jobs:
   quality:
@@ -712,9 +747,9 @@ jobs:
 name: CI
 on:
   pull_request:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
   push:
-    branches: [main]
+    branches: [{BASE_BRANCH}]
 
 jobs:
   quality:
@@ -731,7 +766,106 @@ jobs:
 
 For other languages or if language not detected, generate a minimal workflow with just checkout and a comment explaining what to add.
 
-### 4e: Write git hooks (if enabled)
+### 4e: Write `.github/workflows/post-merge.yml`
+
+**First, check if post-merge workflow already exists:**
+
+```bash
+ls .github/workflows/post-merge.yml 2>/dev/null
+```
+
+- If exists → read, ask "Keep existing? Or regenerate?" (same pattern as ci.yml)
+- If not exists → generate:
+
+Read label prefixes from config for substitution:
+
+```bash
+STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
+[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+```
+
+```yaml
+name: Post-Merge Cleanup
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update linked Issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            // Match all GitHub-recognized closing keywords
+            const pattern = /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)/gi;
+            const numbers = [...new Set(
+              [...body.matchAll(pattern)].map(m => parseInt(m[1], 10))
+            )];
+
+            for (const num of numbers) {
+              console.log(`Processing Issue #${num}`);
+
+              // 1. Update labels: remove wip/review → add done
+              const statusLabels = ['{STATUS_PREFIX}wip', '{STATUS_PREFIX}review'];
+              for (const label of statusLabels) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    ...context.repo, issue_number: num, name: label
+                  });
+                } catch (e) { /* label might not exist */ }
+              }
+              await github.rest.issues.addLabels({
+                ...context.repo, issue_number: num, labels: ['{STATUS_PREFIX}done']
+              });
+
+              // 2. Check all checkboxes in Issue body
+              const issue = await github.rest.issues.get({
+                ...context.repo, issue_number: num
+              });
+              if (issue.data.body) {
+                const updated = issue.data.body.replace(/- \[ \]/g, '- [x]');
+                if (updated !== issue.data.body) {
+                  await github.rest.issues.update({
+                    ...context.repo, issue_number: num, body: updated
+                  });
+                  console.log(`Checked ${(issue.data.body.match(/- \[ \]/g) || []).length} checkboxes`);
+                }
+              }
+
+              // 3. Check milestone completion
+              // Race condition: GitHub may not have processed "Closes #N" yet,
+              // so milestone.open_issues count may be stale. Instead, query
+              // actual open issues and exclude the one we're closing.
+              if (issue.data.milestone) {
+                const openInMs = await github.rest.issues.listForRepo({
+                  ...context.repo,
+                  milestone: issue.data.milestone.number,
+                  state: 'open',
+                  per_page: 5
+                });
+                const othersOpen = openInMs.data.filter(i => i.number !== num);
+                if (othersOpen.length === 0) {
+                  const total = issue.data.milestone.closed_issues + issue.data.milestone.open_issues;
+                  await github.rest.issues.createComment({
+                    ...context.repo, issue_number: num,
+                    body: `🎉 Milestone **${issue.data.milestone.title}** is now 100% complete (${total} issues). Ready for \`/team-release\`.`
+                  });
+                }
+              }
+            }
+
+            if (numbers.length === 0) {
+              console.log('No closing keywords found in PR body — skipping cleanup');
+            }
+```
+
+**Note**: `{STATUS_PREFIX}` is substituted at generation time with the value from config (default: `status:`). This means the generated workflow contains literal strings like `status:wip`, not template variables.
+
+### 4f: Write git hooks (if enabled)
 
 **`.githooks/pre-commit`:**
 ```bash
@@ -740,7 +874,7 @@ For other languages or if language not detected, generate a minimal workflow wit
 set -e
 CONFIG="$([ -f .teamwork/config.yml ] && echo .teamwork/config.yml || echo .teamspace/config.yml)"
 [ -f "$CONFIG" ] || exit 0
-LINT_CMD=$(grep 'lint_command:' "$CONFIG" | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"')
+LINT_CMD=$(grep -v '^\s*#' "$CONFIG" | grep 'lint_command:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"')
 if [ -n "$LINT_CMD" ]; then
   echo "Running lint..."
   eval "$LINT_CMD"
@@ -754,7 +888,7 @@ fi
 set -e
 CONFIG="$([ -f .teamwork/config.yml ] && echo .teamwork/config.yml || echo .teamspace/config.yml)"
 [ -f "$CONFIG" ] || exit 0
-TEST_CMD=$(grep 'test_command:' "$CONFIG" | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"')
+TEST_CMD=$(grep -v '^\s*#' "$CONFIG" | grep 'test_command:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"')
 if [ -n "$TEST_CMD" ]; then
   echo "Running tests..."
   eval "$TEST_CMD"
@@ -771,7 +905,7 @@ Configure git to use local hooks:
 git config core.hooksPath .githooks
 ```
 
-### 4f: Update `.gitignore`
+### 4g: Update `.gitignore`
 
 Append if not already present:
 ```
@@ -795,37 +929,87 @@ bash ~/.claude/commands/scripts/setup-github-labels.sh
 
 If the script is not available (e.g., installed without scripts):
 ```bash
-# Fallback: inline label creation
-gh label create mission --color 0075ca --description "Team mission" --force
-gh label create "status:queued" --color c2e0c6 --description "Ready to be claimed" --force
-gh label create "status:wip" --color fbca04 --description "Currently being worked on" --force
-gh label create "status:review" --color 7057ff --description "PR open, awaiting merge" --force
-gh label create "status:done" --color 0e8a16 --description "Completed" --force
-gh label create "status:blocked" --color d73a4a --description "Blocked by dependency" --force
-gh label create "priority:P0" --color d73a4a --description "Critical priority" --force
-gh label create "priority:P1" --color e4e669 --description "High priority" --force
-gh label create "priority:P2" --color 0e8a16 --description "Medium priority" --force
-gh label create "priority:P3" --color cfd3d7 --description "Low priority" --force
+# Fallback: inline label creation (read prefixes from config)
+STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "status:" 2>/dev/null)
+PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "priority:" 2>/dev/null)
+
+gh label create "$MISSION_LABEL" --color 0075ca --description "Team mission" --force
+gh label create "${STATUS_PREFIX}queued" --color c2e0c6 --description "Ready to be claimed" --force
+gh label create "${STATUS_PREFIX}wip" --color fbca04 --description "Currently being worked on" --force
+gh label create "${STATUS_PREFIX}review" --color 7057ff --description "PR open, awaiting merge" --force
+gh label create "${STATUS_PREFIX}done" --color 0e8a16 --description "Completed" --force
+gh label create "${STATUS_PREFIX}blocked" --color d73a4a --description "Blocked by dependency" --force
+gh label create "${PRIORITY_PREFIX}P0" --color d73a4a --description "Critical priority" --force
+gh label create "${PRIORITY_PREFIX}P1" --color e4e669 --description "High priority" --force
+gh label create "${PRIORITY_PREFIX}P2" --color 0e8a16 --description "Medium priority" --force
+gh label create "${PRIORITY_PREFIX}P3" --color cfd3d7 --description "Low priority" --force
 ```
 
 If `versions.current` is set in config, also create the milestone via GitHub API (not a label — use Milestones).
 
-### 5b: Branch protection (if enabled)
+### 5b: Repository merge settings
+
+Configure merge strategy and branch cleanup at the repo level:
 
 ```bash
-gh api repos/{REPO}/branches/main/protection \
+gh api "repos/$REPO" --method PATCH \
+  --field delete_branch_on_merge=true \
+  --field allow_squash_merge=true \
+  --field allow_merge_commit=false \
+  --field allow_rebase_merge=false \
+  --field squash_merge_commit_title=PR_TITLE \
+  --field squash_merge_commit_message=PR_BODY
+```
+
+- `delete_branch_on_merge` — auto-delete feature branch after PR merge (no stale branches)
+- `allow_squash_merge` only — one Issue = one squash commit on base branch, clean history
+- `squash_merge_commit_message=PR_BODY` — preserves `Closes #N` so Issue auto-closes on merge
+
+If API fails (permissions) → warn but continue. These can be set manually in GitHub Settings → General.
+
+### 5c: Branch protection (if enabled)
+
+```bash
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+RELEASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.release_branch "" 2>/dev/null)
+RELEASE_BRANCH="${RELEASE_BRANCH:-$BASE_BRANCH}"
+
+# Protect base branch (where PRs merge)
+gh api "repos/$REPO/branches/$BASE_BRANCH/protection" \
   --method PUT \
-  --field required_status_checks='{"strict":true,"contexts":["quality"]}' \
-  --field enforce_admins=false \
-  --field required_pull_request_reviews='{"required_approving_review_count":1}' \
-  --field restrictions=null
+  --input - <<EOF
+{
+  "required_status_checks": {"strict": true, "contexts": ["quality"]},
+  "enforce_admins": false,
+  "required_pull_request_reviews": {"required_approving_review_count": 1},
+  "restrictions": null
+}
+EOF
+```
+
+**Dual-branch mode** — if `RELEASE_BRANCH != BASE_BRANCH`, also protect release branch:
+
+```bash
+if [ "$RELEASE_BRANCH" != "$BASE_BRANCH" ]; then
+  gh api "repos/$REPO/branches/$RELEASE_BRANCH/protection" \
+    --method PUT \
+    --input - <<EOF
+{
+  "required_status_checks": {"strict": true, "contexts": ["quality"]},
+  "enforce_admins": false,
+  "required_pull_request_reviews": {"required_approving_review_count": 1},
+  "restrictions": null
+}
+EOF
+fi
 ```
 
 If branch protection fails (e.g., free plan limitations), warn but continue — it's not a blocker.
 
 ---
 
-## Step 5c: Commit and Push
+### 5d: Commit and Push
 
 ```bash
 git add $TEAMWORK_DIR/config.yml .github/ .githooks/ .gitignore
@@ -851,16 +1035,18 @@ cat $TEAMWORK_DIR/config.yml
 
 ### 6b: Check Issue freshness for active Contracts
 
-If any `$TEAMWORK_DIR/active/MISSION-*.md` Contract exists:
+For each `$TEAMWORK_DIR/active/MISSION-*.md` Contract:
 
 ```bash
-# Read issue number and content hash from Contract frontmatter
-ISSUE_NUMBER=$(grep '^issue:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//')
-CONTRACT_HASH=$(grep 'issue_content_hash:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
+for CONTRACT_PATH in $TEAMWORK_DIR/active/MISSION-*.md; do
+  [ -f "$CONTRACT_PATH" ] || continue
 
-# Fetch current Issue content and compute hash
-ISSUE_DATA=$(gh issue view $ISSUE_NUMBER --json title,body 2>/dev/null)
-CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f1)
+  # Read issue number from Contract
+  ISSUE_NUMBER=$(bash ~/.claude/commands/scripts/tw-contract.sh read-field "$CONTRACT_PATH" issue 2>/dev/null)
+
+  # Check freshness via script (exit 0=FRESH, 1=STALE, 2=NO_HASH)
+  FRESHNESS=$(bash ~/.claude/commands/scripts/tw-contract.sh check-freshness "$CONTRACT_PATH" "$ISSUE_NUMBER" 2>/dev/null) || true
+done
 ```
 
 - If `issue_content_hash` is not in Contract (pre-v2.3.0) → skip check
@@ -878,7 +1064,7 @@ MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
 
-# Determine label prefixes from config (erwin schema: label_prefix.status; vi_agent: defaults)
+# Determine label prefixes from config (flat schema: label_prefix.status; nested schema: defaults)
 STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
 PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "" 2>/dev/null)
@@ -897,19 +1083,21 @@ gh issue list --label "$MISSION_LABEL" --label "${STATUS_PREFIX}review" --json n
 gh pr list --json number,title,author,headRefName,statusCheckRollup,reviewDecision --limit 20
 
 # Merge count per team member (merged PRs to base branch)
-gh pr list --state merged --base main --json author --limit 100
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+gh pr list --state merged --base "$BASE_BRANCH" --json author --limit 100
 
 # Version progress (if versions.current configured in config)
 CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
 if [ -n "$CURRENT_VERSION" ]; then
   # Use GitHub Milestones for version progress tracking
-  gh api repos/{REPO}/milestones --jq ".[] | select(.title == \"$CURRENT_VERSION\") | {open: .open_issues, closed: .closed_issues}"
+  gh api "repos/$REPO/milestones" --jq ".[] | select(.title == \"$CURRENT_VERSION\") | {open: .open_issues, closed: .closed_issues}"
 fi
 ```
 
 If `versions.current` is set, query version-tagged issues and calculate done/total percentage for the dashboard header.
 
-### 6c: Format and display
+### 6d: Format and display
 
 Output a formatted dashboard like this:
 

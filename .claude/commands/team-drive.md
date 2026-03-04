@@ -1,6 +1,6 @@
 ---
 description: "Execute mission from Contract. Try: /team-drive help"
-version: "2.4.0"
+version: "2.7.0"
 ---
 
 # /team-drive — Execute Mission
@@ -84,24 +84,16 @@ Extract from body:
 Check whether the Issue has been modified since the Contract was generated.
 
 ```bash
-# Fetch current Issue content
-ISSUE_DATA=$(gh issue view {issue} --json title,body 2>/dev/null)
+CONTRACT_PATH="$TEAMWORK_DIR/active/MISSION-{issue}.md"
+FRESHNESS=$(bash ~/.claude/commands/scripts/tw-contract.sh check-freshness "$CONTRACT_PATH" {issue} 2>/dev/null) || true
 ```
 
-- If `gh issue view` fails (network error, offline) → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
+- Exit 0 + "FRESH" → Issue unchanged, continue
+- Exit 0 + "NETWORK_ERROR" → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
+- Exit 2 + "NO_HASH" → pre-v2.3.0 Contract, skip check, continue
+- Exit 1 + "STALE" → Issue modified since claim:
 
-If fetch succeeds:
-
-```bash
-# Compute hash of current Issue content
-CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f1)
-# Compare with Contract's issue_content_hash
-CONTRACT_HASH=$(grep 'issue_content_hash:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
-```
-
-If `issue_content_hash` is not in Contract (pre-v2.3.0 Contract) → skip check, continue.
-
-If `CURRENT_HASH ≠ CONTRACT_HASH`:
+If `FRESHNESS` is `STALE`:
 
 Display the current Issue body to the user:
 ```
@@ -169,6 +161,19 @@ If all sub-tasks are already checked → "All sub-tasks complete. Run `/team-shi
 
 ---
 
+## Step 2b: Branch Safety Check
+
+Before executing any code changes, verify you are NOT on a protected branch.
+
+```bash
+bash ~/.claude/commands/scripts/tw-git.sh protect-check
+```
+
+- If exit code 3 → on protected branch, output "Switch to a feature branch first: /team-claim #{issue}" → **STOP**
+- If exit code 0 → on correct feature branch → continue
+
+---
+
 ## Step 3: Execution Loop
 
 For each unchecked sub-task in order:
@@ -195,27 +200,16 @@ If tests fail → fix the issue and verify again. Do not move on until verificat
 
 ### 3e: Update Contract
 After completing a sub-task, update the Contract file:
-- Change `- [ ]` to `- [x]` for the completed task
-- Add timestamp: `- [x] {task description} — {HH:MM}`
+```bash
+# Check off the Nth unchecked subtask (1-indexed) with timestamp
+bash ~/.claude/commands/scripts/tw-contract.sh toggle-task "$CONTRACT_PATH" {N}
+```
 
 ### 3e2: Sync sub-task completion back to GitHub Issue (bidirectional)
 
 ```bash
 # Update the corresponding checkbox in the GitHub Issue body so teammates see real-time progress
-ISSUE_BODY=$(gh issue view $ISSUE_NUMBER --json body --jq '.body' 2>/dev/null)
-if [ -n "$ISSUE_BODY" ]; then
-  UPDATED_BODY=$(python3 -c "
-import sys
-body = sys.stdin.read()
-task = '''$SUBTASK_TEXT'''
-body = body.replace('- [ ] ' + task, '- [x] ' + task, 1)
-print(body, end='')
-" <<< "$ISSUE_BODY" 2>/dev/null)
-  if [ -n "$UPDATED_BODY" ]; then
-    gh issue edit $ISSUE_NUMBER --body "$UPDATED_BODY" 2>/dev/null \
-      || echo "⚠ Could not sync sub-task to GitHub Issue (non-fatal — continuing)"
-  fi
-fi
+bash ~/.claude/commands/scripts/tw-contract.sh sync-checkbox $ISSUE_NUMBER "$SUBTASK_TEXT"
 ```
 
 Note: `$SUBTASK_TEXT` is the exact text of the completed sub-task (without `- [ ] ` prefix). This is a best-effort sync — if the Issue body format doesn't match exactly, it's non-fatal and mission continues.
@@ -260,11 +254,7 @@ All tests must pass.
 ### 4c: Self-review
 Read through all changes made during this session:
 ```bash
-# Read base branch from config
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-main}"
-git log --oneline ${BASE_BRANCH}..HEAD
-git diff ${BASE_BRANCH}...HEAD --stat
+bash ~/.claude/commands/scripts/tw-git.sh log-since
 ```
 
 Check for:

@@ -4,7 +4,7 @@
 # 这个文件定义了团队成员、任务状态模型、和工作流约定。
 # 是整个 teamspace 系统的 schema 定义。
 
-skill_version: 2.5.0
+skill_version: 2.7.2
 
 team:
   name: "VI Agent"
@@ -146,9 +146,16 @@ port_isolation:
 # 版本管理
 versions:
   current: "V0.1"
-  spec_path: ".claude/drive/v0.1-definition/v0.1-spec.md"
-  # 当版本内所有任务 Done → 进入 QA 环节
-  # QA 通过 → git tag v0.1.0
+  roadmap: "docs/milestones.md"
+  # GitHub Milestones 是版本追踪的 source of truth
+  # 查看: gh api repos/flair-home-stylist/vi_agent/milestones
+  milestones:
+    - "V0.1 — AI Camera Pipeline 全链路验证"
+    - "V0.2 — V4 合并与基础验证"
+    - "V0.3 — 集成验证 + Skill/意图系统"
+    - "V0.4 — 视频处理 + OAuth + 测试覆盖"
+    - "V1.0 — 完整 V4 发布"
+  # 当 milestone 内所有 Issue closed → QA → git tag
   lifecycle: [dev, qa, released]
 
 # Drive Mode 集成
