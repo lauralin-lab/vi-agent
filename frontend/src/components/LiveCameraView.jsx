@@ -102,6 +102,7 @@ export default function LiveCameraView({
   const uploadPromisesRef = useRef([]);
   const [showGallery, setShowGallery] = useState(false);
   const [isStackExpanded, setIsStackExpanded] = useState(false);
+  const [stackBounce, setStackBounce] = useState(false);
   const stackLongPressRef = useRef(null);
 
   // ── Agent Status State Machine ──
@@ -469,6 +470,8 @@ export default function LiveCameraView({
         if (photoSrc) {
           // Use functional update to avoid stale closure over capturedMedia
           setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
+          setStackBounce(true);
+          setTimeout(() => setStackBounce(false), 400);
           // Upload deferred to handleDone
         }
       }, 600);
@@ -524,6 +527,8 @@ export default function LiveCameraView({
       const photoSrc = await capturePhotoFromVideo();
       if (photoSrc) {
         setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
+        setStackBounce(true);
+        setTimeout(() => setStackBounce(false), 400);
         // Upload deferred to handleDone
       }
     }, 600);
@@ -687,70 +692,91 @@ export default function LiveCameraView({
           </div>
         )}
 
-        {/* Image/Video Stack — collapsed */}
+        {/* Image/Video Stack — float + bounce */}
         <AnimatePresence mode="wait">
           {capturedMedia.length > 0 && !isStackExpanded && (
             <motion.div
-              key="media-stack-collapsed"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
+              key="media-stack"
+              initial={{ opacity: 0, scale: 0.5, y: 20 }}
+              animate={{
+                opacity: 1,
+                scale: stackBounce ? [1, 1.15, 0.95, 1.05, 1] : 1,
+                y: 0
+              }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className="absolute z-10 below-top-controls"
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              onClick={() => {
+                if (capturedMedia.length > 1) {
+                  setIsStackExpanded(true);
+                } else {
+                  handleDone();
+                }
+              }}
+              className="absolute w-11 h-11 cursor-pointer z-30 float-drift below-top-controls"
               style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 52px)', right: '1.5rem' }}
             >
-              <div
-                className="relative w-14 h-14 cursor-pointer"
-                onPointerDown={() => {
-                  stackLongPressRef.current = setTimeout(() => setIsStackExpanded(true), 500);
-                }}
-                onPointerUp={() => clearTimeout(stackLongPressRef.current)}
-                onPointerLeave={() => clearTimeout(stackLongPressRef.current)}
-              >
-                {capturedMedia.slice(0, 4).map((item, index) => (
-                  <div
-                    key={index}
-                    className="absolute w-11 h-11 rounded-lg border border-white/25 bg-black/40 backdrop-blur-md overflow-hidden shadow-md flex items-center justify-center"
-                    style={{
-                      transform: `rotate(${index * 5 - 4}deg) translate(${index * 2}px, ${index * 3}px) scale(${1 - index * 0.04})`,
-                      zIndex: 4 - index,
-                      top: 0,
-                      right: 0,
-                    }}
-                  >
-                    <img src={item.src} alt="" className="w-full h-full object-cover opacity-80 absolute inset-0" />
-                    {item.type === 'video' && (
-                      <div className="z-10 w-4 h-4 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                        <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <div className="absolute -bottom-1.5 -right-1.5 bg-yellow-500 text-black font-bold w-5 h-5 rounded-full flex items-center justify-center z-10 shadow-sm border border-black/20" style={{ fontSize: 'var(--text-2xs)' }}>
-                  {capturedMedia.length}
+              {capturedMedia.slice(0, 4).map((item, index) => (
+                <div
+                  key={index}
+                  className="absolute top-0 right-0 w-11 h-11 rounded-xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-lg flex items-center justify-center"
+                  style={{
+                    transform: `rotate(${index * 4}deg) scale(${1 - index * 0.05})`,
+                    zIndex: 4 - index,
+                  }}
+                >
+                  <img src={item.src} alt="" className="w-full h-full object-cover opacity-80 absolute inset-0" />
+                  {item.type === 'video' && (
+                    <div className="z-10 w-4 h-4 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                      <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
+                    </div>
+                  )}
                 </div>
-              </div>
+              ))}
 
-              <button
-                onClick={(e) => { e.stopPropagation(); play('media.delete'); setCapturedMedia([]); }}
-                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center z-30 shadow-md border border-red-400/50 transition-colors"
+              {/* Delete button — only show when single item */}
+              {capturedMedia.length === 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    play('media.delete');
+                    setCapturedMedia([]);
+                  }}
+                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center z-20 hover:bg-black/80 active:scale-90 transition-all"
+                >
+                  <span className="text-white/80 text-[10px] font-bold leading-none">✕</span>
+                </button>
+              )}
+
+              {/* Count badge — white bg + black text, spring animation */}
+              <motion.div
+                key={capturedMedia.length}
+                initial={{ scale: 0.5 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500 }}
+                className="absolute -bottom-1 -right-1 bg-white text-black font-bold rounded-full flex items-center justify-center z-10 shadow-md border border-black/10"
+                style={{ fontSize: '9px', minWidth: '18px', minHeight: '18px', width: '18px', height: '18px' }}
               >
-                <X size={10} strokeWidth={3} className="text-white" />
-              </button>
+                {capturedMedia.length}
+              </motion.div>
 
+              {/* Stack Status Indicator */}
               <AnimatePresence mode="wait">
                 {stackStatus === 'UPLOADING' && (
-                  <motion.div key="uploading" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center z-20 shadow-md border border-blue-400">
-                    <Upload size={10} strokeWidth={3} className="text-white animate-bounce" />
+                  <motion.div key="uploading" initial={{ opacity: 0, scale: 0.5, rotate: -90 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 400 }}
+                    className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-white/70 backdrop-blur-md flex items-center justify-center z-20 shadow-md border border-white/30">
+                    <Upload size={10} strokeWidth={3} className="text-black animate-bounce" />
                   </motion.div>
                 )}
                 {stackStatus === 'ANALYZING' && (
-                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center z-20 shadow-md border border-cyan-400">
-                    <ScanLine size={10} strokeWidth={3} className="text-white animate-pulse" />
+                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 400 }}
+                    className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-white/50 backdrop-blur-md flex items-center justify-center z-20 shadow-md border border-white/20">
+                    <ScanLine size={10} strokeWidth={3} className="text-black animate-pulse" />
                   </motion.div>
                 )}
                 {stackStatus === 'READY' && (
-                  <motion.div key="ready" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: [1, 1.2, 1] }} exit={{ opacity: 0, scale: 0.5 }} transition={{ scale: { duration: 0.3 } }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center z-20 shadow-md border border-green-400">
-                    <Check size={10} strokeWidth={3} className="text-white" />
+                  <motion.div key="ready" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: [1, 1.3, 1] }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                    className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center z-20 shadow-md border border-white/30">
+                    <Check size={10} strokeWidth={3} className="text-black" />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -762,44 +788,40 @@ export default function LiveCameraView({
         <AnimatePresence>
           {isStackExpanded && capturedMedia.length > 0 && (
             <motion.div
-              key="media-expanded"
+              key="expanded-strip"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center"
-              onClick={() => setIsStackExpanded(false)}
+              transition={{ duration: 0.2 }}
+              className="absolute right-0 left-0 z-40 px-5 below-top-controls"
+              style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 52px)' }}
             >
-              <div className="absolute top-4 right-4 flex gap-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); play('media.delete'); setCapturedMedia([]); setIsStackExpanded(false); }}
-                  className="px-3 py-1.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 font-medium backdrop-blur-md hover:bg-red-500/30 transition-colors"
-                  style={{ fontSize: 'var(--text-xs)' }}
-                >
-                  Clear All
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setIsStackExpanded(false); }}
-                  className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-md hover:bg-white/20 transition-colors"
-                >
-                  <X size={14} className="text-white/80" />
-                </button>
-              </div>
+              {/* Backdrop to close */}
+              <div
+                className="fixed inset-0 z-[-1]"
+                onClick={() => setIsStackExpanded(false)}
+              />
 
-              <div className="flex gap-3 px-6 overflow-x-auto max-w-full py-4" onClick={(e) => e.stopPropagation()}>
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                className="flex gap-2 overflow-x-auto no-scrollbar p-2 rounded-2xl bg-black/50 backdrop-blur-2xl border border-white/[0.1]"
+              >
                 {capturedMedia.map((item, index) => (
                   <motion.div
                     key={index}
-                    initial={{ opacity: 0, y: 20, scale: 0.8 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.5 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="relative shrink-0 w-20 h-20 rounded-xl border border-white/20 bg-black/40 overflow-hidden shadow-lg group"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: index * 0.05, type: 'spring', stiffness: 400 }}
+                    className="relative shrink-0 w-14 h-14 rounded-xl border border-white/20 bg-black/30 overflow-hidden"
                   >
                     <img src={item.src} alt="" className="w-full h-full object-cover" />
                     {item.type === 'video' && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
-                          <div className="w-0 h-0 border-t-[4px] border-t-transparent border-l-[7px] border-l-white border-b-[4px] border-b-transparent ml-0.5" />
+                        <div className="w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">
+                          <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
                         </div>
                       </div>
                     )}
@@ -809,18 +831,25 @@ export default function LiveCameraView({
                         play('media.delete');
                         setCapturedMedia(prev => {
                           const next = prev.filter((_, i) => i !== index);
-                          if (next.length === 0) setIsStackExpanded(false);
+                          if (next.length <= 1) setIsStackExpanded(false);
                           return next;
                         });
                       }}
-                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center shadow-md transition-colors"
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 flex items-center justify-center z-10 hover:bg-red-500/60 active:scale-90 transition-all"
                     >
-                      <X size={10} strokeWidth={3} className="text-white" />
+                      <span className="text-white/90 text-[9px] font-bold leading-none">✕</span>
                     </button>
                   </motion.div>
                 ))}
-              </div>
-              <p className="text-white/40 mt-2" style={{ fontSize: 'var(--text-xs)' }}>Tap outside to close</p>
+
+                {/* Collapse button */}
+                <button
+                  onClick={() => setIsStackExpanded(false)}
+                  className="shrink-0 w-14 h-14 rounded-xl border border-white/10 bg-white/[0.05] flex items-center justify-center hover:bg-white/[0.1] active:scale-90 transition-all"
+                >
+                  <span className="text-white/50 text-[10px] font-medium">Done</span>
+                </button>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
