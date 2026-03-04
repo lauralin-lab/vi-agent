@@ -1937,8 +1937,14 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
     def on_user_input_transcribed(event):
         # Update last talk time
         assistant.last_talk_time = time.time()
-        
+
         if not event.is_final:
+            return
+        # Filter STT noise artifacts (Deepgram/Google sometimes transcribe silence)
+        import re
+        _noise_re = re.compile(r"^\s*[<\[(]?\s*noise\s*[>\])]?\s*$", re.IGNORECASE)
+        transcript_text = event.transcript.strip()
+        if not transcript_text or _noise_re.match(transcript_text):
             return
         identity = user_state["identity"] or "user"
         log_info(f"[session] User speech transcribed: {event.transcript[:100]}", identity)

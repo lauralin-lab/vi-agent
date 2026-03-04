@@ -12,6 +12,18 @@ import PersistentHtmlRenderer from './PersistentHtmlRenderer';
 import ModuleRenderer, { extractModuleTitle } from './modules/ModuleRenderer';
 import { IFRAME_DESIGN_CSS } from './iframeDesignSystem';
 
+// ── STT noise filter ──
+// Deepgram/Google STT sometimes transcribes silence as literal noise tokens.
+const NOISE_PATTERN = /^\s*[<\[(]?\s*noise\s*[>\]).]?\s*$/i;
+function isNoiseTranscript(text) {
+  if (!text || text.trim().length === 0) return true;
+  if (NOISE_PATTERN.test(text)) return true;
+  // Also catch repeated noise tokens like "<noise> <noise>"
+  const stripped = text.replace(/[<\[(>\]).\s]/g, '');
+  if (/^(noise)+$/i.test(stripped)) return true;
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════════
 // Canvas-First Session View
 //
@@ -446,7 +458,7 @@ function ChatPanel({ messages, open, onClose, scrollRef }) {
           </div>
 
           {/* Scrollable messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-3 space-y-1.5"
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-16 space-y-1.5"
             style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
             {messages.map((msg) => (
               <motion.div
@@ -993,6 +1005,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     for (const entry of newEntries) {
       if (entry.type !== 'user') continue; // agent transcripts already handled by lastAgentText
       if (!entry.content) continue;
+      if (isNoiseTranscript(entry.content)) continue; // Skip STT noise artifacts
       if (recentUserBubblesRef.current.has(entry.content)) continue;
       // Also skip if the same text was already typed by user (handleSendMessage)
       if (recentBubblesRef.current.has(entry.content)) continue;
