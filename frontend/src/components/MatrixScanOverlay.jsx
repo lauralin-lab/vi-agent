@@ -19,6 +19,7 @@ export default function MatrixScanOverlay({
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
   const startRef = useRef(null);
+  const sizeRef = useRef({ w: 0, h: 0 }); // logical (CSS) dimensions
 
   // ── constants matching the Flutter painter ──
   const DOT_RADIUS = 3;
@@ -32,7 +33,7 @@ export default function MatrixScanOverlay({
       if (!canvas) return;
 
       const ctx = canvas.getContext('2d');
-      const { width, height } = canvas;
+      const { w: width, h: height } = sizeRef.current;
       if (!width || !height) return;
 
       // Elapsed progress [0..1]  (-1 when idle)
@@ -98,11 +99,15 @@ export default function MatrixScanOverlay({
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.parentElement.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      canvas.getContext('2d').scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      sizeRef.current = { w, h };
       // Redraw at idle state after resize
       requestAnimationFrame(draw);
     };
