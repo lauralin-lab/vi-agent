@@ -228,7 +228,45 @@ Cards are not static results. They are **living documents** that evolve:
 - Quiz: user answers → AI reveals correct answer with explanation
 - Thinking process: starts with 3 steps, AI adds more as it discovers complexity
 
-### 3.4 Voice in Session
+### 3.4 AI's Reach — Beyond the App
+
+Session Canvas is the richest way to experience AI's cognition. But AI's world doesn't have to stay inside our app. The same stream of cards that fills the Session Canvas can flow to **any channel the user has connected**:
+
+```
+                     NanoClaw thinks
+                          │
+                    Card Stream Output
+                          │
+           ┌──────────────┼──────────────────┐
+           │              │                  │
+     ┌─────┴─────┐  ┌────┴────┐      ┌──────┴──────┐
+     │  VI App   │  │  Voice  │      │  Connected  │
+     │  Session  │  │ (Gemini │      │  Platforms  │
+     │  Canvas   │  │  speaks │      │             │
+     │           │  │  cards) │      │  Telegram   │
+     │  Full     │  │         │      │  WhatsApp   │
+     │  card     │  │  Audio  │      │  飞书        │
+     │  render   │  │  summary│      │             │
+     └───────────┘  └─────────┘      └─────────────┘
+     Rich visual     Narration        Text + media
+     experience      track            summaries
+```
+
+**What each channel gets:**
+
+| Channel | Card Rendering | Interaction | Best For |
+|---------|---------------|-------------|----------|
+| **VI App** | Full living cards (stream, mutate, interact) | Complete (check, vote, tap) | Primary experience |
+| **Voice** | AI narrates card content (Spokesperson) | Voice follow-up | Hands-free |
+| **Telegram** | Formatted text messages + photos | Reply-based | Quick results on the go |
+| **WhatsApp** | Rich messages + media | Reply-based | Personal assistant |
+| **飞书** | Interactive message cards | Button-based | Work context |
+
+**The user controls where AI speaks.** In settings, they connect platforms and choose defaults. A user might use the app at home but get Telegram summaries at work.
+
+**Key principle:** NanoClaw generates cards once. Platform adapters translate. The AI's cognitive output is channel-agnostic — it thinks in cards, not in platform-specific formats.
+
+### 3.5 Voice in Session
 
 Voice doesn't stop in Session. The user's mic stays active via PiP, and the Spokesperson (Gemini) continues the conversation:
 
@@ -468,11 +506,11 @@ When a session completes, the following is saved:
 
 | Data | Where | Used For |
 |------|-------|----------|
-| All cards (final state) | PostgreSQL + S3 | Session replay in History |
-| Captured photos/videos | S3 (GCS) | Session thumbnail, card context |
-| Session metadata | PostgreSQL | History list (title, summary, time) |
-| User interactions | PostgreSQL | Learning user preferences |
-| Card action events | PostgreSQL (optional) | Analytics, improving AI |
+| All cards (final state) | Per-user volume (GCS) | Session replay in History |
+| Captured photos/videos | GCS | Session thumbnail, card context |
+| Session metadata | Per-user volume (GCS) | History list (title, summary, time) |
+| User interactions | Per-user volume (GCS) | Learning user preferences |
+| Card action events | Per-user volume (optional) | Analytics, improving AI |
 
 ### 6.3 History Card Preview
 
@@ -654,5 +692,177 @@ These v1 concepts are **unchanged and carry forward**:
 
 ---
 
+## 11. What Evolves — Backend Architecture
+
+While the product experience (§1-9) defines **what the user sees**, the backend architecture defines **how it's powered**. Key architectural evolution in v2:
+
+### 11.1 NanoClaw as Heart
+
+NanoClaw is no longer just an executor — it is the **central nervous system**. Every user's data, context, and AI cognition flows through NanoClaw. The product implication: **AI always has your full context**, regardless of which channel you're using.
+
+```
+User's complete digital context
+├── What AI remembers about you      (memory/)
+├── Your past conversations          (sessions/)
+├── Your skills and preferences      (skills/, cloud_settings/)
+├── Your connected platforms         (integrations.json)
+└── Your scheduled tasks             (cron/)
+
+All of this is YOUR data, in YOUR volume.
+NanoClaw reads it. Nobody else touches it.
+```
+
+### 11.2 Your Data, Isolated
+
+Every user's data lives in an isolated volume. This isn't just a technical decision — it has direct product meaning:
+
+| For the User | What It Means |
+|--------------|---------------|
+| **Privacy** | Your memories, conversations, and preferences are physically separated from other users |
+| **Portability** | Your entire AI relationship is one folder — exportable, auditable |
+| **Consistency** | Same AI context whether you're using the app, Telegram, or voice |
+| **Speed** | AI loads your data directly from files — no database queries, no latency |
+
+### 11.3 Proactive AI
+
+NanoClaw doesn't just respond — it **initiates**. Through its built-in orchestrator:
+
+- **Morning briefing**: "Good morning. You have 3 items on your shopping list and your plant needs watering today."
+- **Memory consolidation**: AI organizes what it learned about you overnight
+- **Context-aware suggestions**: Based on your location, time, and habits
+
+These proactive interactions arrive through whatever channel the user has set as default — the app, Telegram, or voice.
+
+### 11.4 Your Data — What AI Remembers
+
+Every user's data is isolated in their own volume. Here's what the user should know:
+
+| What AI Remembers | How It Grows | Can I See It? |
+|---|---|---|
+| **Who you are** — name, preferences, dietary restrictions, allergies | First conversations, profile setup | Yes — "What do you know about me?" |
+| **What you like** — food preferences, brands, style, music taste | Learned from interactions over time | Yes — editable in Settings |
+| **Past sessions** — every conversation, every card, every photo | Automatic after each session | Yes — History view |
+| **Your habits** — when you cook, exercise, commute patterns | Observed over weeks of use | Yes — "Show my patterns" |
+| **Your connections** — linked platforms (Telegram, Calendar, etc.) | When you connect them | Yes — Settings > Connected Apps |
+| **Your skills** — custom AI behaviors you've created or saved | When you save/create skills | Yes — Skills library |
+| **Your schedule** — reminders, recurring tasks | When you set them up | Yes — "Show my reminders" |
+
+**Privacy principles:**
+- Your data is physically isolated from every other user
+- Your entire AI relationship is one folder — exportable, auditable, deletable
+- AI loads your context directly from files — no central database query
+- Nothing is shared with other users unless you explicitly join a group
+
+---
+
+## 12. AI Capabilities — What AI Can Do For You
+
+> "The user doesn't see APIs. They see an AI that can do anything."
+
+NanoClaw has access to a vast ecosystem of AI models, tools, and external services. From the user's perspective, these manifest as **things AI can do**. The growth team composes these capabilities into Experience Packages (Skills).
+
+### 12.1 See & Understand
+
+AI can understand anything you point your camera at:
+
+| Capability | What It Does | Example |
+|---|---|---|
+| **Identify objects** | Recognize food, plants, animals, products, landmarks, faces | "What plant is this?" → Species ID + care guide |
+| **Read text** | OCR from any surface — signs, receipts, menus, handwriting, documents | Point at receipt → expense breakdown |
+| **Analyze scenes** | Understand spatial relationships, activities, environments | Point at room → interior design suggestions |
+| **Read barcodes/QR** | Instant product lookup, URL extraction | Scan barcode → nutrition info + price comparison |
+| **Extract from documents** | Parse invoices, forms, business cards, ID documents | Photo of business card → saved contact |
+| **Understand video** | Analyze video content, find moments, transcribe | "What happened in this video?" |
+
+### 12.2 Think & Analyze
+
+AI applies intelligence to what it sees and knows:
+
+| Capability | What It Does | Example |
+|---|---|---|
+| **Nutrition analysis** | Calorie, macro, micro breakdown from food photos | Photo of lunch → 650 kcal, protein/carbs/fat |
+| **Price comparison** | Find prices across multiple platforms | Photo of product → Amazon, 淘宝, local prices |
+| **Translation** | Real-time translation of text and speech (130+ languages) | Point at foreign menu → translated with cultural notes |
+| **Fact-checking** | Verify claims with sources | "Is this true?" → sourced verification |
+| **Comparison** | Side-by-side analysis of options | Two products → feature matrix with recommendation |
+| **Math & science** | Solve equations, explain concepts, compute | Photo of homework → step-by-step solution |
+| **Code analysis** | Read, explain, debug, improve code | Photo of code → explanation + improvements |
+| **Sentiment analysis** | Understand tone and emotion in text | Paste message → "This sounds frustrated, here's how to respond" |
+
+### 12.3 Create & Generate
+
+AI can create new content across every medium:
+
+| Medium | What AI Can Create | Powered By |
+|---|---|---|
+| **Images** | Photos, illustrations, designs, logos, edits, background removal | DALL-E, Flux, Stable Diffusion, Ideogram, Imagen |
+| **Video** | Short films, product demos, avatar presentations, lip-sync dubbing | Runway, Sora, Kling, HeyGen, Luma |
+| **3D Models** | Objects, characters, game assets, product mockups | Meshy, Tripo3D, Rodin, CSM |
+| **Music** | Full songs, background music, sound effects, jingles | Suno, Udio, Stable Audio, MusicGen |
+| **Voice** | Natural speech in 30+ languages, voice cloning, emotion-aware narration | ElevenLabs, Cartesia, Hume AI, OpenAI TTS |
+| **Text** | Articles, emails, summaries, stories, poems, code, translations | Claude, GPT, Gemini (LLM layer) |
+| **Documents** | Reports, presentations, spreadsheets, formatted PDFs | LLM + template rendering |
+| **Designs** | UI mockups, social media posts, flyers, brand assets | Image gen + design templates |
+
+### 12.4 Search & Discover
+
+AI searches the world for you:
+
+| Capability | What It Searches | Example |
+|---|---|---|
+| **Web search** | The entire internet, real-time results | "What's the best Italian restaurant nearby?" |
+| **Place search** | Restaurants, shops, services, attractions with maps | "Pet-friendly cafes within walking distance" |
+| **Product search** | E-commerce across platforms (Amazon, 淘宝, 京东, etc.) | "Find this chair cheaper online" |
+| **Recipe search** | Millions of recipes by ingredient, cuisine, diet | "What can I make with chicken and broccoli?" |
+| **Travel search** | Flights, hotels, activities, routes | "Cheapest flight to Tokyo next month" |
+| **News** | Breaking news, topic deep-dives, source comparison | "What's happening with [topic]?" |
+| **Academic** | Research papers, studies, medical literature | "Latest research on [topic]" |
+| **Maps & directions** | Multi-modal routing, real-time traffic, transit | "How do I get to [place]?" |
+| **Weather** | Current conditions, forecasts, air quality | "Will it rain tomorrow?" |
+
+### 12.5 Act & Connect
+
+AI can take actions in the real world through your connected apps:
+
+| Capability | What It Does | Requires |
+|---|---|---|
+| **Calendar management** | Create/modify/query events, find free time | Google Calendar / Outlook |
+| **Messaging** | Send messages, summaries, updates | Telegram, WhatsApp, 飞书, Slack |
+| **Email** | Draft, send, summarize, organize | Gmail / Outlook |
+| **Notes & docs** | Create pages, update databases | Notion |
+| **Task management** | Create tasks, track progress | Todoist, Linear, Trello |
+| **File management** | Save, organize, share files | Google Drive, Dropbox, iCloud |
+| **Smart home** | Control lights, thermostat, devices | HomeKit, Google Home, SmartThings |
+| **Payments** | Check balances, track expenses | Connected financial apps |
+| **Shopping** | Add to cart, compare prices, track deliveries | Connected e-commerce |
+| **Reservations** | Book restaurants, hotels, flights | Via booking APIs |
+| **Reminders** | Time-based and location-based alerts | Built-in |
+| **Code execution** | Run code snippets, data analysis, calculations | Built-in sandbox |
+
+### 12.6 The Capability Flywheel
+
+```
+User discovers a capability they need
+         │
+         ▼
+Growth team builds Experience Package
+(Skill + Templates + Tools + APIs)
+         │
+         ▼
+NanoClaw learns to do it for all users
+         │
+         ▼
+More capabilities → more use cases → more users
+         │
+         ▼
+More users → more feedback → better capabilities
+```
+
+**Key insight:** Every API in the catalog (see system_v5.md §12 for the full technical inventory of 200+ APIs) is a building block. The growth team doesn't need to understand the API — they write a `skill.md` (what the AI should do) and reference the tools. NanoClaw handles the rest.
+
+**Cost reality:** Most capabilities cost $0.01-0.10 per use. A user's monthly AI cost stays within the $3-7 target even with heavy creative generation. The LLM (Claude) is the primary cost; tool APIs are marginal.
+
+---
+
 *VI Agent Product v2 — Two Worlds | 2026-03-04*
-*Camera is how I show AI my world. Session is how AI shows me its.*
+*Camera is how I show AI my world. Session is how AI shows me its. NanoClaw is the heart that powers both. 200+ APIs are its hands.*
