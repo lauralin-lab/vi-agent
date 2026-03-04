@@ -705,7 +705,7 @@ export default function LiveCameraView({
               }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              onClick={() => setIsStackExpanded(true)}
+              onClick={() => { if (capturedMedia.length > 1) setIsStackExpanded(true); }}
               className="absolute w-11 h-11 cursor-pointer z-30 float-drift below-top-controls"
               style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 52px)', right: '1.5rem' }}
             >
