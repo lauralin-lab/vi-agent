@@ -469,7 +469,7 @@ export default function LiveCameraView({
         if (photoSrc) {
           // Use functional update to avoid stale closure over capturedMedia
           setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
-          uploadToS3(photoSrc);
+          // Upload deferred to handleDone
         }
       }, 600);
     }
@@ -524,7 +524,7 @@ export default function LiveCameraView({
       const photoSrc = await capturePhotoFromVideo();
       if (photoSrc) {
         setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
-        uploadToS3(photoSrc);
+        // Upload deferred to handleDone
       }
     }, 600);
   };
@@ -545,35 +545,43 @@ export default function LiveCameraView({
 
     // Capture refs before navigation unmounts this component
     const dispatch = livekit.sendDispatch;
-    const pendingPromises = [...uploadPromisesRef.current];
     const mediaSnapshot = capturedMediaRef.current.slice();
 
     // Navigate immediately — session view streams content via LiveKit data channel
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
 
-    // Detached: upload + dispatch runs independently of component lifecycle.
-    // Agent-side `await persist_session` ensures session exists before gateway dispatch.
+    // Detached: upload all media on Done, then dispatch to agent
     (async () => {
       try {
-        let allUrls = [];
-        if (pendingPromises.length > 0) {
-          const settled = await Promise.race([
-            Promise.allSettled(pendingPromises),
-            new Promise(resolve => setTimeout(resolve, 10000)),
-          ]);
-          if (Array.isArray(settled)) {
-            allUrls = settled
-              .filter(r => r.status === 'fulfilled' && r.value)
-              .map(r => r.value);
+        // Upload all media now (deferred from capture time)
+        const uploadPromises = mediaSnapshot.map(async (item) => {
+          if (item.s3Url) return item.s3Url; // already uploaded (e.g. video)
+          if (item.type === 'video' && item.blob) {
+            const ext = 'webm';
+            return await api.uploadBlob(item.blob, ext);
           }
+          if (item.src) {
+            return await api.uploadDataUrl(item.src);
+          }
+          return null;
+        });
+
+        const settled = await Promise.race([
+          Promise.allSettled(uploadPromises),
+          new Promise(resolve => setTimeout(resolve, 15000)),
+        ]);
+
+        let allUrls = [];
+        if (Array.isArray(settled)) {
+          allUrls = settled
+            .filter(r => r.status === 'fulfilled' && r.value)
+            .map(r => r.value);
         }
-        if (allUrls.length === 0) {
-          allUrls = mediaSnapshot.filter(m => m.s3Url).map(m => m.s3Url);
-        }
+
         await dispatch(finalIntention, allUrls);
       } catch (e) {
-        console.error('[handleDone] Background dispatch failed:', e);
+        console.error('[handleDone] Upload + dispatch failed:', e);
       }
     })();
   };
@@ -1081,37 +1089,34 @@ export default function LiveCameraView({
             }
           </motion.button>
 
-          {/* Unified Shutter / Go Button */}
+          {/* Shutter Button — always captures photo */}
           {(() => {
-            const hasMedia = capturedMedia.length > 0;
             const agentAction = livekit.actionSuggestion?.action;
             const glowAction = (agentAction && agentAction !== 'dispatch' && agentAction !== 'ready' && agentAction !== 'done') ? agentAction : null;
-            const glow = hasMedia ? ACTION_GLOW['dispatch'] : (ACTION_GLOW[glowAction] || null);
+            const glow = ACTION_GLOW[glowAction] || null;
             const glowBorder = glow ? glow.border : 'border-white/40';
             const glowShadow = glow ? glow.shadow : 'none';
-            const ShutterIcon = hasMedia ? CheckCircle2 : ((glowAction && INTENT_ICONS[glowAction]) || ScanLine);
+            const ShutterIcon = (glowAction && INTENT_ICONS[glowAction]) || ScanLine;
 
             return (
               <div className="relative">
                 <button
-                  onClick={hasMedia ? handleDone : handleShutterClick}
-                  onPointerDown={hasMedia ? undefined : handleShutterDown}
-                  onPointerUp={hasMedia ? undefined : handleShutterUp}
+                  onClick={handleShutterClick}
+                  onPointerDown={handleShutterDown}
+                  onPointerUp={handleShutterUp}
                   onPointerLeave={() => { if (!isRecording) clearTimeout(longPressTimerRef.current); }}
                   disabled={connectionIcon === 'offline' && !livekit.localVideoTrack}
-                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${isRecording ? 'border-red-500/50 scale-110' :
-                      hasMedia ? 'border-green-400/60' : glowBorder
+                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${isRecording ? 'border-red-500/50 scale-110' : glowBorder
                     } active:scale-95 select-none touch-none disabled:opacity-30`}
                   style={{ boxShadow: isRecording ? 'none' : glowShadow }}
                 >
                   {isRecording ? (
                     <div className="w-7 h-7 rounded-md bg-red-500 animate-pulse transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
                   ) : (
-                    <div className={`w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] ${hasMedia ? 'bg-green-500' : 'bg-white'
-                      }`}>
+                    <div className="w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] bg-white">
                       <AnimatePresence mode="wait">
                         <motion.div
-                          key={hasMedia ? 'go' : (ShutterIcon.displayName || ShutterIcon.name || 'icon')}
+                          key={ShutterIcon.displayName || ShutterIcon.name || 'icon'}
                           initial={{ opacity: 0, scale: 0.7 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.7 }}
@@ -1120,7 +1125,7 @@ export default function LiveCameraView({
                           <ShutterIcon
                             size={28}
                             strokeWidth={2}
-                            className={hasMedia ? 'text-white drop-shadow-sm' : 'text-black/70 drop-shadow-sm'}
+                            className="text-black/70 drop-shadow-sm"
                           />
                         </motion.div>
                       </AnimatePresence>
@@ -1131,8 +1136,29 @@ export default function LiveCameraView({
             );
           })()}
 
-          {/* Spacer — replaces old Done button slot */}
-          <div className="w-14 h-14" />
+          {/* Done Button — appears only when photos are captured */}
+          <AnimatePresence>
+            {capturedMedia.length > 0 ? (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                onClick={handleDone}
+                whileTap={{ scale: 0.88 }}
+                className="w-14 h-14 rounded-full flex items-center justify-center border transition-all backdrop-blur-xl"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(34,197,94,0.85), rgba(16,185,129,0.85))',
+                  borderColor: 'rgba(255,255,255,0.25)',
+                  boxShadow: '0 0 24px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
+                }}
+              >
+                <CheckCircle2 size={22} strokeWidth={2} className="text-white drop-shadow-sm" />
+              </motion.button>
+            ) : (
+              <div className="w-14 h-14" />
+            )}
+          </AnimatePresence>
         </div>
         <div className="w-full h-2 md:h-8 shrink-0" />
       </div>
