@@ -4,6 +4,8 @@
 # 这个文件定义了团队成员、任务状态模型、和工作流约定。
 # 是整个 teamspace 系统的 schema 定义。
 
+skill_version: 2.5.0
+
 team:
   name: "VI Agent"
   repo: "flair-home-stylist/vi_agent"
@@ -169,3 +171,33 @@ conventions:
   update_frequency: "每人每天至少更新一次自己的任务状态"
   board_ownership: "每人只修改自己 Owner 的行，减少 merge conflict"
   drive_marks: "通过 /drive 执行的任务在 Drive? 列标记 ✅"
+  branch_pattern: "{type}/{task-id}-{slug}"
+  base_branch: main
+  commit_format: "type(scope): description | Mission: #{issue}"
+
+# Appended by /team init — monorepo project detection
+project:
+  type: monorepo
+  services:
+    - name: api-server
+      language: python
+      test_command: "cd api-server && python -m pytest tests/ -v --tb=short"
+      lint_command: "cd api-server && ruff check ."
+    - name: frontend
+      language: typescript
+      test_command: "cd frontend && npm test"
+      lint_command: "cd frontend && npx eslint src/"
+      build_command: "cd frontend && npm run build"
+    - name: realtime
+      language: python
+      test_command: "cd realtime && uv run python -m pytest tests/ -v --tb=short"
+    - name: gateway
+      language: typescript
+      lint_command: "cd gateway/plugin && npm run lint"
+
+# Quality gates
+quality:
+  hooks: false
+  ci: true
+  review_required: false
+  branch_protection: false

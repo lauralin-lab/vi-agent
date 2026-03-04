@@ -191,7 +191,7 @@ export default function MemoryView({ onBack, livekit }) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="w-full h-full flex flex-col"
-        style={{ background: '#F2F2F7' }}
+        style={{ background: '#F2F2F7', color: '#000' }}
       >
         <div className="shrink-0 flex items-center gap-3 px-5 pt-[env(safe-area-inset-top,20px)] pb-3"
           style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -258,7 +258,7 @@ export default function MemoryView({ onBack, livekit }) {
         exit={{ opacity: 0, x: 20 }}
         transition={IOS_SPRING}
         className="w-full h-full flex flex-col"
-        style={{ background: '#F2F2F7' }}
+        style={{ background: '#F2F2F7', color: '#000' }}
       >
         <div className="shrink-0 flex items-center gap-3 px-5 pt-[env(safe-area-inset-top,20px)] pb-3"
           style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -313,7 +313,7 @@ export default function MemoryView({ onBack, livekit }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="w-full h-full flex flex-col relative"
-      style={{ background: '#F2F2F7' }}
+      style={{ background: '#F2F2F7', color: '#000' }}
     >
       {/* Header */}
       <div className="safe-area-top shrink-0 flex items-center justify-between px-6 pb-4">

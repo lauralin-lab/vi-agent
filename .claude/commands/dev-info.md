@@ -31,7 +31,8 @@ bash deploy/dev-environment/dev.sh --show-versions
 
 ```bash
 SSH_KEY=<from dev.sh --show-config>
-ssh -A -i $SSH_KEY liyasong@34.172.9.61 << 'REMOTE'
+SERVER=$(bash deploy/dev-environment/dev.sh --show-config 2>/dev/null | grep '^SERVER=' | cut -d= -f2)
+ssh -A -i $SSH_KEY $SERVER << 'REMOTE'
 echo "===CONTAINERS==="
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
 

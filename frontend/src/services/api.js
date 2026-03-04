@@ -12,6 +12,12 @@ class ApiClient {
     this.baseUrl = API_URL;
     this.token = sessionStorage.getItem('vi-token');
     this._viUserId = localStorage.getItem('vi-user-id');
+    // Derive viUserId from deviceId if not yet set (matches backend formula)
+    if (!this._viUserId && !this.token) {
+      const deviceId = this.getDeviceId();
+      this._viUserId = `vi-${deviceId.slice(0, 16)}`;
+      localStorage.setItem('vi-user-id', this._viUserId);
+    }
   }
 
   // --- Device ID management ---

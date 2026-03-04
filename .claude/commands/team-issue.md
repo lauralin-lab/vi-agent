@@ -1,6 +1,6 @@
 ---
 description: "Create mission Issue from natural language. Try: /team-issue help"
-version: "2.3.0"
+version: "2.5.1"
 ---
 
 # /team-issue — Create Mission Contract Issue
@@ -41,10 +41,11 @@ EXAMPLES (update):
 
 WHAT HAPPENS (create):
   1. AI analyzes your description
-  2. Scans codebase for relevant files
-  3. Generates standardized mission-contract Issue body
-  4. Shows preview for your confirmation
-  5. Publishes to GitHub with correct labels
+  2. Searches existing Issues for duplicates (semantic match)
+  3. Scans codebase for relevant files
+  4. Generates standardized mission-contract Issue body
+  5. Shows preview for your confirmation
+  6. Publishes to GitHub with correct labels
 
 WHAT HAPPENS (update):
   1. Fetches current Issue from GitHub
@@ -52,7 +53,7 @@ WHAT HAPPENS (update):
   3. Shows before/after diff for confirmation
   4. Updates Issue on GitHub
 
-NEXT: /team-claim #{N} to claim the created Issue
+NEXT: /team-claim #{issue} to claim the created Issue
 ```
 
 ---
@@ -61,8 +62,11 @@ NEXT: /team-claim #{N} to claim the created Issue
 
 ```bash
 GH_USER=$(gh api user --jq '.login' 2>/dev/null)
+if [ -z "$GH_USER" ]; then
+  echo "ERROR: Cannot get GitHub user identity. Run 'gh auth login' first."
+  exit 1
+fi
 ```
-- If fails → "Not authenticated. Run `gh auth login` first." → **STOP**
 
 ```bash
 if [ -f .teamwork/config.yml ]; then
@@ -76,6 +80,12 @@ fi
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
 
 Read `$TEAMWORK_DIR/config.yml` → extract `team.repo`, `github.mc_label`, domain list, priority list.
+
+```bash
+# Extract current version/milestone if configured
+CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
+```
+- If `CURRENT_VERSION` is non-empty → Issues will be assigned to this milestone.
 
 ---
 
@@ -104,6 +114,37 @@ From the user's natural language input, use AI reasoning to determine:
 
 ---
 
+## Step 1b: Duplicate Check
+
+Before investing in body generation, search for existing Issues that may already cover this problem.
+
+**Extract 2-3 key terms** from the analyzed title/description (not the full title verbatim — wider net catches more).
+
+```bash
+gh issue list --search "{key terms}" --state open --json number,title,url --limit 10
+```
+
+**AI evaluates results**: Compare each returned Issue's title and purpose against the user's intent. Judge **semantic similarity**, not string match. "fix camera on Safari" and "iOS media permission broken" are the same problem even though they share zero words.
+
+**If potential duplicates found** → display and ask:
+
+```
+⚠️ POTENTIAL DUPLICATES FOUND
+──────────────────────────────────────
+#12  fix: camera permission not triggering on Safari
+#35  feat: add iOS Safari media support
+──────────────────────────────────────
+```
+
+Use `AskUserQuestion`:
+- "None of these — create new Issue" → continue to Step 2
+- "Update #N instead" → redirect to **Operation Update** with user's original description as the change
+- "Cancel" → **STOP**
+
+**If no results or no semantic match** → continue to Step 2 silently.
+
+---
+
 ## Step 2: Scan Codebase for Context
 
 Use `Glob` and `Grep` with keywords from the description to find:
@@ -117,10 +158,13 @@ Add these to the Context section as "Relevant files".
 
 ## Step 3: Generate Issue Body
 
-Format the Issue body to match the mission-contract template output:
+Format the Issue body using the canonical mission-contract structure:
 
 ```markdown
 ## Mission Contract
+
+### Objective
+{1-2 sentence summary of what needs to be done}
 
 ### Priority
 {P0|P1|P2|P3}
@@ -132,15 +176,15 @@ Format the Issue body to match the mission-contract template output:
 {domain}
 
 ### Success Criteria
-- [ ] Criterion 1
+- [ ] Criterion 1 — concrete, verifiable
 - [ ] Criterion 2
 
 ### Sub-tasks
 - [ ] Step 1
 - [ ] Step 2
 
-### Context
-{Background, relevant files, technical details}
+### Context & References
+{Background, relevant files, technical details, links}
 
 ### Constraints
 {Limitations, dependencies, things NOT to do}
@@ -150,6 +194,11 @@ Format the Issue body to match the mission-contract template output:
 # verification commands
 ```
 ```
+
+**Canonical field names** (always use these exactly — `team-claim` parses them by name):
+- `Success Criteria` (NOT "Acceptance Criteria")
+- `Context & References` (NOT "Context")
+- `Sub-tasks` (NOT "Tasks" or "Steps")
 
 ---
 
@@ -162,6 +211,7 @@ ISSUE PREVIEW
 ═══════════════════════════════════════
 Title:    {title}
 Labels:   mission-contract, priority:{Pn}, domain:{domain}, size:{size}, status:queued
+Milestone:{CURRENT_VERSION if set, else "none"}
 Priority: {Pn}
 Size:     {size}
 Domain:   {domain}
@@ -183,9 +233,19 @@ If cancel → **STOP**
 ## Step 5: Publish
 
 ```bash
-REPO=$(grep 'repo:' $TEAMWORK_DIR/config.yml | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
-MISSION_LABEL=$(grep 'mc_label:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"')
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission-contract"
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+# Try github.mc_label (teamspace schema) then mc_label (teamwork schema)
+MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
+```
+
+```bash
+# Add milestone if versions.current configured
+MILESTONE_FLAG=""
+if [ -n "$CURRENT_VERSION" ]; then
+  MILESTONE_FLAG="--milestone \"$CURRENT_VERSION\""
+fi
 ```
 
 ```bash
@@ -197,8 +257,11 @@ gh issue create \
   --label "status:queued" \
   --label "priority:{Pn}" \
   --label "domain:{domain}" \
-  --label "size:{size}"
+  --label "size:{size}" \
+  $MILESTONE_FLAG
 ```
+
+- If milestone assignment fails (milestone doesn't exist yet) → warn "Milestone '{CURRENT_VERSION}' not found on GitHub. Create it first: `gh api repos/{REPO}/milestones --method POST --field title='{CURRENT_VERSION}'`". Non-fatal: issue is still created without milestone.
 
 ---
 
@@ -207,11 +270,11 @@ gh issue create \
 ```
 ISSUE CREATED
 ═══════════════════════════════════════
-Issue:  #{N} — {title}
+Issue:  #{issue} — {title}
 URL:    {issue URL}
 Labels: mission-contract, priority:{Pn}, domain:{domain}, size:{size}
 
-Next: /team-claim #{N} to claim this Issue
+Next: /team-claim #{issue} to claim this Issue
 ═══════════════════════════════════════
 ```
 
@@ -224,16 +287,16 @@ Next: /team-claim #{N} to claim this Issue
 ### U1: Fetch current Issue
 
 ```bash
-REPO=$(grep 'repo:' $TEAMWORK_DIR/config.yml | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
-gh issue view {ISSUE_NUMBER} --repo "$REPO" --json number,title,body,labels,state
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+gh issue view {issue} --repo "$REPO" --json number,title,body,labels,state
 ```
 
-- If Issue not found → "Issue #{N} not found." → **STOP**
-- If Issue is closed → "Issue #{N} is closed. Reopen it first if you want to edit." → **STOP**
+- If Issue not found → "Issue #{issue} not found." → **STOP**
+- If Issue is closed → "Issue #{issue} is closed. Reopen it first if you want to edit." → **STOP**
 
 Display current Issue summary:
 ```
-CURRENT ISSUE #{N}
+CURRENT ISSUE #{issue}
 ──────────────────────────────────────
 Title:  {title}
 Labels: {labels}
@@ -264,7 +327,7 @@ Display the updated Issue:
 ```
 ISSUE UPDATE PREVIEW
 ═══════════════════════════════════════
-Issue:    #{N}
+Issue:    #{issue}
 Title:    {new title, or unchanged}
 
 Changes:
@@ -281,7 +344,7 @@ Use `AskUserQuestion` to confirm:
 ### U4: Apply update
 
 ```bash
-gh issue edit {ISSUE_NUMBER} \
+gh issue edit {issue} \
   --repo "$REPO" \
   --title "{new title}" \
   --body "{updated body}"
@@ -289,7 +352,7 @@ gh issue edit {ISSUE_NUMBER} \
 
 If labels changed (priority, size, domain):
 ```bash
-gh issue edit {ISSUE_NUMBER} --repo "$REPO" \
+gh issue edit {issue} --repo "$REPO" \
   --remove-label "priority:{old}" --add-label "priority:{new}" \
   --remove-label "size:{old}" --add-label "size:{new}"
 ```
@@ -299,7 +362,7 @@ gh issue edit {ISSUE_NUMBER} --repo "$REPO" \
 ```
 ISSUE UPDATED
 ═══════════════════════════════════════
-Issue:  #{N} — {title}
+Issue:  #{issue} — {title}
 URL:    {issue URL}
 
 Changes applied:
@@ -317,4 +380,4 @@ when they run /team-drive.
 
 - Empty description → "Please provide a description. Example: `/team-issue fix camera not working on Safari`" → **STOP**
 - GitHub API error → "Failed to create Issue. Check `gh auth status`." → **STOP**
-- Label not found → create Issue without that label, warn user to run `scripts/setup-github-labels.sh`
+- Label not found → create Issue without that label, warn user to run `bash ~/.claude/commands/scripts/setup-github-labels.sh` (installed with teamwork)

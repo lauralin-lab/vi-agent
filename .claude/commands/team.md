@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "2.3.0"
+version: "2.5.2"
 ---
 
 # /team — Init + Dashboard (Teamwork v2)
@@ -16,6 +16,7 @@ version: "2.3.0"
 | (empty) | Auto: first run → Init, subsequent → Dashboard |
 | `help` or `-h` | Show quick-start guide for new users |
 | `init` | Force re-initialize (even if config exists) |
+| `queue` | Show all queued issues (full list, sorted by priority) |
 
 ---
 
@@ -24,6 +25,7 @@ version: "2.3.0"
 Parse `$ARGUMENTS`:
 - If `help` or `-h` → jump to **Operation Help**
 - If `init` → jump to **Step 0** (skip config check, force init)
+- If `queue` → jump to **Operation Queue**
 - If empty → continue to **Step 0** (auto-detect init vs dashboard)
 
 ---
@@ -41,6 +43,8 @@ SETUP (one time):
 
 DAILY WORKFLOW:
   /team                 See dashboard (who's working on what)
+  /team queue           Full list of queued issues, sorted by priority
+  /team-issue           Create a mission Issue from natural language
   /team-claim #N        Claim Issue #N → generate Contract + branch
   /team-claim           Auto-pick highest priority unassigned Issue
   /team-claim list      Browse available missions
@@ -52,11 +56,15 @@ AFTER MERGE:
   /team-ship review     AI code review on current PR
   /team-ship sync       Rebase branch on latest main
 
+VERSION LIFECYCLE:
+  /team-release         Close milestone → git tag → GitHub Release → next version
+
 LIFECYCLE:
-  Issue → /team-claim → Contract + branch
-       → /team-drive → implement + test + commit
-       → /team-ship  → PR (Closes #N)
-       → /team-ship done → Issue closed, back to main
+  /team-issue → Issue → /team-claim → Contract + branch
+                     → /team-drive → implement + test + commit
+                     → /team-ship  → PR (Closes #N)
+                     → /team-ship done → Issue closed, back to main
+  All missions done? → /team-release → tag + release + next milestone
 
 CONFIG:
   .teamwork/config.yml  (or .teamspace/config.yml)
@@ -70,6 +78,74 @@ MORE INFO:
   ONBOARDING.md         Full tutorial with examples
 ═══════════════════════════════════════════
 ```
+
+---
+
+## Operation Queue
+
+Show the full list of queued issues, sorted by priority. Requires existing config (same prerequisite check as dashboard).
+
+### Prerequisite: config detection
+
+```bash
+if [ -f .teamwork/config.yml ]; then
+  TEAMWORK_DIR=".teamwork"
+elif [ -f .teamspace/config.yml ]; then
+  TEAMWORK_DIR=".teamspace"
+else
+  echo "No teamwork config found. Run /team init first."
+  # STOP
+fi
+```
+
+### Fetch and display
+
+```bash
+# Read mission label + priority prefix from config
+MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
+
+STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
+[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+
+PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "" 2>/dev/null)
+[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX="priority:"
+
+# Fetch all queued issues (unassigned or status:queued, open)
+gh issue list --label "$MISSION_LABEL" --state open --json number,title,labels,assignees --limit 100
+```
+
+Filter to issues that are unassigned OR have `status:queued` label. Sort by priority: P0 first → P1 → P2 → P3 → no priority last.
+
+Output formatted list:
+
+```
+QUEUED ISSUES — {repo name} ({total} issues)
+════════════════════════════════════════════
+
+P0 (critical):
+  #{N} {title}
+  #{N} {title}
+
+P1 (high):
+  #{N} {title}
+
+P2 (medium):
+  #{N} {title}
+  #{N} {title}
+
+P3 (low):
+  #{N} {title}
+
+No priority:
+  #{N} {title}
+
+════════════════════════════════════════════
+Claim: /team-claim #{N}
+```
+
+Omit priority groups that have zero issues. Then **STOP**.
 
 ---
 
@@ -320,11 +396,96 @@ mkdir -p $TEAMWORK_DIR/active .github/ISSUE_TEMPLATE .github/workflows .githooks
 
 ### 4b: Write `$TEAMWORK_DIR/config.yml`
 
-Write based on detected project info + user answers:
+**First, check if config.yml already exists:**
+
+```bash
+ls $TEAMWORK_DIR/config.yml 2>/dev/null
+```
+
+---
+
+#### MERGE MODE (config exists)
+
+Preserve all existing content. Only update `skill_version` and append missing top-level sections.
+
+**Step 1 — Update skill_version in place:**
+
+```bash
+# Update skill_version line without touching anything else
+sed -i '' "s/^skill_version:.*/skill_version: 2.5.0/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 2.5.0/" $TEAMWORK_DIR/config.yml
+```
+
+**Step 2 — Detect which top-level sections are missing:**
+
+```bash
+python3 -c "
+import yaml, sys
+with open('$TEAMWORK_DIR/config.yml') as f:
+    d = yaml.safe_load(f) or {}
+missing = [s for s in ['project', 'conventions', 'label_prefix', 'quality']
+           if s not in d]
+print('\n'.join(missing))
+"
+```
+
+**Step 3 — Append only missing sections to the file:**
+
+For each missing section, append the appropriate YAML block. Use the project info detected in Step 2 and answers from Step 3.
+
+Standard section templates to append as needed:
+
+```yaml
+# Appended by /team init upgrade
+project:
+  language: {LANGUAGE}
+  test_command: "{TEST_CMD}"
+  lint_command: "{LINT_CMD}"
+  build_command: "{BUILD_CMD}"
+```
+
+```yaml
+conventions:
+  branch_pattern: "mission/{issue}-{slug}-{user}"
+  base_branch: main
+  commit_format: "type(scope): description | Mission: #{issue}"
+```
+
+```yaml
+label_prefix:
+  status: "status:"
+  priority: "priority:"
+  size: "size:"
+```
+
+```yaml
+quality:
+  hooks: {true/false from Step 3}
+  ci: {true/false from Step 3}
+  review_required: {true/false from Step 3}
+  branch_protection: {true/false from Step 3}
+```
+
+**Step 4 — Show merge summary:**
+
+```
+✅ Config updated (merge mode — existing config preserved)
+   skill_version → 2.5.0
+   Preserved sections: {list of sections kept}
+   Added sections: {list of sections appended, or "(none — already complete)"}
+```
+
+Do NOT overwrite `team`/`members`, `github`, `worktree`, `versions`, `roles`, or any unrecognized section.
+
+---
+
+#### FRESH INSTALL (config does not exist)
+
+Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 1
-skill_version: 2.1.0
+skill_version: 2.5.0
 
 team:
   - github: {GH_USER}
@@ -358,9 +519,10 @@ quality:
 #   enabled: true
 #   path_pattern: "../{repo}-wt-{slug}"
 
-# Optional: Version tracking
+# Optional: Version tracking (required for /team-release)
 # versions:
 #   current: "V1.0"
+#   spec_path: ".claude/drive/v1.0-definition/spec.md"  # optional: enables AI audit in /team-release
 #   lifecycle: [dev, qa, released]
 ```
 
@@ -624,30 +786,29 @@ Append if not already present:
 
 ### 5a: Create labels
 
-Read `label_prefix` from config. If config has `label_prefix` section → use those prefixes. If config has `github.label_prefix` (`.teamspace` format) → use those. Otherwise → no prefix (legacy fallback).
+Use the `setup-github-labels.sh` script installed with teamwork:
 
 ```bash
-# Category label (no prefix — it's a category, not a status)
-gh label create mission --color 0075ca --description "Team mission" --force
+# Preferred: use installed script (reads config for prefixes, idempotent)
+bash ~/.claude/commands/scripts/setup-github-labels.sh
+```
 
-# Priority labels (prefixed)
+If the script is not available (e.g., installed without scripts):
+```bash
+# Fallback: inline label creation
+gh label create mission --color 0075ca --description "Team mission" --force
+gh label create "status:queued" --color c2e0c6 --description "Ready to be claimed" --force
+gh label create "status:wip" --color fbca04 --description "Currently being worked on" --force
+gh label create "status:review" --color 7057ff --description "PR open, awaiting merge" --force
+gh label create "status:done" --color 0e8a16 --description "Completed" --force
+gh label create "status:blocked" --color d73a4a --description "Blocked by dependency" --force
 gh label create "priority:P0" --color d73a4a --description "Critical priority" --force
 gh label create "priority:P1" --color e4e669 --description "High priority" --force
 gh label create "priority:P2" --color 0e8a16 --description "Medium priority" --force
 gh label create "priority:P3" --color cfd3d7 --description "Low priority" --force
-
-# Status labels (prefixed)
-gh label create "status:queued" --color c2e0c6 --description "Ready to be claimed" --force
-gh label create "status:wip" --color fbca04 --description "Currently being worked on" --force
-gh label create "status:review" --color 7057ff --description "Ready for review" --force
-gh label create "status:done" --color 0e8a16 --description "Completed" --force
-gh label create "status:blocked" --color d73a4a --description "Blocked by dependency" --force
-
-# Version label (if versions configured in config)
-# gh label create "version:${CURRENT_VERSION}" --color 006b75 --description "Version ${CURRENT_VERSION}" --force
 ```
 
-If `versions.current` is set in config, create the version label.
+If `versions.current` is set in config, also create the milestone via GitHub API (not a label — use Milestones).
 
 ### 5b: Branch protection (if enabled)
 
@@ -712,17 +873,16 @@ CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f
 Read the mission label from config. If config has `mc_label` field → use it. If config has the teamwork v2 schema → use `mission`. Default: `mission`.
 
 ```bash
-# Determine the mission label from config
-# teamwork v2 schema: label is "mission"
-# teamspace schema: look for mc_label field (e.g., "mission-contract")
-MISSION_LABEL=$(grep 'mc_label:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"' || echo "mission")
+# Determine the mission label — try github.mc_label (teamspace schema) then mc_label (teamwork schema)
+MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
 
-# Determine label prefixes from config
-# Check label_prefix section first, then github.label_prefix (.teamspace), then no prefix
-# Note: sed 's/^[^:]*://' splits on FIRST colon only (values like "status:" contain colons)
-STATUS_PREFIX=$(grep '^\s*status:' $TEAMWORK_DIR/config.yml | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' || echo "status:")
-PRIORITY_PREFIX=$(grep '^\s*priority:' $TEAMWORK_DIR/config.yml | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' || echo "priority:")
+# Determine label prefixes from config (erwin schema: label_prefix.status; vi_agent: defaults)
+STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
+[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "" 2>/dev/null)
+[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX="priority:"
 
 # All mission issues
 gh issue list --label "$MISSION_LABEL" --json number,title,assignees,labels,state,milestone --limit 50
@@ -730,8 +890,8 @@ gh issue list --label "$MISSION_LABEL" --json number,title,assignees,labels,stat
 # WIP issues (for "working on" display)
 gh issue list --label "$MISSION_LABEL" --label "${STATUS_PREFIX}wip" --json number,title,assignees --limit 20
 
-# Review issues
-gh issue list --label "$MISSION_LABEL" --label "${STATUS_PREFIX}review" --json number,title,assignees --limit 20
+# Review issues (shipped, PR open, awaiting merge)
+gh issue list --label "$MISSION_LABEL" --label "${STATUS_PREFIX}review" --json number,title,assignees,url --limit 20
 
 # Open PRs
 gh pr list --json number,title,author,headRefName,statusCheckRollup,reviewDecision --limit 20
@@ -739,11 +899,12 @@ gh pr list --json number,title,author,headRefName,statusCheckRollup,reviewDecisi
 # Merge count per team member (merged PRs to base branch)
 gh pr list --state merged --base main --json author --limit 100
 
-# Version progress (if versions.current configured)
-# CURRENT_VERSION=$(grep 'current:' $TEAMWORK_DIR/config.yml | tail -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
-# if [ -n "$CURRENT_VERSION" ]; then
-#   gh issue list --label "$MISSION_LABEL" --label "version:${CURRENT_VERSION}" --json state --limit 100
-# fi
+# Version progress (if versions.current configured in config)
+CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
+if [ -n "$CURRENT_VERSION" ]; then
+  # Use GitHub Milestones for version progress tracking
+  gh api repos/{REPO}/milestones --jq ".[] | select(.title == \"$CURRENT_VERSION\") | {open: .open_issues, closed: .closed_issues}"
+fi
 ```
 
 If `versions.current` is set, query version-tagged issues and calculate done/total percentage for the dashboard header.
@@ -754,8 +915,8 @@ Output a formatted dashboard like this:
 
 ```
 TEAM DASHBOARD — {repo name}
-{If versions configured:} Version: {current} ({done}/{total} tasks = {pct}%)
-Milestone: {active milestone} ({closed}/{total} = {pct}%)
+{If CURRENT_VERSION set and milestone found:} Version {CURRENT_VERSION}: {closed}/{closed+open} tasks done ({pct}%)
+{If active GitHub milestone (non-version):} Milestone: {active milestone} ({closed}/{total} = {pct}%)
 ════════════════════════════════════════════
 
 {For each team member from config.yml:}
@@ -764,9 +925,14 @@ Milestone: {active milestone} ({closed}/{total} = {pct}%)
      {If has open PR:} PR: #{pr} — {CI status}
      {If idle:} Idle (last merged: #{last_merged_pr})
 
-QUEUED:
-  {Issues with label "$MISSION_LABEL" that are unassigned or status:queued}
+UNDER REVIEW (PR open, awaiting merge):
+  {Issues with label "${STATUS_PREFIX}review" — show each:}
+     #{N} {title} [{assignee}]
+
+QUEUED ({queued_count}):
+  {Issues unassigned or status:queued, sorted by priority (P0→P1→P2→P3→none), show top 5:}
      #{N} {title} [{priority}]
+  {If queued_count > 5:} ... and {queued_count - 5} more — run /team queue to see all
 
 MERGE COUNT:
   {username}: {count} | {username}: {count} | ...

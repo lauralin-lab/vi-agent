@@ -1,5 +1,5 @@
 // Markdown renderer — extracted from MemoryView.jsx
-// Shared by LiveSessionView and MemoryView
+// Used by MemoryView (light background)
 
 // ── Simple Markdown Renderer ──
 // Handles: headings, bold, italic, code blocks, inline code, lists, links
@@ -23,7 +23,7 @@ export function renderMarkdown(text) {
       }
       i++; // skip closing ```
       elements.push(
-        <pre key={key++} className="bg-white/5 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono text-white/80 border border-white/5">
+        <pre key={key++} className="bg-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono text-gray-800 border border-gray-200">
           {codeLines.join('\n')}
         </pre>
       );
@@ -36,7 +36,7 @@ export function renderMarkdown(text) {
       const level = headingMatch[1].length;
       const sizes = { 1: 'text-lg font-bold', 2: 'text-base font-semibold', 3: 'text-sm font-semibold' };
       elements.push(
-        <p key={key++} className={`${sizes[level]} text-white/90 mt-3 mb-1`}>
+        <p key={key++} className={`${sizes[level]} text-gray-900 mt-3 mb-1`}>
           {inlineFormat(headingMatch[2])}
         </p>
       );
@@ -54,8 +54,8 @@ export function renderMarkdown(text) {
       elements.push(
         <ul key={key++} className="my-1 space-y-0.5">
           {items.map((item, j) => (
-            <li key={j} className="text-white/70 text-sm flex gap-1.5">
-              <span className="text-white/30 shrink-0">•</span>
+            <li key={j} className="text-gray-700 text-sm flex gap-1.5">
+              <span className="text-gray-400 shrink-0">•</span>
               <span>{inlineFormat(item)}</span>
             </li>
           ))}
@@ -73,7 +73,7 @@ export function renderMarkdown(text) {
 
     // Normal paragraph
     elements.push(
-      <p key={key++} className="text-white/70 text-sm leading-relaxed">
+      <p key={key++} className="text-gray-700 text-sm leading-relaxed">
         {inlineFormat(line)}
       </p>
     );
@@ -95,7 +95,7 @@ export function inlineFormat(text) {
     let match = remaining.match(/^(.*?)`([^`]+)`/);
     if (match) {
       if (match[1]) parts.push(match[1]);
-      parts.push(<code key={key++} className="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-purple-300">{match[2]}</code>);
+      parts.push(<code key={key++} className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono text-purple-700">{match[2]}</code>);
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -104,7 +104,7 @@ export function inlineFormat(text) {
     match = remaining.match(/^(.*?)\*\*(.+?)\*\*/);
     if (match) {
       if (match[1]) parts.push(match[1]);
-      parts.push(<strong key={key++} className="text-white/90 font-semibold">{match[2]}</strong>);
+      parts.push(<strong key={key++} className="text-gray-900 font-semibold">{match[2]}</strong>);
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -113,7 +113,7 @@ export function inlineFormat(text) {
     match = remaining.match(/^(.*?)\*(.+?)\*/);
     if (match) {
       if (match[1]) parts.push(match[1]);
-      parts.push(<em key={key++} className="text-white/80">{match[2]}</em>);
+      parts.push(<em key={key++} className="text-gray-600">{match[2]}</em>);
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -122,7 +122,7 @@ export function inlineFormat(text) {
     match = remaining.match(/^(.*?)\[([^\]]+)\]\(([^)]+)\)/);
     if (match) {
       if (match[1]) parts.push(match[1]);
-      parts.push(<a key={key++} href={match[3]} target="_blank" rel="noopener noreferrer" className="text-purple-400 underline underline-offset-2">{match[2]}</a>);
+      parts.push(<a key={key++} href={match[3]} target="_blank" rel="noopener noreferrer" className="text-purple-600 underline underline-offset-2">{match[2]}</a>);
       remaining = remaining.slice(match[0].length);
       continue;
     }

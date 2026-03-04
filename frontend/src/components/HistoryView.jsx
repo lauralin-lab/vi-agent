@@ -356,11 +356,18 @@ export default function HistoryView({
         if (!dateStr) return 'Earlier';
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return 'Earlier';
+
         const now = new Date();
-        const diff = now - d;
-        if (diff < 86400000) return 'Today';
-        if (diff < 172800000) return 'Yesterday';
-        if (diff < 604800000) return 'This Week';
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        const startOfWeek = new Date(startOfToday);
+        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+
+        if (d >= startOfToday) return 'Today';
+        if (d >= startOfYesterday) return 'Yesterday';
+        if (d >= startOfWeek) return 'This Week';
         return 'Earlier';
     };
 

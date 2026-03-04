@@ -38,7 +38,8 @@ bash deploy/dev-environment/dev.sh --show-config
 1. **查看谁的日志?**
    - SSH 到服务器读取 registry.json 获取所有实例名称
    - ```bash
-     ssh -A -i $SSH_KEY liyasong@34.172.9.61 "cat /opt/vi-agent/registry.json"
+     SERVER=$(bash deploy/dev-environment/dev.sh --show-config 2>/dev/null | grep '^SERVER=' | cut -d= -f2)
+     ssh -A -i $SSH_KEY $SERVER "cat /opt/vi-agent/registry.json"
      ```
    - 列出选项让用户选择
 
@@ -51,7 +52,7 @@ bash deploy/dev-environment/dev.sh --show-config
 ### Step 2: 获取日志
 
 ```bash
-ssh -A -i $SSH_KEY liyasong@34.172.9.61 \
+ssh -A -i $SSH_KEY $SERVER \
   "cd /opt/vi-agent/instances/<NAME> && docker compose logs --tail <LINES> <SERVICE> 2>&1"
 ```
 

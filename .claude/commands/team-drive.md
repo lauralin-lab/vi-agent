@@ -1,6 +1,6 @@
 ---
 description: "Execute mission from Contract. Try: /team-drive help"
-version: "2.3.0"
+version: "2.4.0"
 ---
 
 # /team-drive — Execute Mission
@@ -198,6 +198,28 @@ After completing a sub-task, update the Contract file:
 - Change `- [ ]` to `- [x]` for the completed task
 - Add timestamp: `- [x] {task description} — {HH:MM}`
 
+### 3e2: Sync sub-task completion back to GitHub Issue (bidirectional)
+
+```bash
+# Update the corresponding checkbox in the GitHub Issue body so teammates see real-time progress
+ISSUE_BODY=$(gh issue view $ISSUE_NUMBER --json body --jq '.body' 2>/dev/null)
+if [ -n "$ISSUE_BODY" ]; then
+  UPDATED_BODY=$(python3 -c "
+import sys
+body = sys.stdin.read()
+task = '''$SUBTASK_TEXT'''
+body = body.replace('- [ ] ' + task, '- [x] ' + task, 1)
+print(body, end='')
+" <<< "$ISSUE_BODY" 2>/dev/null)
+  if [ -n "$UPDATED_BODY" ]; then
+    gh issue edit $ISSUE_NUMBER --body "$UPDATED_BODY" 2>/dev/null \
+      || echo "⚠ Could not sync sub-task to GitHub Issue (non-fatal — continuing)"
+  fi
+fi
+```
+
+Note: `$SUBTASK_TEXT` is the exact text of the completed sub-task (without `- [ ] ` prefix). This is a best-effort sync — if the Issue body format doesn't match exactly, it's non-fatal and mission continues.
+
 ### 3f: Commit
 ```bash
 # Stage only files modified for this sub-task (avoid git add -A which stages everything)
@@ -238,8 +260,9 @@ All tests must pass.
 ### 4c: Self-review
 Read through all changes made during this session:
 ```bash
-# Use the branch name from Contract frontmatter (not hardcoded)
-BASE_BRANCH=$(grep 'base_branch:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' || echo "main")
+# Read base branch from config
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
 git log --oneline ${BASE_BRANCH}..HEAD
 git diff ${BASE_BRANCH}...HEAD --stat
 ```
@@ -279,7 +302,7 @@ MISSION EXECUTION COMPLETE
 ═══════════════════════════════════════
 Issue:    #{issue} — {title}
 Status:   All sub-tasks done
-Commits:  {N} commits on branch {branch}
+Commits:  {count} commits on branch {branch}
 
 Sub-tasks completed:
   [x] {task 1} — {time}
@@ -312,7 +335,7 @@ Next: /team-ship to create PR and deliver
 This skill provides a **lightweight drive-like experience** focused on the Mission Contract. For full drive mode (with Phase 0 briefing, team assembly, wave decomposition), use `/drive` directly and pass the Contract path as context:
 
 ```
-/drive Execute the mission defined in $TEAMWORK_DIR/active/MISSION-{N}.md
+/drive Execute the mission defined in $TEAMWORK_DIR/active/MISSION-{issue}.md
 ```
 
 `/team-drive` is the **quick path** — it skips Phase 0 (the Contract IS the briefing) and executes directly. Use it for straightforward missions. Use full `/drive` for complex missions that need deeper planning.

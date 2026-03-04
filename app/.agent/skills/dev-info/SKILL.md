@@ -12,16 +12,16 @@ description: 查看 Dev 环境状态
 
 ## SSH 连接
 
-和 `/dev` 相同的 SSH key 检测逻辑:
+和 `/dev` 共享 SSH 配置:
 ```bash
-# 按优先级检测本地 SSH key
-for key in ~/.ssh/gcp_ssh_key ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa; do
-  if [ -f "$key" ]; then SSH_KEY="$key"; break; fi
-done
-SSH_CMD="ssh -A -i $SSH_KEY liyasong@34.172.9.61"
+# 从 dev.sh --show-config 获取 SERVER 连接信息
+CONFIG_OUTPUT=$(bash deploy/dev-environment/dev.sh --show-config 2>/dev/null)
+SSH_KEY=$(echo "$CONFIG_OUTPUT" | grep '^SSH_KEY=' | cut -d= -f2)
+SERVER=$(echo "$CONFIG_OUTPUT" | grep '^SERVER=' | cut -d= -f2)
+SSH_CMD="ssh -A -i $SSH_KEY $SERVER"
 ```
 
-如果连接失败，提示用户联系管理员添加 SSH key。
+如果连接失败，提示参考 `docs/dev-onboarding.md`。
 
 ## 执行流程
 

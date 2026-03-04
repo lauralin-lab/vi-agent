@@ -8,7 +8,7 @@
 ## 配置
 
 - **服务器 IP**: `34.172.9.61`
-- **服务器用户**: `liyasong`（所有人都通过此账户 SSH，通过各自的私钥鉴权）
+- **服务器用户**: 从 `.dev.local` 的 `SERVER_USER` 读取，默认为 `$(whoami)`（每人用自己的 Linux 账户 SSH）
 - **本地持久化配置**: `.dev.local`（已在 `.gitignore` 的 `*.local` 规则中，不会提交）
 - **脚本入口**: `deploy/dev-environment/dev.sh`
 
@@ -27,7 +27,7 @@ bash deploy/dev-environment/dev.sh --show-config
 STATUS=ok          # 或 STATUS=missing-name
 DEV_NAME=casey
 SSH_KEY=/Users/casey/.ssh/id_ed25519
-SERVER=liyasong@34.172.9.61
+SERVER=<SERVER_USER>@34.172.9.61
 CONFIG_FILE=/path/to/.dev.local
 ```
 
@@ -82,7 +82,7 @@ bash deploy/dev-environment/dev.sh --mode head
 ```
 
 脚本会自动处理：
-- 验证 SSH 连接（失败则提示联系管理员 liyasong）
+- 验证 SSH 连接（失败则提示参考 `docs/dev-onboarding.md`）
 - pre-flight（检查未提交/未推送的代码）
 - 同步最新 deploy 脚本到服务器
 - 从本地 `.env` 读取并上传 API keys
@@ -112,13 +112,9 @@ bash deploy/dev-environment/dev.sh --mode head
 
 ---
 
-## 首次使用（管理员一次性操作）
+## 首次使用
 
-管理员 (liyasong) 需要把新成员的 SSH 公钥加到服务器：
-```bash
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
-  "echo '<USER_SSH_PUBLIC_KEY>' >> ~/.ssh/authorized_keys"
-```
+新成员需要在服务器上拥有独立 Linux 账户。详见 `docs/dev-onboarding.md`。
 
 ---
 
@@ -135,7 +131,7 @@ ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
 
 | 错误 | 原因 | 解决 |
 |------|------|------|
-| SSH 连接失败 | SSH key 未加到服务器 | 联系管理员 (liyasong) |
+| SSH 连接失败 | SSH key 未加到服务器 | 参考 `docs/dev-onboarding.md` |
 | GitHub 拉取失败 | SSH Agent Forwarding 未生效 | 确保用了 `-A` flag (脚本已内置) |
 | Missing .env keys | 本地 `.env` 未配置 | 复制 `.env.example` 并填写 |
 | No available slots | 服务器 slot 已满（最多9个） | 先销毁一个旧实例 |
