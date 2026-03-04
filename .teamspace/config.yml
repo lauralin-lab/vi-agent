@@ -47,6 +47,9 @@ roles:
   - id: agent-engineer
     label: "Agent Engineer"
     description: "AI agent development, realtime intelligence, memory systems"
+  - id: growth-lead
+    label: "Growth Lead"
+    description: "Growth strategy, user acquisition, and product adoption"
 
 members:
   - id: casey
@@ -73,6 +76,10 @@ members:
     name: "Yijia Zhou"
     role: agent-engineer
     github: FelisaChow
+  - id: linlaura
+    name: "Laura Lin"
+    role: growth-lead
+    github: lauralin-lab
 
 # Kanban 状态定义（顺序即流转方向）
 # Backlog → Queued → WIP → Blocked / In Review → Done → Archive
