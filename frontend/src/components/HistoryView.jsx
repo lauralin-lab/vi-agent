@@ -260,26 +260,35 @@ export default function HistoryView({
         }
     }, [livekit?.sessionId, fetchSessions, liveSessions.length]);
 
-    // LiveKit DataChannel task events
+    // LiveKit DataChannel task events — process ALL unprocessed events
+    const lastProcessedTaskEventIdx = useRef(0);
     useEffect(() => {
         if (!livekit?.taskEvents || livekit.taskEvents.length === 0) return;
-        const latest = livekit.taskEvents[livekit.taskEvents.length - 1];
-        if (!latest) return;
+        const events = livekit.taskEvents;
+        const startIdx = lastProcessedTaskEventIdx.current;
+        if (startIdx >= events.length) return;
+        lastProcessedTaskEventIdx.current = events.length;
 
-        if (latest.type === 'task_started') {
-            setLiveSessions(prev => {
-                if (prev.some(t => t.id === latest.task_id)) return prev;
-                return [{ id: latest.task_id, prompt: latest.description, status: 'pending', created_at: new Date().toISOString() }, ...prev];
-            });
-        } else if (latest.type === 'task_progress') {
-            setLiveSessions(prev => prev.map(t => t.id === latest.task_id ? { ...t, status: 'progress' } : t));
-        } else if (latest.type === 'task_result') {
-            setLiveSessions(prev => prev.map(t =>
-                t.id === latest.task_id ? { ...t, status: latest.status || 'complete', result: latest.result } : t
-            ));
-            // Re-fetch from API to get full result_html (DataChannel event only has status)
-            fetchSessions(false);
+        let needsFetch = false;
+        for (let i = startIdx; i < events.length; i++) {
+            const ev = events[i];
+            if (!ev) continue;
+
+            if (ev.type === 'task_started') {
+                setLiveSessions(prev => {
+                    if (prev.some(t => t.id === ev.task_id)) return prev;
+                    return [{ id: ev.task_id, prompt: ev.description, status: 'pending', created_at: new Date().toISOString() }, ...prev];
+                });
+            } else if (ev.type === 'task_progress') {
+                setLiveSessions(prev => prev.map(t => t.id === ev.task_id ? { ...t, status: 'progress' } : t));
+            } else if (ev.type === 'task_result') {
+                setLiveSessions(prev => prev.map(t =>
+                    t.id === ev.task_id ? { ...t, status: ev.status || 'complete', result: ev.result } : t
+                ));
+                needsFetch = true;
+            }
         }
+        if (needsFetch) fetchSessions(false);
     }, [livekit?.taskEvents, fetchSessions]);
 
     // SSE real-time events
