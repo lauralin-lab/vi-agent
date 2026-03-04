@@ -705,13 +705,7 @@ export default function LiveCameraView({
               }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              onClick={() => {
-                if (capturedMedia.length > 1) {
-                  setIsStackExpanded(true);
-                } else {
-                  handleDone();
-                }
-              }}
+              onClick={() => setIsStackExpanded(true)}
               className="absolute w-11 h-11 cursor-pointer z-30 float-drift below-top-controls"
               style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 52px)', right: '1.5rem' }}
             >
@@ -807,7 +801,7 @@ export default function LiveCameraView({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                className="flex gap-2 overflow-x-auto no-scrollbar p-2 rounded-2xl bg-black/50 backdrop-blur-2xl border border-white/[0.1]"
+                className="flex gap-2 overflow-x-auto no-scrollbar pt-3 pb-2 px-2 rounded-2xl bg-black/50 backdrop-blur-2xl border border-white/[0.1]"
               >
                 {capturedMedia.map((item, index) => (
                   <motion.div
@@ -815,9 +809,9 @@ export default function LiveCameraView({
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: index * 0.05, type: 'spring', stiffness: 400 }}
-                    className="relative shrink-0 w-14 h-14 rounded-xl border border-white/20 bg-black/30 overflow-hidden"
+                    className="relative shrink-0 w-14 h-14 rounded-xl border border-white/20 bg-black/30"
                   >
-                    <img src={item.src} alt="" className="w-full h-full object-cover" />
+                    <img src={item.src} alt="" className="w-full h-full object-cover rounded-xl absolute inset-0" />
                     {item.type === 'video' && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">
