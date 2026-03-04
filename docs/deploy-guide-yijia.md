@@ -247,7 +247,7 @@ bash /opt/vi-agent/templates/test-instance.sh 34.172.9.61 3200 3201 3202 3210
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
-| SSH `Permission denied` | key 没加到服务器 | 联系管理员 liyasong |
+| SSH `Permission denied` | key 没加到服务器 | 参考 `docs/dev-onboarding.md` |
 | `git fetch` 失败 `Permission denied (publickey)` | 本地没开 SSH Agent | 确保用 `ssh -A`，本地 `ssh-add ~/.ssh/id_ed25519` |
 | Docker build 失败 | 代码有 bug 或 Dockerfile 问题 | 看报错信息，本地先测 |
 | 容器启动失败 | .env 缺 key 或端口冲突 | `docker compose logs` 查日志 |

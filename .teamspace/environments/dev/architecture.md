@@ -73,7 +73,7 @@
 
 ### 权限模型
 
-- **管理员** (liyasong): 完整 sudo，可管理所有实例
+- **管理员**: 完整 sudo，可管理所有实例（参考 `docs/dev-onboarding.md`）
 - **开发者**: 可登录服务器，可管理自己的 compose stack，无 sudo
 
 ## Registry 设计

@@ -1,6 +1,6 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "2.3.0"
+version: "2.4.0"
 ---
 
 # /team-ship — Deliver Mission
@@ -59,9 +59,11 @@ AFTER MERGE:
 ```bash
 # Identity
 GH_USER=$(gh api user --jq '.login' 2>/dev/null)
+if [ -z "$GH_USER" ]; then
+  echo "ERROR: Cannot get GitHub user identity. Run 'gh auth login' first."
+  exit 1
+fi
 ```
-
-- If fails → "Not authenticated. Run `gh auth login` first." → **STOP**
 
 ```bash
 # Config (support both directory names)
@@ -119,9 +121,20 @@ Extract from body:
 CURRENT_BRANCH=$(git branch --show-current)
 ```
 
-Compare with Contract's `branch` field.
-- If on wrong branch → `git checkout {contract.branch}`
-- If branch doesn't exist → "Branch {branch} not found. Cannot ship." → **STOP**
+Compare with Contract's `branch` field. If on wrong branch:
+
+```bash
+# Verify branch exists before switching
+CONTRACT_BRANCH="{branch}"  # from Contract frontmatter
+if git show-ref --verify --quiet "refs/heads/$CONTRACT_BRANCH" || \
+   git ls-remote --exit-code --heads origin "$CONTRACT_BRANCH" > /dev/null 2>&1; then
+  git checkout "$CONTRACT_BRANCH"
+else
+  echo "ERROR: Branch '$CONTRACT_BRANCH' not found locally or on origin."
+  echo "Re-run /team-claim #{issue} to recreate the mission branch."
+  exit 1
+fi
+```
 
 ### 2b: Verify all sub-tasks complete
 
@@ -144,14 +157,18 @@ git status --porcelain
 
 ### 2d: Run tests
 
-Read `test_command` from config:
 ```bash
-# From config.yml project.test_command
-{TEST_CMD}
+TEST_CMD=$(bash ~/.claude/commands/scripts/tw-config.sh project.test_command "" 2>/dev/null)
+if [ -z "$TEST_CMD" ]; then
+  echo "⚠ No test_command configured in $TEAMWORK_DIR/config.yml — skipping pre-flight tests"
+  echo "  Add 'test_command: \"npm test\"' to $TEAMWORK_DIR/config.yml to enable this check"
+else
+  echo "Running tests: $TEST_CMD"
+  eval "$TEST_CMD"
+fi
 ```
 
-- If tests fail → "Tests are failing. Fix them before shipping." → **STOP**
-- If no test command configured → warn "No test command configured. Skipping pre-flight tests."
+- If `$TEST_CMD` is non-empty and command exits non-zero → "Tests are failing. Fix them before shipping." → **STOP**
 
 ---
 
@@ -206,27 +223,38 @@ Closes #{issue}
 
 ### 4c: Create the PR
 
-Read `base_branch` from config conventions (default: `main`).
-
 ```bash
-gh pr create \
-  --title "{commit_type}: {contract.title}" \
-  --body "{generated PR body}" \
-  --base {base_branch} \
-  --head {branch}
-```
+# Read base branch from config
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
 
-Determine commit type from the Contract title/objective:
-- If title contains "fix", "bug", "patch" → `fix`
-- If title contains "refactor", "restructure" → `refactor`
-- Otherwise → `feat`
+# Determine commit type from Issue title
+ISSUE_TITLE_LOWER=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]')
+if echo "$ISSUE_TITLE_LOWER" | grep -qE '(fix|bug|hotfix|patch)'; then
+  COMMIT_TYPE="fix"
+elif echo "$ISSUE_TITLE_LOWER" | grep -qE '(refactor|clean|restructure)'; then
+  COMMIT_TYPE="refactor"
+elif echo "$ISSUE_TITLE_LOWER" | grep -qE '(test|spec)'; then
+  COMMIT_TYPE="test"
+elif echo "$ISSUE_TITLE_LOWER" | grep -qE '(doc|docs)'; then
+  COMMIT_TYPE="docs"
+else
+  COMMIT_TYPE="feat"
+fi
+
+gh pr create \
+  --title "${COMMIT_TYPE}: {title}" \
+  --body "{generated PR body}" \
+  --base "$BASE_BRANCH" \
+  --head "{branch}"
+```
 
 Capture the PR number and URL from the output.
 
 ### 4d: Post PR comment to Issue
 
 ```bash
-gh issue comment {issue} --body "📦 PR #{pr-number} created — {pr-url}"
+gh issue comment {issue} --body "📦 PR #{pr} created — {pr-url}"
 ```
 
 Non-fatal: if comment fails, warn but continue.
@@ -234,7 +262,7 @@ Non-fatal: if comment fails, warn but continue.
 ### 4e: Add labels
 
 ```bash
-gh pr edit {pr-number} --add-label "status:review"
+gh pr edit {pr} --add-label "status:review"
 ```
 
 If this fails (label doesn't exist), warn but continue.
@@ -247,7 +275,7 @@ Read `quality.ci` from config.
 
 If CI is enabled:
 ```bash
-gh pr checks {pr-number} --watch --interval 10
+gh pr checks {pr} --watch --interval 10
 ```
 
 - If CI passes → "CI passed ✅"
@@ -264,11 +292,31 @@ Read `quality.review_required` from config.
 If review is required:
 - Find the tech-lead from the team roster in config:
   ```bash
-  # Extract tech-lead github username from config
+  TECH_LEAD=$(python3 -c "
+  import sys
+  try:
+      lines = open('$TEAMWORK_DIR/config.yml').readlines()
+      in_team = False
+      current_github = None
+      for line in lines:
+          stripped = line.strip()
+          if stripped.startswith('team:'):
+              in_team = True
+              continue
+          if in_team and not line.startswith(' ') and not line.startswith('\t') and not stripped.startswith('-'):
+              in_team = False
+          if in_team and 'github:' in stripped:
+              current_github = stripped.split('github:')[1].strip().strip('\"').strip(\"'\")
+          if in_team and 'role:' in stripped and 'tech-lead' in stripped and current_github:
+              print(current_github)
+              sys.exit()
+  except:
+      pass
+  " 2>/dev/null)
   ```
 - Request review:
   ```bash
-  gh pr edit {pr-number} --add-reviewer {tech-lead-github}
+  gh pr edit {pr} --add-reviewer {tech-lead-github}
   ```
 - If reviewer assignment fails (permissions), warn but continue.
 
@@ -284,7 +332,15 @@ If review is not required → skip this step.
 gh issue edit {issue} --remove-label "status:wip" --add-label "status:review"
 ```
 
-If label operations fail, warn but continue.
+Then immediately verify the update:
+```bash
+CURRENT_LABELS=$(gh issue view {issue} --json labels --jq '[.labels[].name] | join(", ")')
+```
+
+- If output contains `status:review` AND does NOT contain `status:wip` → "Issue labeled status:review ✅ (labels: {CURRENT_LABELS})"
+- If `status:wip` is still present → "⚠ Label update incomplete. Issue still shows status:wip. Labels: {CURRENT_LABELS}. To fix manually: `gh issue edit {issue} --remove-label 'status:wip' --add-label 'status:review'`"
+- If `gh issue view` fails (network) → "⚠ Could not verify labels. Assume update succeeded."
+- Non-blocking in all cases: continue to 7b.
 
 ### 7b: Remove Contract
 
@@ -313,7 +369,7 @@ Sub-tasks delivered:
   ...
 
 Contract: cleaned up ✅
-Issue:    labeled "status:review" ✅
+Issue:    {CURRENT_LABELS from Step 7a — show actual labels, not assumed}
 ═══════════════════════════════════════
 Next steps:
   - After merge: /team-ship done (close Issue, update labels, clean worktree)
@@ -350,18 +406,18 @@ gh pr list --head "$BRANCH" --state merged --json number,url --limit 1
 ### D3: Close Issue
 
 ```bash
-gh issue view {ISSUE_NUMBER} --json state --jq '.state'
+gh issue view {issue} --json state --jq '.state'
 ```
 
 If Issue is still open:
 ```bash
-gh issue close {ISSUE_NUMBER} --reason completed
+gh issue close {issue} --reason completed
 ```
 
 ### D4: Update labels
 
 ```bash
-gh issue edit {ISSUE_NUMBER} --remove-label "status:review" --remove-label "status:wip" --add-label "status:done"
+gh issue edit {issue} --remove-label "status:review" --remove-label "status:wip" --add-label "status:done"
 ```
 
 ### D5: Clean up worktree (if applicable)
@@ -379,7 +435,9 @@ If `.mission` file exists (worktree mode):
 ### D6: Return to main
 
 ```bash
-git checkout main && git pull
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+git checkout "$BASE_BRANCH" && git pull
 ```
 
 ### D7: Clean up Contract
@@ -422,7 +480,7 @@ If no open PR found → "No open PR found for branch `{branch}`." → **STOP**
 ### R2: Get PR diff
 
 ```bash
-gh pr diff {PR_NUMBER}
+gh pr diff {pr}
 ```
 
 ### R3: Read changed files
@@ -455,10 +513,10 @@ options:
 ### R6: Publish review
 
 ```bash
-gh pr review {PR_NUMBER} --body "{review_body}" {--approve|--request-changes|--comment}
+gh pr review {pr} --body "{review_body}" {--approve|--request-changes|--comment}
 ```
 
-Output: "Review published on PR #{PR_NUMBER}: {approve/request-changes/comment}"
+Output: "Review published on PR #{pr}: {approve/request-changes/comment}"
 
 ---
 
