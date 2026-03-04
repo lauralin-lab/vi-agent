@@ -540,7 +540,7 @@ export default function LiveCameraView({
   useEffect(() => {
     doneClickedRef.current = false;
   }, []);
-  const handleDone = () => {
+  const handleDone = async () => {
     if (doneClickedRef.current) return;
     doneClickedRef.current = true;
     play('session.send');
