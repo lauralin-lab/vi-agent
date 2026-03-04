@@ -552,11 +552,22 @@ export default function LiveCameraView({
     const dispatch = livekit.sendDispatch;
     const mediaSnapshot = capturedMediaRef.current.slice();
 
+    // Trigger uploads for any media not yet uploaded
+    for (const item of capturedMediaRef.current) {
+      if (!item.s3Url && item.src) {
+        if (item.type === 'video' && item.blob) {
+          uploadVideoToS3(item.blob, 'webm', item.src);
+        } else {
+          uploadToS3(item.src);
+        }
+      }
+    }
+
     // Navigate immediately — session view streams content via LiveKit data channel
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
 
-    // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
+    // Wait for all uploads to complete (max 10s)
     const pendingPromises = [...uploadPromisesRef.current];
     if (pendingPromises.length > 0) {
       await Promise.race([
