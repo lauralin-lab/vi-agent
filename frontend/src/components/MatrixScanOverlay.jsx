@@ -19,30 +19,50 @@ export default function MatrixScanOverlay({
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
   const startRef = useRef(null);
-  const sizeRef = useRef({ w: 0, h: 0 }); // logical (CSS) dimensions
+  const sizeRef = useRef({ w: 0, h: 0 });
 
-  // ── constants matching the Flutter painter ──
   const DOT_RADIUS = 3;
   const BASE_ALPHA = 0.04;
   const PEAK_ALPHA = 0.9;
   const TRAIL_ROWS = 8;
+
+  const syncSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    // Read the CSS-laid-out size of the canvas itself (driven by inset-0 + w-full h-full)
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    if (w === sizeRef.current.w && h === sizeRef.current.h) return;
+    // Only set the rendering buffer — do NOT touch style.width/height
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    sizeRef.current = { w, h };
+  }, []);
 
   const draw = useCallback(
     (timestamp) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      const ctx = canvas.getContext('2d');
+      // Re-sync size every frame in case layout changed
+      syncSize();
+
+      const dpr = window.devicePixelRatio || 1;
       const { w: width, h: height } = sizeRef.current;
       if (!width || !height) return;
 
-      // Elapsed progress [0..1]  (-1 when idle)
+      const ctx = canvas.getContext('2d');
+      // Reset transform then apply DPR scale — draw in logical (CSS) pixels
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
       let progress = -1;
       if (startRef.current !== null) {
         const elapsed = timestamp - startRef.current;
         progress = Math.min(elapsed / duration, 1);
         if (progress >= 1) {
-          startRef.current = null; // sweep done
+          startRef.current = null;
           progress = -1;
         }
       }
@@ -69,9 +89,7 @@ export default function MatrixScanOverlay({
           }
         }
 
-        alpha = Math.max(0, Math.min(1, alpha));
-
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, alpha))})`;
 
         for (let c = 0; c < columns; c++) {
           const x = padding + c * gap;
@@ -82,43 +100,32 @@ export default function MatrixScanOverlay({
         }
       }
 
-      // Keep looping while sweep is running OR dots are visible
       if (isScanning) {
         rafRef.current = requestAnimationFrame(draw);
       }
-      // When idle we stop the loop — the last frame already drew base-alpha dots
     },
-    [duration, columns],
+    [duration, columns, syncSize],
   );
 
-  // ── Resize canvas to match container ──
+  // Resize observer — just sync buffer size + redraw
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.parentElement.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      const ctx = canvas.getContext('2d');
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      sizeRef.current = { w, h };
-      // Redraw at idle state after resize
+    const onResize = () => {
+      syncSize();
       requestAnimationFrame(draw);
     };
 
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas.parentElement);
-    return () => ro.disconnect();
-  }, [draw]);
+    // Initial sync
+    onResize();
 
-  // ── Trigger sweep when `active` flips to true ──
+    const ro = new ResizeObserver(onResize);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, [draw, syncSize]);
+
+  // Trigger sweep when `active` flips to true
   useEffect(() => {
     if (active) {
       startRef.current = performance.now();
@@ -133,7 +140,7 @@ export default function MatrixScanOverlay({
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 z-20 pointer-events-none"
+      className="absolute inset-0 w-full h-full z-20 pointer-events-none"
     />
   );
 }
