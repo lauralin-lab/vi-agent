@@ -262,12 +262,9 @@ class ApiClient {
   // S3 Upload endpoints
   async getPresignedUploadUrl(ext = 'jpg') {
     const params = new URLSearchParams({ ext });
-    // For anonymous users (no JWT), attach vi_user_id so the backend
-    // can authenticate via device-based auth.
-    if (!this.token) {
-      const viUserId = this.getViUserId();
-      if (viUserId) params.set('vi_user_id', viUserId);
-    }
+    // Always attach vi_user_id for device-based auth fallback
+    const viUserId = this.getViUserId();
+    if (viUserId) params.set('vi_user_id', viUserId);
     return this.request(`/api/upload/presign?${params.toString()}`);
   }
 

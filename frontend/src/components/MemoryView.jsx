@@ -316,16 +316,6 @@ function MemoryTabContent({ livekit }) {
       className="w-full h-full flex flex-col relative"
       style={{ background: '#F2F2F7', color: '#000' }}
     >
-      {/* Header */}
-      <div className="safe-area-top shrink-0 flex items-center justify-between px-6 pb-4">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
-            <ChevronLeft size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
-          </button>
-          <h1 className="font-bold" style={{ fontSize: 28, color: '#000' }}>Memory</h1>
-        </div>
-      </div>
-
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-3 pb-24 flex flex-col">
         {loading ? (
@@ -481,7 +471,7 @@ function MemoryTabContent({ livekit }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
 
