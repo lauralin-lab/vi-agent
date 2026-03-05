@@ -1,6 +1,25 @@
 # XXL Dev 部署手册
 
-> **本文档替代 `/dev` 命令。** 直接告诉 Claude "部署" 或 "部署 frontend" 即可，Claude 按此文档执行。
+> **日常部署用本文档**，直接告诉 Claude "部署" 或 "部署 frontend" 即可。
+> **只有以下情况需要跑 `/dev`**（见下方说明）。
+
+## 什么时候跑 `/dev`
+
+| 情况 | 用什么 |
+|------|--------|
+| 日常代码更新部署 | 本文档（告诉 Claude "部署"） |
+| **首次部署 / 换服务器** | `/dev`（创建实例、分配端口、初始化 .env） |
+| **`.env` 变了**（新增/修改 API Key、改环境变量） | `/dev`（会从本地 `.env` 重新上传到服务器） |
+| **`deploy/dev-environment/` 模板有改动** | `/dev`（会自动同步模板到服务器） |
+| **服务器 IP 变了** | 修改 `.dev.local` 中的 IP，然后跑 `/dev` |
+
+> 简单说：代码改了 → 本文档部署；环境/配置改了 → `/dev`。
+
+## 服务器信息
+
+- **IP**: `34.172.9.61`
+- **SSH**: `ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61`
+- **本地配置**: `.dev.local`（存 DEV_NAME、SSH_KEY，已 gitignore）
 
 ## 怎么用
 
@@ -57,10 +76,12 @@ Claude 会自动判断当前分支、打 tag、构建、部署、验证，全程
 ### 0. 本地检查
 
 ```bash
-git status --porcelain          # 确保干净
+git status --porcelain          # 确保干净（dist/ 已在 .gitignore，不影响）
 git push                        # 确保当前分支已推送到 remote
 ssh-add -l || ssh-add ~/.ssh/id_rsa   # 确保 SSH agent 有 key
 ```
+
+> **注意**：`dist/` 目录（前端构建产物）已在 `.gitignore` 中，不会被 git 跟踪，打 tag 时自动忽略，无需手动处理。
 
 ### 1. 同步模板（仅 `deploy/dev-environment/` 有改动时需要）
 
@@ -286,13 +307,21 @@ $SSH "docker image prune -f"
 
 ---
 
-## .env（一般不改）
+## .env（改了需要跑 `/dev`）
 
-路径：`/opt/vi-agent/instances/xxl/.env`
+路径：
+- **本地**: 项目根目录 `.env`（源头）
+- **服务器**: `/opt/vi-agent/instances/xxl/.env`（部署副本）
 
 包含 LiveKit / Google / Anthropic API Keys + 自动生成的 DB/Redis/JWT 密钥。
 
-如需更新：
+**如果本地 `.env` 有改动**（新增 API Key、修改环境变量等）：
+- 跑 `/dev` → 会自动从本地 `.env` 读取并上传到服务器
+- `/dev` 同时会重新部署，确保新环境变量生效
+
+**紧急手动修改**（不推荐，下次 `/dev` 会被覆盖）：
 ```bash
 ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61 "sudo vi /opt/vi-agent/instances/xxl/.env"
+# 修改后重启对应服务
+ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61 "cd /opt/vi-agent/instances/xxl && sudo docker compose restart"
 ```
