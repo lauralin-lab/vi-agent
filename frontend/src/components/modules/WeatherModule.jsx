@@ -25,15 +25,15 @@ function conditionGradient(condition) {
 }
 
 export default function WeatherModule({ data, onAction }) {
-  if (!data) return null;
-
-  const { location, current, forecast } = data;
+  const { location, current, forecast } = data || {};
   const scrollRef = useRef(null);
 
   const gradient = useMemo(
     () => conditionGradient(current?.condition),
     [current?.condition],
   );
+
+  if (!data) return null;
 
   return (
     <GlassCard padding={false}>

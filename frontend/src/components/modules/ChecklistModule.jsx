@@ -11,9 +11,7 @@ import {
 } from './shared';
 
 export default function ChecklistModule({ data, onAction }) {
-  if (!data) return null;
-
-  const { title, items: initialItems = [] } = data;
+  const { title, items: initialItems = [] } = data || {};
   const [checkedMap, setCheckedMap] = useState(() => {
     const map = {};
     initialItems.forEach((item, i) => {
@@ -53,9 +51,6 @@ export default function ChecklistModule({ data, onAction }) {
     return groups;
   }, [initialItems]);
 
-  const categoryKeys = Object.keys(grouped);
-  const hasCategories = categoryKeys.length > 1 || (categoryKeys.length === 1 && categoryKeys[0] !== '');
-
   const copyList = useCallback(() => {
     const text = initialItems
       .map((item, i) => `${checkedMap[i] ? '[x]' : '[ ]'} ${item.text}`)
@@ -71,6 +66,11 @@ export default function ChecklistModule({ data, onAction }) {
     }
     onAction?.({ type: 'share' });
   }, [initialItems, title, onAction]);
+
+  if (!data) return null;
+
+  const categoryKeys = Object.keys(grouped);
+  const hasCategories = categoryKeys.length > 1 || (categoryKeys.length === 1 && categoryKeys[0] !== '');
 
   return (
     <GlassCard>

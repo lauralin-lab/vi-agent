@@ -20,7 +20,8 @@ export function useAuth() {
           setLoading(false);
         });
     } else {
-      setLoading(false);
+      // Defer to avoid synchronous setState in effect body
+      queueMicrotask(() => setLoading(false));
     }
   }, []);
 

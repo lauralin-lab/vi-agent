@@ -69,7 +69,7 @@ export function useRealtimeEvents(viUserId, livekitConnected, onNanoClawEvent) {
   const reconnectAttemptRef = useRef(0);
   // Stable ref for the callback to avoid effect re-runs
   const onNanoClawEventRef = useRef(onNanoClawEvent);
-  onNanoClawEventRef.current = onNanoClawEvent;
+  useEffect(() => { onNanoClawEventRef.current = onNanoClawEvent; }, [onNanoClawEvent]);
 
   // Close existing EventSource
   const closeEventSource = useCallback(() => {
@@ -81,7 +81,7 @@ export function useRealtimeEvents(viUserId, livekitConnected, onNanoClawEvent) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-    setSseConnected(false);
+    queueMicrotask(() => setSseConnected(false));
   }, []);
 
   useEffect(() => {

@@ -16,12 +16,12 @@ import { resolveTemplate } from './TemplateEngine';
 
 // ── STT noise filter ──
 // Deepgram/Google STT sometimes transcribes silence as literal noise tokens.
-const NOISE_PATTERN = /^\s*[<\[(]?\s*noise\s*[>\]).]?\s*$/i;
+const NOISE_PATTERN = /^\s*[<[(]?\s*noise\s*[>).]?\s*$/i;
 function isNoiseTranscript(text) {
   if (!text || text.trim().length === 0) return true;
   if (NOISE_PATTERN.test(text)) return true;
   // Also catch repeated noise tokens like "<noise> <noise>"
-  const stripped = text.replace(/[<\[(>\]).\s]/g, '');
+  const stripped = text.replace(/[<[(>).\s]/g, '');
   if (/^(noise)+$/i.test(stripped)) return true;
   return false;
 }
@@ -139,7 +139,7 @@ function StaticHtmlBlock({ block, onAction }) {
       if (el) el.classList.toggle('hidden');
     }
   });
-<\/script>`;
+</script>`;
 
   const wrappedHtml = useMemo(() => {
     if (!block.content) return '';
@@ -148,7 +148,7 @@ function StaticHtmlBlock({ block, onAction }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <style>${IFRAME_DESIGN_CSS}</style>
   ${bridgeScript}
 </head>
@@ -559,12 +559,16 @@ function ActionBar({ actionCard, onSelect }) {
 // ═══════════════════════════════════════════════════════════
 
 function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut }) {
+  const shouldHide = hasCanvasContent || sessionTimedOut;
   const [showProgress, setShowProgress] = useState(false);
   useEffect(() => {
-    if (hasCanvasContent || sessionTimedOut) { setShowProgress(false); return; }
+    if (shouldHide) return;
     const timer = setTimeout(() => setShowProgress(true), 4000);
     return () => clearTimeout(timer);
-  }, [hasCanvasContent, sessionTimedOut]);
+  }, [shouldHide]);
+  useEffect(() => {
+    if (shouldHide) queueMicrotask(() => setShowProgress(false));
+  }, [shouldHide]);
   if (!showProgress) return null;
   const message = taskProgress?.message || infoBar?.message || 'Analyzing...';
   return (

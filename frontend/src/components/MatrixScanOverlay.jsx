@@ -26,6 +26,8 @@ export default function MatrixScanOverlay({
   const PEAK_ALPHA = 0.9;
   const TRAIL_ROWS = 8;
 
+  const drawRef = useRef(null);
+
   const syncSize = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -101,11 +103,14 @@ export default function MatrixScanOverlay({
       }
 
       if (isScanning) {
-        rafRef.current = requestAnimationFrame(draw);
+        rafRef.current = requestAnimationFrame(drawRef.current);
       }
     },
     [duration, columns, syncSize],
   );
+
+  // Keep drawRef in sync so the rAF self-reference always uses the latest callback
+  useEffect(() => { drawRef.current = draw; }, [draw]);
 
   // Resize observer — just sync buffer size + redraw
   useEffect(() => {

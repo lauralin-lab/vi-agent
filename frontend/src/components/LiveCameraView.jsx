@@ -97,7 +97,7 @@ export default function LiveCameraView({
   // Media capture state
   const [capturedMedia, setCapturedMedia] = useState([]);
   const capturedMediaRef = useRef(capturedMedia);
-  capturedMediaRef.current = capturedMedia;
+  useEffect(() => { capturedMediaRef.current = capturedMedia; }, [capturedMedia]);
   // Track pending upload promises so handleDone can wait for them
   const uploadPromisesRef = useRef([]);
   const [showGallery, setShowGallery] = useState(false);
@@ -157,10 +157,10 @@ export default function LiveCameraView({
   const overlayTimerRef = useRef(null);
 
   // Pre-compute emoji rain positions/sizes once per rain trigger (avoids re-randomizing on re-render)
-  const emojiRainParticles = useRef([]);
+  const [emojiRainParticles, setEmojiRainParticles] = useState([]);
   useEffect(() => {
     if (emojiRain) {
-      emojiRainParticles.current = Array.from({ length: 25 }, (_, i) => ({
+      setEmojiRainParticles(Array.from({ length: 25 }, (_, i) => ({
         x: Math.random() * 90 + 5,
         scale: 0.5 + Math.random(),
         fontSize: 20 + Math.random() * 20,
@@ -168,7 +168,7 @@ export default function LiveCameraView({
         duration: 2 + Math.random() * 2,
         rotate: Math.random() * 360,
         emojiIndex: i % emojiRain.emojis.length,
-      }));
+      })));
     }
   }, [emojiRain]);
 
@@ -882,7 +882,7 @@ export default function LiveCameraView({
         <AnimatePresence>
           {emojiRain && (
             <div className="absolute inset-0 z-[25] pointer-events-none overflow-hidden">
-              {emojiRainParticles.current.map((p, i) => (
+              {emojiRainParticles.map((p, i) => (
                 <motion.div
                   key={`emoji-${emojiRain.emojis.join('')}-${i}`}
                   initial={{ y: -50, x: `${p.x}%`, opacity: 1, scale: p.scale }}

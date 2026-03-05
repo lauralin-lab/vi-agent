@@ -105,6 +105,7 @@ export default function ModuleRenderer({ module_type, data, onAction }) {
 }
 
 /** Extract a title from module data for CanvasCard header. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function extractModuleTitle(module_type, data) {
   if (!data) return module_type;
 

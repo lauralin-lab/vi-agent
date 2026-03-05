@@ -43,6 +43,7 @@ const AGENT_STATUS_CONFIG = {
     waiting: { label: 'Ready', dotColor: 'bg-green-400/80', textColor: 'text-green-400/80', glowColor: 'rgba(74,222,128,0.3)' },
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function computeAgentStatus({ agentIdentity, greetingReceived, userSpeaking, agentGenerating, cameraActive, connectionQuality }) {
     if (!agentIdentity) return 'offline';
     if (connectionQuality === 'lost') return 'weak_connection';

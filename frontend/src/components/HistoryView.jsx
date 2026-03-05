@@ -32,14 +32,14 @@ function extractPhotos(session) {
 // ── Active session card — iOS light ──
 function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
     const photos = extractPhotos(session);
-    const [, forceUpdate] = useState(0);
+    const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
-        const timer = setInterval(() => forceUpdate(n => n + 1), 15000);
+        const timer = setInterval(() => setNow(Date.now()), 15000);
         return () => clearInterval(timer);
     }, []);
 
-    const elapsed = session.created_at ? Date.now() - new Date(session.created_at).getTime() : 0;
+    const elapsed = session.created_at ? now - new Date(session.created_at).getTime() : 0;
     const isStale = elapsed > 600000;
 
     const statusLabel = session.status === 'pending' ? 'Queued' : 'Processing';

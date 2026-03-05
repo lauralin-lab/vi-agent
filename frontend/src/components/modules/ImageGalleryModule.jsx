@@ -106,9 +106,7 @@ function Lightbox({ images, startIndex, onClose }) {
 }
 
 export default function ImageGalleryModule({ data, onAction }) {
-  if (!data) return null;
-
-  const { title, images = [] } = data;
+  const { title, images = [] } = data || {};
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const scrollRef = useRef(null);
@@ -122,7 +120,7 @@ export default function ImageGalleryModule({ data, onAction }) {
     setActiveIndex(Math.round(scrollLeft / (itemWidth + gap)));
   }, []);
 
-  if (images.length === 0) return null;
+  if (!data || images.length === 0) return null;
 
   return (
     <GlassCard>

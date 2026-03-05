@@ -132,6 +132,7 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
 
   // Agent status state machine signals
   const [greetingReceived, setGreetingReceived] = useState(false);
+  const greetingReceivedRef = useRef(false);
 
   // Refs for RPC handler access to current state
   const chatTextRef = useRef('');
@@ -497,11 +498,9 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   }, []);
 
   // Mark greeting received when agent first speaks
-  const greetingReceivedRef = useRef(false);
   useEffect(() => {
-    if (lastAgentText && !greetingReceivedRef.current) {
-      greetingReceivedRef.current = true;
-      if (!greetingReceived) setGreetingReceived(true);
+    if (lastAgentText && !greetingReceived) {
+      queueMicrotask(() => setGreetingReceived(true));
     }
   }, [lastAgentText, greetingReceived]);
 

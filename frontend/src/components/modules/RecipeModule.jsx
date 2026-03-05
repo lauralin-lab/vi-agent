@@ -11,12 +11,10 @@ import {
 } from './shared';
 
 export default function RecipeModule({ data, onAction }) {
-  if (!data) return null;
-
   const {
     title, image_url, prep_time, cook_time,
     servings, ingredients = [], steps = [],
-  } = data;
+  } = data || {};
 
   const [checkedIngredients, setCheckedIngredients] = useState({});
 
@@ -31,6 +29,8 @@ export default function RecipeModule({ data, onAction }) {
     navigator.clipboard?.writeText(text);
     onAction?.({ type: 'copy_ingredients' });
   }, [ingredients, onAction]);
+
+  if (!data) return null;
 
   return (
     <GlassCard padding={false}>
