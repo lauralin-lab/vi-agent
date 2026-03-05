@@ -34,6 +34,11 @@ docker-compose.override.yml
 ssl
 *.egg-info
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+
 # Claude Code runtime artifacts (not committed)
 .claude/worktrees/
 .claude/config/self-drive.json

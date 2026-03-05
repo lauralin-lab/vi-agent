@@ -1,0 +1,195 @@
+name: Deploy
+
+on:
+  # Auto-deploy to staging when CI passes on main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+  # Manual deploy to any environment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - staging
+          - prod
+        default: staging
+      ref:
+        description: "Git ref to deploy (branch/tag/SHA). Leave empty for HEAD."
+        required: false
+        default: ""
+
+env:
+  DOCKER_ORG: collov
+  SERVICES: api-server frontend nanoclaw realtime
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine environment and ref
+  # ---------------------------------------------------------------------------
+  prepare:
+    runs-on: ubuntu-latest
+    # Skip if CI workflow failed (workflow_run trigger)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      ref: ${{ steps.env.outputs.ref }}
+      image_tag: ${{ steps.env.outputs.image_tag }}
+    steps:
+      - name: Determine deploy parameters
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ inputs.environment }}"
+            REF="${{ inputs.ref }}"
+            if [ -z "$REF" ]; then
+              REF="${{ github.sha }}"
+            fi
+          else
+            # workflow_run from CI on main → auto-deploy to staging
+            ENV="staging"
+            REF="${{ github.event.workflow_run.head_sha }}"
+          fi
+
+          # Image tag: use ref directly if it's a named ref (tag/branch),
+          # or shorten to 7 chars if it looks like a SHA
+          if echo "$REF" | grep -qE '^[0-9a-f]{40}$'; then
+            TAG_SUFFIX=$(echo "$REF" | head -c 7)
+          else
+            TAG_SUFFIX="$REF"
+          fi
+          IMAGE_TAG="${ENV}-${TAG_SUFFIX}"
+
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+          echo "### Deploy Parameters" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Parameter | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${ENV}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Ref | \`${REF}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Tag | \`${IMAGE_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Build and push Docker images
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api-server, frontend, nanoclaw, realtime]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_ORG }}/vi-agent-${{ matrix.service }}:${{ needs.prepare.outputs.image_tag }}
+            ${{ env.DOCKER_ORG }}/vi-agent-${{ matrix.service }}:latest
+          build-args: |
+            ${{ matrix.service == 'frontend' && 'VITE_API_URL=' || '' }}
+            ${{ matrix.service == 'frontend' && 'VITE_LIVEKIT_URL=' || '' }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # ---------------------------------------------------------------------------
+  # Deploy to target environment
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: [prepare, build-and-push]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - name: Checkout (for compose files)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            APP_DIR="/opt/vi-agent"
+            cd "$APP_DIR"
+
+            echo "=== Deploying vi-agent (${{ needs.prepare.outputs.environment }}) ==="
+            echo "Image tag: ${{ needs.prepare.outputs.image_tag }}"
+
+            # Set image tag for docker-compose.deploy.yml
+            export IMAGE_TAG="${{ needs.prepare.outputs.image_tag }}"
+
+            # Pull new images
+            echo "Pulling images..."
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull
+
+            # Bring up services with new images
+            echo "Starting services..."
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d
+
+            # Wait for API health
+            echo "Waiting for API server health..."
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "API server is healthy."
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "ERROR: API server did not become healthy within 60s"
+                echo "=== Container status ==="
+                docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps
+                echo "=== API server logs ==="
+                docker compose -f docker-compose.yml -f docker-compose.deploy.yml logs --tail=50 api-server
+                exit 1
+              fi
+              sleep 2
+            done
+
+            # Check frontend
+            FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:80 2>/dev/null || echo "error")
+            echo "Frontend: HTTP ${FRONTEND_STATUS}"
+
+            if [ "$FRONTEND_STATUS" != "200" ] && [ "$FRONTEND_STATUS" != "301" ] && [ "$FRONTEND_STATUS" != "302" ]; then
+              echo "WARNING: Frontend not returning expected status"
+            fi
+
+            echo ""
+            echo "=== Deployment Complete ==="
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps
+            echo "Image tag: ${{ needs.prepare.outputs.image_tag }}"
+
+      - name: Post deploy summary
+        if: always()
+        run: |
+          echo "### Deployment Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${{ needs.prepare.outputs.environment }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Tag | \`${{ needs.prepare.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | \`${{ job.status }}\` |" >> "$GITHUB_STEP_SUMMARY"

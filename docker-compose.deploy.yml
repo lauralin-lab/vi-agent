@@ -1,0 +1,18 @@
+# Docker Compose override for deployed environments (staging/prod)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d
+#
+# Set IMAGE_TAG env var before running:
+#   export IMAGE_TAG=main-abc1234
+
+services:
+  api-server:
+    image: collov/vi-agent-api-server:${IMAGE_TAG:-latest}
+
+  vi-realtime:
+    image: collov/vi-agent-realtime:${IMAGE_TAG:-latest}
+
+  nanoclaw:
+    image: collov/vi-agent-nanoclaw:${IMAGE_TAG:-latest}
+
+  frontend:
+    image: collov/vi-agent-frontend:${IMAGE_TAG:-latest}
