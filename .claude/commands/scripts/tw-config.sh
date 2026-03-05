@@ -5,22 +5,22 @@
 #   bash tw-config.sh <key> [default]
 #
 # EXAMPLES:
-#   bash tw-config.sh project.test_command ""
-#   bash tw-config.sh label_prefix.status "status:"
+#   bash tw-config.sh labels.mission "mission"
+#   bash tw-config.sh labels.status_prefix "status:"
 #   bash tw-config.sh conventions.base_branch "main"
 #   bash tw-config.sh versions.current ""
-#   bash tw-config.sh worktree.enabled "false"
+#   bash tw-config.sh quality.ci "false"
 #
 # KEY FORMAT: dot-notation for nested keys (up to 2 levels)
-#   - "project.test_command"  → yaml: project:\n  test_command: "..."
-#   - "label_prefix.status"   → yaml: label_prefix:\n  status: "status:"
-#   - "schema_version"        → yaml: schema_version: 1
+#   - "labels.mission"        → yaml: labels:\n  mission: "mission"
+#   - "labels.status_prefix"  → yaml: labels:\n  status_prefix: "status:"
+#   - "schema_version"        → yaml: schema_version: 3
 #
 # HANDLES:
-#   - Values containing colons (e.g., label_prefix.status: "status:")
+#   - Values containing colons (e.g., labels.status_prefix: "status:")
 #   - Quoted and unquoted values
 #   - Missing keys (returns default)
-#   - Both .teamwork/config.yml and .teamspace/config.yml
+#   - Reads .teamwork/config.yml
 
 KEY="${1:-}"
 DEFAULT="${2:-}"
@@ -33,8 +33,6 @@ fi
 # Detect config file
 if [ -f ".teamwork/config.yml" ]; then
   CONFIG_FILE=".teamwork/config.yml"
-elif [ -f ".teamspace/config.yml" ]; then
-  CONFIG_FILE=".teamspace/config.yml"
 else
   echo "$DEFAULT"
   exit 0

@@ -19,48 +19,43 @@ enhance/E001-alembic-migration    # 增强
 
 ---
 
-## Teamspace — 团队协作看板
+## Teamwork — 团队协作系统
 
-项目使用 `.teamspace/` 目录作为团队级任务看板（AI-Native Agile）。
+项目使用 **Push-based Mission Contract** 系统进行团队协作。Leader 创建并分配任务，Member 执行并报告。
 
 ### 核心文件
 
 | 文件 | 用途 |
 |------|------|
-| `.teamspace/config.yml` | 团队配置：成员、状态定义、约定 |
-| `.teamspace/board.md` | 📋 Kanban 主看板 — 打开就能看到所有人在做什么 |
-| `.teamspace/members/{id}.md` | 个人状态和工作日志 |
-| `.teamspace/archive/` | 按月归档已完成任务 |
+| `.teamwork/config.yml` | 团队配置：成员、角色、通知、质量门 |
+| **GitHub Issues** | Mission Contract 源头 — label: `mission` |
 
 ### 工作流
 
+**Leader（创建 & 审查）：**
 ```bash
-# 1. 查看 board，选择一个 Queued 任务
-cat .teamspace/board.md
-
-# 2. 认领任务：编辑 board.md
-#    把任务从 Queued 移到 In Progress
-#    填写 Owner, Branch, Worktree, Started
-
-# 3. 创建 worktree + 分支（见下节）
-git worktree add ../vi-wt-{slug} -b {type}/T-{id}-{slug}
-
-# 4. 开发（可选用 /drive 模式）
-cd ../vi-wt-{slug}
-
-# 5. 完成后更新 board.md：WIP → Done
+/team                  # 团队面板 — 查看成员状态、审查队列
+/create-mc             # 创建 MC 并分配给成员
+/create-milestone      # 创建里程碑，可批量创建 MC
+/review-mc             # 审查已提交的 MC（approve / request changes）
 ```
 
-### 与 Drive Mode 集成
+**Member（执行 & 提交）：**
+```bash
+/team                  # 个人面板 — 查看分配给我的 MC
+/get-mc                # 查看 MC 详情 + checkout 分支
+/complete-mc           # 提交完成 — push + PR + 通知 Leader
+```
 
-- `/drive T-044` — 自动从 board 拉取任务详情并关联
-- Mission 完成时自动更新 board.md 和 members/ 文件
-- `/self-drive` — 优先从 board 的 Queued 任务中提取，而非纯分析生成
+### 生命周期
 
-### 任务 ID 约定
-
-- 格式: `T-{三位数字}` (如 `T-042`)
-- 递增分配，下一个可用 ID 在 `config.yml` 的 `next_id` 字段
+```
+Leader: /create-mc @member → Issue 创建，成员收到通知
+Member: /get-mc → 查看详情，checkout 分支
+        (code, test, commit)
+Member: /complete-mc → PR 创建，Leader 收到通知
+Leader: /review-mc → approve + merge，或 request changes
+```
 
 ---
 
@@ -213,7 +208,7 @@ cd realtime && uv run python -m pytest tests/ -v
 
 ---
 
-## 团队协作模式 — Mission Contract Pull System
+## 团队协作模式 — Mission Contract Push System
 
 本项目使用三个核心概念驱动团队协作：
 
@@ -221,18 +216,18 @@ cd realtime && uv run python -m pytest tests/ -v
 
 | 概念 | 定义 | 载体 |
 |------|------|------|
-| **Mission Contract** | 原子任务，独立可合入 | `.teamspace/board.md` 上的一个 task |
+| **Mission Contract** | 原子任务，独立可合入 | GitHub Issue (label: `mission`) |
 | **Role** | 人 + Claude Code 的组合 | `claude --agent feature-lead` |
 | **Product** | main 分支上的产品 | 衡量指标 = 合入 main 的数目 |
 
 ### Role 的工作循环
 
 ```
-pull(从 board 领取 MC) → execute(端到端实现) → resolve(解决冲突) → merge(合入 main) → pull(下一个)
+receive(Leader 分配 MC) → execute(端到端实现) → resolve(解决冲突) → submit(PR + 通知) → receive(下一个)
 ```
 
 ```bash
-# 激活 Role — agent 自动读取 board 并呈现下一个 Mission Contract
+# 激活 Role — agent 自动读取分配的 MC 并执行
 claude --agent feature-lead
 
 # 或手动创建隔离环境:
@@ -269,9 +264,12 @@ claude --agent feature-lead
 
 | 命令 | 用途 |
 |------|------|
-| `/set-role` | 设置角色身份 — 首次进来先注册，关联 teamspace |
-| `/get-mission` | 领取 Mission Contract — 从 board 拉取任务，claim 并创建隔离环境 |
-| `/complete-mission` | 提交 Mission Contract — QA 验证、创建 PR、合入 main、更新 board |
+| `/team` | 团队面板 — 首次自动 onboard，后续显示 dashboard |
+| `/create-mc` | 创建 MC 并分配给成员（Leader） |
+| `/get-mc` | 查看分配给我的 MC（Member） |
+| `/complete-mc` | 提交完成的 MC — PR + 通知 Leader |
+| `/review-mc` | 审查已提交的 MC（Leader） |
+| `/create-milestone` | 创建里程碑 + 批量 MC（Leader） |
 
 **开发工具：**
 

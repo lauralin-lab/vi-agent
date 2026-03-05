@@ -3,18 +3,18 @@
 ## Three Core Concepts
 
 ### 1. Mission Contract (原子任务)
-A single task represented as a **GitHub Issue** (label: `mission-contract`).
+A single task represented as a **GitHub Issue** (label: `mission`).
 Each Mission Contract has clear scope, success criteria, and is independently mergeable.
-A Role pulls one via `/get-mission`, executes it end-to-end, resolves all conflicts
-with main, creates a PR with `Closes #N`, merges, then pulls the next one.
+Leader creates and assigns MCs via `/create-mc`. Member views assigned MCs via `/get-mc`,
+executes end-to-end, submits via `/complete-mc`, leader reviews via `/review-mc`.
 
-**Source of Truth: GitHub Issues** — not board.md (which is auto-generated).
+**Source of Truth: GitHub Issues** (label: `mission`)
 
 ### 2. Role (人 + Claude Code)
 A person paired with Claude Code forms a Role. Each Role:
 - Activates with `claude --agent feature-lead`
-- Continuously pulls Mission Contracts from the board
-- Drives each one to completion and merge
+- Receives assigned Mission Contracts from the leader
+- Drives each one to completion and submits for review
 - The human watches, the agent drives
 
 ### 3. Product (main 分支)
@@ -26,41 +26,41 @@ The product is what's on main. Every merge makes the product better.
 ## How It Works
 
 ```
-Role opens Claude Code
+Leader creates MC via /create-mc
      │
      ▼
-Agent queries GitHub Issues → presents next available Mission Contract
+Member receives assignment → /get-mc shows details + branch
      │
      ▼
-Role claims it → worktree + branch + isolated ports
-     │
-     ▼
-Agent drives end-to-end implementation
+Checkout branch → drive end-to-end implementation
      │
      ▼
 Rebase on latest main → resolve ALL conflicts
      │
      ▼
-PR (Closes #N) → CI passes → merge to main → Issue auto-closed
+/complete-mc → PR (Closes #N) → notify leader
      │
      ▼
-Agent presents next Mission Contract → repeat
+Leader /review-mc → approve + merge → Issue auto-closed
+     │
+     ▼
+Member checks /get-mc for next assignment → repeat
 ```
 
 ### Start Working
 
 ```bash
-# 1. 设置身份（首次）
-/set-role
+# 1. 加入团队（首次）
+/team
 
-# 2. 领取任务
-/get-mission
+# 2. 查看分配的任务
+/get-mc
 
 # 3. 执行（用 drive 模式）
-/drive T-{xxx}
+/drive
 
 # 4. 提交完成
-/complete-mission
+/complete-mc
 ```
 
 或直接用 Agent 模式：
@@ -68,12 +68,28 @@ Agent presents next Mission Contract → repeat
 claude --agent feature-lead
 ```
 
+### Leader Workflow
+
+```bash
+# 创建里程碑（可选，批量创建 MC）
+/create-milestone
+
+# 创建并分配任务
+/create-mc fix camera permission @xxLe
+
+# 查看团队状态
+/team
+
+# 审核提交的任务
+/review-mc
+```
+
 ### Team Member Setup
 
 1. Set git identity: `git config user.name "{name}"`
 2. Authenticate GitHub CLI: `gh auth login` (use your org account)
 3. Run `.claude/install.sh` (once, for hooks and notifications)
-4. Run `/set-role` to register, verify GitHub auth, and choose your domain role
+4. Run `/team` to onboard, verify GitHub auth, and see your dashboard
 
 ---
 
@@ -81,29 +97,18 @@ claude --agent feature-lead
 
 | File | Purpose |
 |------|---------|
-| **GitHub Issues** | Mission Contracts — source of truth (label: `mission-contract`) |
-| `.teamspace/board.md` | Auto-generated board view (`scripts/sync-board.sh`) |
-| `.teamspace/config.yml` | Team config, members, roles, GitHub integration |
+| **GitHub Issues** | Mission Contracts — source of truth (label: `mission`) |
+| `.teamwork/config.yml` | Team config, members, roles, notifications, GitHub integration |
 | `.github/ISSUE_TEMPLATE/mission-contract.yml` | Issue template for creating MCs |
 | `.claude/agents/feature-lead.md` | The Role agent — `claude --agent feature-lead` |
 | `.claude/agents/code-reviewer.md` | Auto PR reviewer |
-| `.claude/drive/v0.1-definition/v0.1-spec.md` | Current version quality gates |
-| `scripts/setup-worktree.sh` | One-click isolated dev environment |
-| `scripts/setup-github-labels.sh` | Create label taxonomy (run once) |
-| `scripts/sync-board.sh` | Generate board.md from GitHub Issues |
-| `scripts/migrate-board-to-issues.sh` | One-time migration of existing tasks |
-
-## Port Isolation (parallel development)
-
-Each worktree gets its own ports via `.env` — no conflicts between Roles:
-
-| Role | API | Frontend | Gateway |
-|------|-----|----------|---------|
-| Default | 8000 | 5173 | 18789 |
-| Offset +100 | 8100 | 5273 | 18889 |
-| Offset +200 | 8200 | 5373 | 18989 |
-
-`scripts/setup-worktree.sh` handles this automatically.
+| `.claude/commands/create-mc.md` | Leader: create + assign MC |
+| `.claude/commands/get-mc.md` | Member: view assigned MCs |
+| `.claude/commands/complete-mc.md` | Member: submit completed MC |
+| `.claude/commands/review-mc.md` | Leader: review + approve/reject |
+| `.claude/commands/create-milestone.md` | Leader: create milestone with batch MCs |
+| `.claude/commands/team.md` | Onboard + dashboard |
+| `.claude/commands/scripts/tw-*.sh` | Shared helper scripts (config, git, label, notify, etc.) |
 
 ## Skill 版本检查（主动执行）
 
@@ -123,7 +128,7 @@ Each worktree gets its own ports via `.env` — no conflicts between Roles:
 ## Code Standards
 
 - Commit: `type(scope): description`
-- Branch: `{type}/{task-id}-{slug}`
+- Branch: `mission/{issue}-{slug}`
 - PR target: always `main`
 - Rebase before PR: resolve conflicts BEFORE creating PR
 - No secrets, no absolute paths in committed code
@@ -131,4 +136,4 @@ Each worktree gets its own ports via `.env` — no conflicts between Roles:
 ## Architecture
 
 4-service monorepo: `api-server/` (Python/FastAPI), `realtime/` (Python/LiveKit),
-`gateway/` (TypeScript/Node), `frontend/` (React/Vite). See `README.md`.
+`nanoclaw/` (TypeScript), `frontend/` (React/Vite). See `README.md`.

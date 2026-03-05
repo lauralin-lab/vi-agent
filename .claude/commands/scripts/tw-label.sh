@@ -21,7 +21,7 @@
 #   2 — label operation failed (gh error)
 #   3 — verification failed (label mismatch)
 #
-# READS: .teamwork/config.yml or .teamspace/config.yml via tw-config.sh
+# READS: .teamwork/config.yml via tw-config.sh
 
 set -euo pipefail
 
@@ -29,11 +29,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TW_CONFIG="$SCRIPT_DIR/tw-config.sh"
 
 # Read status prefix from config
-STATUS_PREFIX=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
+STATUS_PREFIX=$(bash "$TW_CONFIG" labels.status_prefix "" 2>/dev/null)
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
 
-# All known status values
-ALL_STATUSES="queued wip review done blocked"
+# All known status values (v3: no queued — push model assigns directly as wip)
+ALL_STATUSES="wip review done blocked"
 
 usage() {
   echo "Usage:" >&2

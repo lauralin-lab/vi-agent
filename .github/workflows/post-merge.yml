@@ -62,7 +62,7 @@ jobs:
                   const total = issue.data.milestone.closed_issues + issue.data.milestone.open_issues;
                   await github.rest.issues.createComment({
                     ...context.repo, issue_number: num,
-                    body: `🎉 Milestone **${issue.data.milestone.title}** is now 100% complete (${total} issues). Ready for \`/team-release\`.`
+                    body: `🎉 Milestone **${issue.data.milestone.title}** is now 100% complete (${total} issues). All missions complete.`
                   });
                 }
               }

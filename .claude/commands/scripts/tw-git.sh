@@ -3,7 +3,7 @@
 #
 # USAGE:
 #   bash tw-git.sh ensure-base                        # Checkout base_branch, pull latest
-#   bash tw-git.sh create-branch ISSUE SLUG USER      # Create branch from pattern
+#   bash tw-git.sh create-branch ISSUE SLUG [USER]     # Create branch from pattern
 #   bash tw-git.sh current                             # Print current branch name
 #   bash tw-git.sh protect-check                       # Exit 3 if on protected branch
 #   bash tw-git.sh push [BRANCH]                       # Push with -u (default: current branch)
@@ -24,7 +24,7 @@
 #   2 — git operation failed
 #   3 — safety check failed (e.g., on protected branch)
 #
-# READS: .teamwork/config.yml or .teamspace/config.yml via tw-config.sh
+# READS: .teamwork/config.yml via tw-config.sh
 
 set -euo pipefail
 
@@ -46,15 +46,11 @@ _production_branch() {
 
 _branch_pattern() {
   local p
-  # Try conventions.branch_pattern first, then worktree.branch_pattern (single call with fallback)
   p=$(bash "$TW_CONFIG" conventions.branch_pattern "" 2>/dev/null)
-  if [ -z "$p" ]; then
-    p=$(bash "$TW_CONFIG" worktree.branch_pattern "mission/{issue}-{slug}-{user}" 2>/dev/null)
-  fi
   # CRITICAL: Do NOT use ${p:-default} when default contains {} — bash closes
   # parameter expansion at first unmatched }, appending leftover text to output.
   if [ -z "$p" ]; then
-    p="mission/{issue}-{slug}-{user}"
+    p="mission/{issue}-{slug}"
   fi
   echo "$p"
 }
@@ -81,8 +77,8 @@ cmd_ensure_base() {
 
 cmd_create_branch() {
   local issue="${1:-}" slug="${2:-}" user="${3:-}"
-  if [ -z "$issue" ] || [ -z "$slug" ] || [ -z "$user" ]; then
-    echo "ERROR: create-branch requires ISSUE, SLUG, USER" >&2
+  if [ -z "$issue" ] || [ -z "$slug" ]; then
+    echo "ERROR: create-branch requires ISSUE and SLUG (USER optional)" >&2
     exit 1
   fi
 

@@ -35,7 +35,7 @@ create_mc() {
   local extra_labels="${7:-}"
   local state="${8:-open}"
 
-  local labels="mission-contract,status:queued,priority:${priority},size:${size}"
+  local labels="mission,status:wip,priority:${priority},size:${size}"
   [ -n "$domain" ] && labels="${labels},domain:${domain}"
   [ -n "$version" ] && labels="${labels},version:${version}"
   [ -n "$extra_labels" ] && labels="${labels},${extra_labels}"
@@ -284,4 +284,4 @@ create_mc "[T-049] Claude Code skill system setup" "P2" "M" "infra" "" \
 echo ""
 echo "🎉 Migration complete!"
 echo ""
-echo "Run: ./scripts/sync-board.sh  to generate the new board.md"
+echo "Run: /team   to view the dashboard"

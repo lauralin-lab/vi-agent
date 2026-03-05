@@ -5,7 +5,7 @@
 #   cd <project-with-teamwork-config>
 #   bash <path>/tw-e2e-test.sh [--skip-cleanup]
 #
-# Runs from any repo with .teamwork/ or .teamspace/ config.
+# Runs from any repo with .teamwork/ config.
 # Creates a test issue, runs full claim→drive→ship→done flow, cleans up.
 #
 # EXIT CODES:
@@ -54,10 +54,8 @@ section "PRE-CHECKS"
 # Config exists?
 if [ -f .teamwork/config.yml ]; then
   TW_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TW_DIR=".teamspace"
 else
-  fail "No .teamwork/config.yml or .teamspace/config.yml found"
+  fail "No .teamwork/config.yml found"
   echo "Run from a project directory with teamwork config."
   exit 1
 fi
@@ -93,24 +91,20 @@ else
 fi
 
 BRANCH_PATTERN=$(run_script tw-config.sh conventions.branch_pattern "" 2>/dev/null)
-if [ -z "$BRANCH_PATTERN" ]; then
-  BRANCH_PATTERN=$(run_script tw-config.sh worktree.branch_pattern "" 2>/dev/null)
-fi
 if [ -n "$BRANCH_PATTERN" ]; then
   pass "branch_pattern = $BRANCH_PATTERN"
 else
   skip "No branch_pattern in config (will use default)"
 fi
 
-MC_LABEL=$(run_script tw-config.sh github.mc_label "" 2>/dev/null)
-[ -z "$MC_LABEL" ] && MC_LABEL=$(run_script tw-config.sh mc_label "" 2>/dev/null)
+MC_LABEL=$(run_script tw-config.sh labels.mission "" 2>/dev/null)
 if [ -n "$MC_LABEL" ]; then
   pass "mc_label = $MC_LABEL"
 else
   skip "No mc_label in config (will use default)"
 fi
 
-STATUS_PREFIX=$(run_script tw-config.sh label_prefix.status "" 2>/dev/null)
+STATUS_PREFIX=$(run_script tw-config.sh labels.status_prefix "" 2>/dev/null)
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
 pass "status_prefix = $STATUS_PREFIX"
 
@@ -133,7 +127,7 @@ This issue will be automatically closed after validation.
 - [ ] Run validation
 BODY
 )" \
-  --label "${MC_LABEL:-mission-contract},priority:P3,${STATUS_PREFIX}queued,size:S" 2>&1) || {
+  --label "${MC_LABEL:-mission},priority:P3,${STATUS_PREFIX}wip,size:S" 2>&1) || {
   fail "Could not create test issue: $ISSUE_URL"
   exit 1
 }
