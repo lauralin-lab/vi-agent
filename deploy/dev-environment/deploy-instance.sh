@@ -7,13 +7,16 @@
 #
 # Usage:
 #   ./deploy-instance.sh deploy  <developer> <image_tag>
-#   ./deploy-instance.sh destroy <developer> [--keep-data]
-#   ./deploy-instance.sh status  [developer]
+#   ./deploy-instance.sh destroy <developer>
+#   ./deploy-instance.sh status  <developer|_all>
+#   ./deploy-instance.sh logs    <developer> "" [service] [lines]
 set -euo pipefail
 
 ACTION="${1:-}"
 DEVELOPER="${2:-}"
-shift 2 2>/dev/null || true
+IMAGE_TAG="${3:-}"
+SERVICE="${4:-}"
+LINES="${5:-100}"
 
 BASE_DIR="/opt/vi-agent"
 REGISTRY="$BASE_DIR/registry.json"
@@ -67,7 +70,7 @@ cmd_status() {
   local SERVER_IP
   SERVER_IP=$(get_server_ip)
 
-  if [ -n "${DEVELOPER:-}" ]; then
+  if [ -n "${DEVELOPER:-}" ] && [ "$DEVELOPER" != "_all" ]; then
     # Status for specific developer
     python3 -c "
 import json
@@ -125,11 +128,11 @@ cmd_destroy() {
   local INSTANCE_DIR="$BASE_DIR/instances/$DEVELOPER"
   echo "=== Destroying dev instance: $DEVELOPER ==="
 
-  # Stop containers
+  # Stop containers and remove volumes
   if [ -d "$INSTANCE_DIR" ]; then
     cd "$INSTANCE_DIR"
-    docker compose down --remove-orphans 2>/dev/null || true
-    echo "Containers stopped."
+    docker compose down --remove-orphans -v 2>/dev/null || true
+    echo "Containers and volumes removed."
   fi
 
   # Remove instance directory
@@ -252,8 +255,9 @@ EOF
       break
     fi
     if [ "$i" = "30" ]; then
-      echo "WARNING: API server did not become healthy within 60s"
+      echo "ERROR: API server did not become healthy within 60s"
       docker compose logs --tail=20 api-server 2>/dev/null || true
+      exit 1
     fi
     sleep 2
   done
@@ -309,14 +313,43 @@ with open('$REGISTRY', 'w') as f: json.dump(r, f, indent=2)
 }
 
 # =====================================================================
+# LOGS
+# =====================================================================
+cmd_logs() {
+  init_registry
+
+  if [ -z "$DEVELOPER" ]; then
+    echo "ERROR: Developer name required for logs" >&2
+    exit 1
+  fi
+
+  local INSTANCE_DIR="$BASE_DIR/instances/$DEVELOPER"
+  if [ ! -d "$INSTANCE_DIR" ]; then
+    echo "ERROR: Instance '$DEVELOPER' not found" >&2
+    echo "Available instances:"
+    ls "$BASE_DIR/instances/" 2>/dev/null || echo "  (none)"
+    exit 1
+  fi
+
+  echo "=== Container Logs: $DEVELOPER ==="
+  cd "$INSTANCE_DIR"
+  if [ -n "$SERVICE" ]; then
+    docker compose logs --tail "$LINES" "$SERVICE" 2>&1
+  else
+    docker compose logs --tail "$LINES" 2>&1
+  fi
+}
+
+# =====================================================================
 # MAIN
 # =====================================================================
 case "${ACTION}" in
-  deploy)  cmd_deploy "$@" ;;
-  destroy) cmd_destroy "$@" ;;
+  deploy)  cmd_deploy "$IMAGE_TAG" ;;
+  destroy) cmd_destroy ;;
   status)  cmd_status ;;
+  logs)    cmd_logs ;;
   *)
-    echo "Usage: $0 {deploy|destroy|status} <developer> [args...]" >&2
+    echo "Usage: $0 {deploy|destroy|status|logs} <developer> [image_tag] [service] [lines]" >&2
     exit 1
     ;;
 esac

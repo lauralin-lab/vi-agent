@@ -1,6 +1,6 @@
 # Teamwork — The Complete Manual
 
-> **Version 2.7.3** | Author: liyasong | 2026-03-05
+> **Version 3.1.0** | Author: liyasong + casey | 2026-03-06
 >
 > AI-Native Team Coordination for GitHub.
 > For humans and AI agents. Covers WHY, HOW, and the philosophy behind every decision.
@@ -98,6 +98,7 @@ These are not rules we invented. They emerged from **pain** — bugs found, rewo
     │  tw-label.sh transition 42 queued wip              │
     │  tw-contract.sh hash 42                            │
     │  tw-pr.sh create --squash --base develop           │
+    │  tw-notify.sh mc.created --issue 42                │
     │                                                    │
     │  Deterministic. Testable. Zero LLM interpretation. │
     └──────────────────────────────────────────────────┘
@@ -153,7 +154,7 @@ main ────────────── [V0.1.0] ──►            �
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
-║                    TEAMWORK SYSTEM ARCHITECTURE                      ║
+║                    TEAMWORK v3 SYSTEM ARCHITECTURE                   ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║                                                                      ║
 ║  ┌─────────────────────────────────────────────────────────────┐    ║
@@ -164,19 +165,21 @@ main ────────────── [V0.1.0] ──►            �
 ║  │    │              │               │               │           │    ║
 ║  │    │         /team-ship ──────────────────── /team-rc         │    ║
 ║  │    │              │                              │            │    ║
-║  │  init           create          claim          prepare       │    ║
-║  │  dashboard      update          branch         promote       │    ║
-║  │  learn                          contract                     │    ║
-║  │  queue                                                        │    ║
+║  │  init           create(push)   claim(my list)  prepare       │    ║
+║  │  dashboard      comment        branch          promote       │    ║
+║  │  learn          update         contract                      │    ║
+║  │  queue          fix(untracked)                               │    ║
+║  │  #N detail      batch / #N                                   │    ║
 ║  └───────────────────────┬─────────────────────────────────────┘    ║
 ║                          │ calls                                     ║
 ║  ┌───────────────────────▼─────────────────────────────────────┐    ║
-║  │                5 SCRIPTS (Mechanism Layer)                    │    ║
+║  │                8 SCRIPTS (Mechanism Layer)                    │    ║
 ║  │                                                               │    ║
 ║  │  tw-git.sh ─── tw-label.sh ─── tw-contract.sh ─── tw-pr.sh  │    ║
 ║  │  (15 cmds)     (4 cmds)        (8 cmds)           (7 cmds)  │    ║
 ║  │                                                               │    ║
-║  │              tw-config.sh (YAML parser, shared)               │    ║
+║  │  tw-config.sh (YAML parser)  tw-notify.sh (Slack/Feishu)    │    ║
+║  │  setup-github-labels.sh      tw-e2e-test.sh (validation)    │    ║
 ║  └───────────────────────┬─────────────────────────────────────┘    ║
 ║                          │ operates on                               ║
 ║  ┌───────────────────────▼─────────────────────────────────────┐    ║
@@ -209,11 +212,11 @@ main ────────────── [V0.1.0] ──►            �
      (Claude executes)              (GitHub executes)
     ─────────────────────       ─────────────────────────
     /team-issue → Issue          on PR merge → post-merge
-    /team-claim → Branch           cleanup (labels, boxes,
-    /team-drive → Code              milestone check)
-    /team-ship  → PR
-    /team-rc    → Tag            on workflow_dispatch →
-                                   deploy staging/prod
+      + assign + branch           cleanup (labels, boxes,
+    /team-claim → Contract         milestone check)
+    /team-drive → Code
+    /team-ship  → PR             on workflow_dispatch →
+    /team-rc    → Tag              deploy staging/prod
          │                              │
          │  checks before tagging       │ provides the
          └────── Action status ─────────┘ check basis
@@ -224,6 +227,29 @@ main ────────────── [V0.1.0] ──►            �
     Actions own deployment.
     Never cross the boundary.
 ```
+
+### Push Model (v3)
+
+```
+    v2 (Pull Model):                 v3 (Push Model):
+    ─────────────────                ─────────────────────
+    /team-issue creates              /team-issue creates
+      status:queued                    + assigns @member
+      unassigned                       + status:wip
+                                       + creates branch
+    Dev self-claims via
+      /team-claim                    Assignee runs
+      → assigns to self               /team-claim #N
+      → status:wip                     → generates Contract
+      → creates branch                 (branch already exists)
+
+    "Pull": dev picks from queue     "Push": creator assigns directly
+    Good for solo/small teams        Good for coordinated teams
+```
+
+Any team member can create Issues and assign to anyone — no role restriction.
+Solo projects (1 member) auto-assign to self.
+Roles (leader/member) are used only for **dashboard view** distinction, not permissions.
 
 ---
 
@@ -296,21 +322,23 @@ feat/E:                          D ── (your work) ──
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     THE SIX SKILLS                                │
+│                     THE SIX SKILLS (v3 — Push Model)              │
 │                                                                    │
-│     /team              Init + Dashboard + Learn                   │
+│     /team              Init + Dashboard + Learn + MC Detail       │
 │       │                                                            │
 │       ▼                                                            │
-│     /team-issue ──► Create structured GitHub Issue                │
-│       │              (AI enriches: priority, size, success criteria)│
+│     /team-issue ──► Create + assign + branch (Push)               │
+│       │              Smart routing: create / comment / update /    │
+│       │              fix / batch / detail / help                   │
 │       ▼                                                            │
-│     /team-claim ──► Claim Issue → Contract → Branch               │
-│       │              (AI scans codebase for context)               │
+│     /team-claim ──► Generate Contract from assigned Issue         │
+│       │              (branch already exists from /team-issue)      │
 │       ▼                                                            │
 │     /team-drive ──► Execute mission from Contract                 │
 │       │              (sub-tasks → test → commit loop)              │
+│       │              Service-aware testing (monorepo support)      │
 │       ▼                                                            │
-│     /team-ship  ──► Push → PR → cleanup                           │
+│     /team-ship  ──► Push → PR → notify                            │
 │       │              (auto-closes Issue on merge)                  │
 │       ▼                                                            │
 │     /team-rc    ──► Prepare RC / Promote to production            │
@@ -326,52 +354,50 @@ feat/E:                          D ── (your work) ──
 
 | Skill | Command | What it does |
 |-------|---------|--------------|
-| `/team` | `/team` | Dashboard — who's working on what |
+| `/team` | `/team` | Dashboard — who's working on what (role-based view) |
 | | `/team init` | Initialize teamwork in current repo |
 | | `/team help` | Quick start guide |
 | | `/team learn` | Design philosophy + diagrams |
-| | `/team queue` | All queued issues sorted by priority |
-| `/team-issue` | `/team-issue {desc}` | Create GitHub Issue with AI enrichment |
-| | `/team-issue #42 {changes}` | Update existing Issue |
-| `/team-claim` | `/team-claim #42` | Claim specific Issue |
-| | `/team-claim` | Auto-pick highest priority |
-| | `/team-claim list` | Browse available missions |
+| | `/team queue` | All open missions sorted by priority |
+| | `/team #42` | MC detail view (branch, commits, PRs, criteria) |
+| `/team-issue` | `/team-issue {desc}` | Create Issue + assign + branch (Push) |
+| | `/team-issue {desc} @user` | Create and assign to specific member |
+| | `/team-issue #42` | View Issue details |
+| | `/team-issue #42 {text}` | Add comment to Issue |
+| | `/team-issue update #42` | AI-assisted edit of Issue body |
+| | `/team-issue fix #42` | Fix untracked Issue (add teamwork labels) |
+| | `/team-issue batch V0.2 -- ...` | Batch create milestone + MCs |
+| `/team-claim` | `/team-claim #42` | Generate Contract for assigned Issue |
+| | `/team-claim` | List MY assigned Issues |
 | `/team-drive` | `/team-drive` | Execute mission (code → test → commit) |
-| `/team-ship` | `/team-ship` | Push + create PR |
+| `/team-ship` | `/team-ship` | Push + create PR + notify |
 | | `/team-ship done` | Post-merge cleanup |
 | | `/team-ship review` | AI code review on PR |
 | | `/team-ship sync` | Rebase on latest develop |
 | `/team-rc` | `/team-rc` | Prepare: cut rc from develop |
-| | `/team-rc promote` | Promote: squash to main, tag, release |
+| | `/team-rc promote` | Promote: squash to main, tag, release, notify |
 | | `/team-rc help` | Full RC lifecycle guide |
 
 ---
 
 ## Issue Lifecycle — State Machine
 
-### Label State Transitions
+### Label State Transitions (v3 Push Model)
 
 ```
                     ┌─────────────────────────┐
                     │      ISSUE CREATED       │
-                    │    /team-issue publishes  │
+                    │    /team-issue creates    │
+                    │    + assigns @member      │
+                    │    + creates branch       │
                     └────────────┬────────────┘
-                                 │
-                                 ▼
-                    ┌─────────────────────────┐
-                    │    status:queued         │
-                    │    ● Available to claim  │ ◄──── /team-ship done
-                    │    ● Sorted by priority  │       (if reopened)
-                    └────────────┬────────────┘
-                                 │
-                          /team-claim
                                  │
                                  ▼
                     ┌─────────────────────────┐
                     │    status:wip            │
-                    │    ● Someone working     │
+                    │    ● Assigned to member  │
                     │    ● Branch exists       │
-                    │    ● Contract active     │
+                    │    ● Ready for claim     │
                     └────────────┬────────────┘
                            │     │
                     /team-ship   │ (blocked)
@@ -397,13 +423,27 @@ feat/E:                          D ── (your work) ──
     └──────────────────────┘
 ```
 
+> **v3 change**: No `status:queued` state. Push model assigns immediately → `status:wip` from creation.
+
+### Untracked Issues
+
+Issues created or assigned directly on GitHub (not through `/team-issue`) lack teamwork labels. The `/team` dashboard detects these by comparing "all assigned issues" vs "mission-labeled issues" — the difference is **untracked**.
+
+```
+  GitHub assign #94 → @lysfighting
+  /team dashboard   → UNTRACKED section shows #94
+  /team-issue fix #94 → adds mission + status:wip + priority + size labels
+  /team dashboard   → #94 now appears in MY MISSIONS
+```
+
+This ensures no assigned work is invisible, regardless of how the issue was created.
+
 ### Label Colors (visual recognition)
 
 ```
     ┌──────────────┬────────────┬──────────┐
     │ Label        │ Color      │ Meaning  │
     ├──────────────┼────────────┼──────────┤
-    │ status:queued│ 🟢 #c2e0c6 │ Ready    │
     │ status:wip   │ 🟡 #fbca04 │ Active   │
     │ status:review│ 🟣 #7057ff │ Waiting  │
     │ status:done  │ 🟢 #0e8a16 │ Complete │
@@ -596,7 +636,7 @@ tag V0.1.0 on main     →  THIS is the release
 
   ⑭  Delete rc/V0.1.1 branch (via --delete-branch)
 
-  ⑮  Reminder: cherry-pick any rc hotfixes to develop
+  ⑮  Notify team: tw-notify.sh milestone.done
 
 ══════════════════════════════════════════════════════════════════════
 ```
@@ -738,7 +778,7 @@ The Contract is the bridge between GitHub (permanent) and AI execution (ephemera
 │  │                                                            │    │
 │  │ issue: 42                                                 │    │
 │  │ title: "feat: add user authentication"                    │    │
-│  │ branch: mission/42-add-user-auth-lysfighting              │    │
+│  │ branch: mission/42-add-user-auth                          │    │
 │  │ assignee: lysfighting                                     │    │
 │  │ priority: P1                                              │    │
 │  │ milestone: "V0.1"                                         │    │
@@ -750,7 +790,7 @@ The Contract is the bridge between GitHub (permanent) and AI execution (ephemera
 │  │                                                            │    │
 │  │ ## Objective (from Issue)                                  │    │
 │  │ ## Sub-tasks (checkboxes, ticked during /team-drive)      │    │
-│  │ ## Acceptance Criteria (from Issue)                        │    │
+│  │ ## Success Criteria (from Issue)                          │    │
 │  │ ## Context Files (AI-SCANNED — the key enrichment)        │    │
 │  │    → src/auth/login.ts                                    │    │
 │  │    → src/middleware/auth.ts                                │    │
@@ -782,7 +822,7 @@ The Contract is the bridge between GitHub (permanent) and AI execution (ephemera
 
 ```
 ══════════════════════════════════════════════════════════════════════
-              QUALITY GATES — THREE LAYERS OF DEFENSE
+              QUALITY GATES — FOUR LAYERS OF DEFENSE
 ══════════════════════════════════════════════════════════════════════
 
   LAYER 1: LOCAL (git hooks)             ← fastest feedback
@@ -931,15 +971,16 @@ The protection rules adapt to your team's maturity:
 
 ## Scripts Architecture
 
-### The Five Scripts
+### The Eight Scripts
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      SCRIPTS LAYER                                │
+│                      SCRIPTS LAYER (v3)                           │
 │                                                                    │
 │  tw-config.sh ─── Foundation ─── Python3 YAML parser              │
 │  │                 Reads any key from config.yml                  │
-│  │                 Handles colons in values, quoted strings       │
+│  │                 Handles colons, nested values, quoted strings  │
+│  │                 Tri-schema: label_prefix.* / labels.* / default│
 │  │                 Interface: tw-config.sh key.subkey default     │
 │  │                                                                │
 │  ├── tw-git.sh ─── 15 subcommands ─── All git operations         │
@@ -952,15 +993,26 @@ The protection rules adapt to your team's maturity:
 │  │   transition (from → to), set (force), verify, pr-label       │
 │  │                                                                │
 │  ├── tw-contract.sh ─── 8 subcommands ─── Contract lifecycle     │
-│  │   find, read-field, hash, check-freshness,                    │
+│  │   teamwork-dir, find, read-field, hash, check-freshness,      │
 │  │   toggle-task, sync-checkbox, delete                           │
 │  │                                                                │
-│  └── tw-pr.sh ─── 7 subcommands ─── PR lifecycle                 │
-│      exists, commit-type, create, comment,                        │
-│      watch (CI), add-reviewer, verify-merged                      │
-│                                                                    │
-│  + setup-github-labels.sh ─── Standalone ─── Create all labels   │
-│  + tw-e2e-test.sh ─── Standalone ─── Full end-to-end test        │
+│  ├── tw-pr.sh ─── 7 subcommands ─── PR lifecycle                 │
+│  │   exists, commit-type, create, comment,                        │
+│  │   watch (CI), add-reviewer, verify-merged                      │
+│  │                                                                │
+│  ├── tw-notify.sh ─── Notification layer (v3 NEW)                │
+│  │   Events: mc.created, mc.completed, milestone.created,         │
+│  │           milestone.done, review.requested,                     │
+│  │           review.changes_requested, review.approved             │
+│  │   Channels: Slack (block kit), Feishu (card), custom webhook  │
+│  │   Always non-fatal (exit 0 on failure)                         │
+│  │                                                                │
+│  ├── setup-github-labels.sh ─── Create all labels on repo        │
+│  │                                                                │
+│  └── tw-e2e-test.sh ─── Full end-to-end validation               │
+│      7 phases: pre-check → config → create → claim → drive →     │
+│      ship → cleanup. Creates temp issue, validates all scripts,   │
+│      cleans up artifacts. Safe to run on any repo.                │
 │                                                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -991,62 +1043,126 @@ Evidence from v2.6.1 falsification audit:
 ```yaml
 # .teamwork/config.yml (or .teamspace/config.yml)
 # ─────────────────────────────────────────────────
+# Schema version 3
 
-schema_version: 1
-skill_version: 2.7.3
+schema_version: 3
+skill_version: 3.1.0
+
+# Team metadata
+team:
+  name: "My Team"
+  repo: org/repo-name
+
+# Role definitions (used for dashboard view distinction, NOT permissions)
+roles:
+  - id: leader
+    level: leader
+    label: "Tech Lead"
+    description: "Product direction, task creation, review, release"
+  - id: engineer
+    level: member
+    label: "Engineer"
+    description: "Feature development"
 
 # Team roster
-team:
+members:
   - github: lysfighting
-    role: tech-lead
-  - github: caseyz-vv
-    role: lead
+    name: "Liya Song"
+    role: leader
   - github: yuang-yang
-    role: backend-engineer
+    name: "yuang-yang"
+    role: engineer
 
 # Project detection (auto-generated by /team init)
+# Single-repo:
 project:
   language: python
   test_command: "pytest tests/ -v"
   lint_command: "ruff check ."
   build_command: "python -m build"
 
+# Monorepo (service-aware testing):
+# project:
+#   type: monorepo
+#   services:
+#     - name: api-server
+#       language: python
+#       test_command: "cd api-server && pytest tests/ -v"
+#       lint_command: "cd api-server && ruff check ."
+#     - name: frontend
+#       language: typescript
+#       test_command: "cd frontend && npm test"
+#       build_command: "cd frontend && npm run build"
+
 # Git conventions
 conventions:
-  branch_pattern: "mission/{issue}-{slug}-{user}"
-  base_branch: develop              # feature PRs target here
-  production_branch: main           # rc squash-merges here, tags here
+  branch_pattern: "mission/{issue}-{slug}"
+  base_branch: develop
+  production_branch: main
   commit_format: "type(scope): description | Mission: #{issue}"
 
-# Label prefixes (customizable per project)
-label_prefix:
-  status: "status:"
-  priority: "priority:"
-  size: "size:"
+# Labels (two schemas supported)
+# Schema v3:
+labels:
+  mission: "mission"
+  status_prefix: "status:"
+  priority_prefix: "priority:"
+# Legacy (also supported):
+# label_prefix:
+#   status: "status:"
+#   priority: "priority:"
 
-# Quality gates (each independently toggleable)
+# Quality gates
 quality:
-  hooks: true                       # git hooks (pre-commit, pre-push)
-  ci: true                          # GitHub Actions CI
-  review_required: false            # require reviewer on PR
-  branch_protection: true           # protect develop + main
+  hooks: true
+  ci: true
+  review_required: false
+  branch_protection: true
 
-# Optional: deployment pipeline
+# Notifications (v3 NEW)
+notifications:
+  enabled: true
+  channels:
+    - type: slack
+      channel: "#team"
+      webhook: ""
+      enabled: false
+    - type: feishu
+      webhook: ""
+      enabled: false
+  events:
+    mc.created: [slack, feishu]
+    mc.completed: [slack, feishu]
+    milestone.created: [slack, feishu]
+    milestone.done: [slack, feishu]
+    review.requested: [slack, feishu]
+
+# Deployment
 deploy:
-  staging_workflow: "deploy.yml"    # enables staging gate in /team-rc
+  staging_workflow: "deploy.yml"
 
-# Optional: version tracking
+# Version tracking
 versions:
-  current: "V0.1"                   # milestone prefix (patch auto-derived)
+  current: "V0.1"
 
-# Optional: git worktree isolation
+# Git worktree isolation (optional)
 worktree:
   enabled: true
   path_pattern: "../{repo}-wt-{slug}"
 
-# Mission label (default: "mission")
-mc_label: "mission"
+# Mission label (legacy, prefer labels.mission)
+# mc_label: "mission"
 ```
+
+### Config Schema Evolution
+
+| Version | What changed |
+|---------|-------------|
+| v1 | `team:` as member array, flat `mc_label`, `label_prefix:` |
+| v2 | Added `deploy:`, `versions:`, `worktree:` |
+| v3 | Added `roles:`, `members:` (separate from `team:`), `notifications:`, `project.services[]`. `team:` = metadata. Push model default. |
+
+MERGE MODE (`/team init` on existing config): preserves all existing content, updates `skill_version` + `schema_version`, appends only missing sections. Safe to run on any existing config.
 
 ---
 
@@ -1054,31 +1170,35 @@ mc_label: "mission"
 
 ```
 ══════════════════════════════════════════════════════════════════════
-              A WEEK WITH TEAMWORK — END TO END
+              A WEEK WITH TEAMWORK v3 — END TO END
 ══════════════════════════════════════════════════════════════════════
 
   MONDAY MORNING
   ──────────────
 
-  $ /team-issue "实现用户登录功能，支持 OAuth + 密码登录"
+  $ /team-issue "实现用户登录功能，支持 OAuth + 密码登录" @lysfighting
     → Issue #42 created
-    → Labels: mission, status:queued, priority:P1, size:M
+    → Assigned to @lysfighting
+    → Labels: mission, status:wip, priority:P1, size:M
     → Milestone: V0.1
+    → Branch: mission/42-user-login
+    → Notification sent to: #team (Slack)
 
   $ /team-claim 42
     → Contract generated: .teamwork/active/MISSION-42.md
-    → Branch: mission/42-user-login-lysfighting
-    → Issue #42 assigned to lysfighting
-    → Label: status:queued → status:wip
+      (AI scans codebase → discovers auth files, test files)
+    → Switched to branch mission/42-user-login
 
   $ /team-drive
     → Reading Contract... 5 sub-tasks found
+    → Freshness check: Issue #42 unchanged ✓
     → [1/5] Set up auth middleware ✓ (committed)
     → [2/5] Implement password login ✓ (committed)
     → [3/5] Implement OAuth flow ✓ (committed)
     → [4/5] Add auth tests ✓ (committed)
     → [5/5] Update API docs ✓ (committed)
-    → All sub-tasks complete. Tests passing.
+    → Service-aware test: api-server tests passing ✓
+    → All sub-tasks complete.
 
   $ /team-ship
     → Pushed branch to origin
@@ -1086,6 +1206,7 @@ mc_label: "mission"
     → CI running... ✓ passed
     → Label: status:wip → status:review
     → Contract deleted (ephemeral)
+    → Notification: mc.completed sent
 
   [REVIEWER MERGES PR #15 — squash merge]
     → post-merge Action fires:
@@ -1099,14 +1220,23 @@ mc_label: "mission"
     → Clean workspace
 
 
-  MONDAY AFTERNOON
-  ────────────────
+  MONDAY AFTERNOON — BATCH CREATION
+  ──────────────────────────────────
 
-  $ /team-issue "权限管理系统"
-    → Issue #45 created
+  $ /team-issue batch V0.1 -- User system and campaign basics
+      MC1: 权限管理系统 @yuang-yang
+        - [ ] RBAC model implemented
+        - [ ] Permission middleware
+      MC2: Campaign UI @xxLe
+        - [ ] CRUD for campaigns
+      MC3: API rate limiting @lysfighting
+        - [ ] Rate limiter middleware
 
-  $ /team-claim 45 → /team-drive → /team-ship
-    → PR #16 → merged → auto-cleanup
+    → Milestone V0.1 created (or reused)
+    → Issue #45 → @yuang-yang → branch mission/45-rbac
+    → Issue #46 → @xxLe → branch mission/46-campaign-ui
+    → Issue #47 → @lysfighting → branch mission/47-rate-limiting
+    → Notifications: milestone.created + 3x mc.created
 
 
   TUESDAY
@@ -1131,8 +1261,9 @@ mc_label: "mission"
     → PR: rc/V0.1.0 → main (squash merge)
     → Tag V0.1.0 on main
     → GitHub Release created (auto-generated notes)
-    → Milestone V0.1: 2/5 issues closed
+    → Milestone V0.1: 3/6 issues closed
     → Branch rc/V0.1.0 deleted
+    → Notification: milestone.done sent
 
 
   WEDNESDAY - THURSDAY
@@ -1140,6 +1271,27 @@ mc_label: "mission"
 
   [More features: Issues #48, #51, #53]
   [Each: claim → drive → ship → PR merged]
+
+  [PM creates Issue #54 directly on GitHub, assigns @lysfighting]
+
+  $ /team                      ← role-based dashboard
+    → Leader view: all team members + their active missions
+    → Version V0.1: 5/6 tasks done (83%)
+    → UNTRACKED (1):
+        #54 https cert missing on Safari [@lysfighting]
+        Fix: /team-issue fix #54
+
+  $ /team-issue fix #54        ← fix untracked Issue
+    → Issue #54 analyzed: priority P1, size M
+    → Labels added: mission, status:wip, priority:P1, size:M
+    → Branch: mission/54-https-cert-missing
+    → #54 now visible on dashboard
+
+  $ /team #48                  ← MC detail view
+    → Issue #48 — fix: API timeout
+    → Branch: mission/48-fix-api-timeout
+    → Commits: 3 since develop
+    → PRs: #22 (open, CI passing)
 
 
   FRIDAY
@@ -1152,9 +1304,9 @@ mc_label: "mission"
 
   $ /team-rc promote
     → Tag V0.1.1
-    → Milestone V0.1: 5/5 issues closed
+    → Milestone V0.1: 6/6 issues closed
     → Milestone V0.1 auto-closed! 🎉
-    → Update config: versions.current → "V0.2"
+    → Notification: milestone.done → all channels
 
 
   NEXT WEEK: V0.2 begins...
@@ -1181,7 +1333,7 @@ mc_label: "mission"
 │         │ commits)   │      │        │            │          │
 ├─────────┼────────────┼──────┼────────┼────────────┼──────────┤
 │ feat/*  │ no         │ —    │ —      │ allowed    │ auto     │
-│         │            │      │        │            │ (merge)  │
+│ mission/│            │      │        │            │ (merge)  │
 └─────────┴────────────┴──────┴────────┴────────────┴──────────┘
 
 Admin bypass on main + develop (for emergency use by project lead).
@@ -1206,11 +1358,14 @@ Before:                              After:
   "Did I close the Issue?"
   "Did I update the labels?"
   "What version is this?"
-  "Who's working on what?"
+  "Who's working on what?"            /team
+  "Who's assigned to what?"           /team-issue batch ...
+  "Someone assigned me an issue       /team-issue fix #94
+   but it doesn't show up"
 ```
 
 The loop never breaks. The system remembers what you forget.
 
 ---
 
-*Teamwork v2.7.3 — Built for teams where humans and AI write code together.*
+*Teamwork v3.1.0 — Built for teams where humans and AI write code together.*

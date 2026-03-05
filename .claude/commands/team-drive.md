@@ -196,7 +196,7 @@ Write the code, make the changes. Follow the project's existing patterns and con
 Read config. If `project.services` exists (array of {name, language, test_command, lint_command}):
   1. Determine which services are affected by current changes:
      ```bash
-     BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+     BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
      BASE_BRANCH="${BASE_BRANCH:-main}"
      CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD")
      ```
@@ -266,7 +266,7 @@ Apply the same service-aware test strategy as Step 3d:
 Read config. If `project.services` exists:
   1. Determine affected services from all changes on this branch:
      ```bash
-     BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+     BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
      BASE_BRANCH="${BASE_BRANCH:-main}"
      CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD")
      ```

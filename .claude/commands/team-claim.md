@@ -32,7 +32,7 @@ WHAT HAPPENS:
   1. Fetches Issue from GitHub
   2. Generates AI-enriched Mission Contract (.teamwork/active/MISSION-N.md)
      — scans project to discover relevant files (Context Files)
-  3. Creates branch: mission/{issue}-{slug}-{user}
+  3. Creates branch: mission/{issue}-{slug}
   4. Posts claim comment on GitHub
 
 NOTE: Issues are assigned via /team-issue (any team member can create and assign).
@@ -178,7 +178,7 @@ title: "{title}"
 assignee: {user}
 priority: {priority}
 labels: [{labels}]
-branch: mission/{issue}-{slug}-{user}
+branch: mission/{issue}-{slug}
 milestone: "{milestone — from Issue JSON, falls back to config versions.current, or 'none'}"
 claimed: {ISO_TIMESTAMP}
 issue_content_hash: "{SHA256 of title + body at claim time}"
@@ -219,7 +219,7 @@ Use `Glob` and `Grep` with keywords from the Issue title and objective to discov
 ## Step 5: Create Branch (+ optional worktree)
 
 Read branch pattern from config: `conventions.branch_pattern` (or `worktree.branch_pattern` for `.teamspace` configs).
-Default: `"mission/{issue}-{slug}-{user}"`.
+Default: `"mission/{issue}-{slug}"`.
 
 Read worktree config: if `worktree:` section exists in config → treat as enabled (unless `worktree.enabled` is explicitly `false`). If no `worktree:` section → disabled.
 

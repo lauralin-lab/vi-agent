@@ -5,22 +5,22 @@
 #   bash tw-config.sh <key> [default]
 #
 # EXAMPLES:
-#   bash tw-config.sh labels.mission "mission"
-#   bash tw-config.sh labels.status_prefix "status:"
-#   bash tw-config.sh conventions.base_branch "pre-launch"
+#   bash tw-config.sh project.test_command ""
+#   bash tw-config.sh label_prefix.status "status:"
+#   bash tw-config.sh conventions.base_branch "main"
 #   bash tw-config.sh versions.current ""
-#   bash tw-config.sh quality.ci "false"
+#   bash tw-config.sh worktree.enabled "false"
 #
 # KEY FORMAT: dot-notation for nested keys (up to 2 levels)
-#   - "labels.mission"        → yaml: labels:\n  mission: "mission"
-#   - "labels.status_prefix"  → yaml: labels:\n  status_prefix: "status:"
-#   - "schema_version"        → yaml: schema_version: 3
+#   - "project.test_command"  → yaml: project:\n  test_command: "..."
+#   - "label_prefix.status"   → yaml: label_prefix:\n  status: "status:"
+#   - "schema_version"        → yaml: schema_version: 1
 #
 # HANDLES:
-#   - Values containing colons (e.g., labels.status_prefix: "status:")
+#   - Values containing colons (e.g., label_prefix.status: "status:")
 #   - Quoted and unquoted values
 #   - Missing keys (returns default)
-#   - Reads .teamwork/config.yml
+#   - Both .teamwork/config.yml and .teamspace/config.yml
 
 KEY="${1:-}"
 DEFAULT="${2:-}"
@@ -33,6 +33,8 @@ fi
 # Detect config file
 if [ -f ".teamwork/config.yml" ]; then
   CONFIG_FILE=".teamwork/config.yml"
+elif [ -f ".teamspace/config.yml" ]; then
+  CONFIG_FILE=".teamspace/config.yml"
 else
   echo "$DEFAULT"
   exit 0
@@ -92,10 +94,20 @@ def parse_simple_yaml(filepath):
                         current_section = section_key  # in case sub-keys follow
 
                 # Indented key: value (belongs to current_section)
+                # Only match DIRECT children (2-space or 1-tab indent, not deeper)
                 elif (line.startswith('  ') or line.startswith('\t')) and ':' in line:
                     if current_section is None:
                         continue
+                    # Skip deeply nested lines (4+ spaces or 2+ tabs)
+                    indent = len(line) - len(line.lstrip())
+                    if indent > 2 and not line.startswith('\t'):
+                        continue
+                    if line.startswith('\t') and indent > 1:
+                        continue
                     stripped = line.strip()
+                    # Skip YAML array items (- key: val)
+                    if stripped.startswith('-'):
+                        continue
                     parts = stripped.split(':', 1)
                     sub_key = parts[0].strip()
                     sub_val = strip_val(parts[1]) if len(parts) > 1 else ''

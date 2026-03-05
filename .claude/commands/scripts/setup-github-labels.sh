@@ -5,7 +5,7 @@
 #   bash ~/.claude/commands/scripts/setup-github-labels.sh
 #   bash ~/.claude/commands/scripts/setup-github-labels.sh OWNER/REPO
 #
-# Run from the project root (reads .teamwork/config.yml for prefixes).
+# Run from the project root (reads .teamwork/config.yml or .teamspace/config.yml for prefixes).
 # Creates labels with --force so safe to re-run (updates existing labels).
 
 set -euo pipefail
@@ -30,14 +30,18 @@ MC_LABEL="mission"
 TW_CONFIG="$HOME/.claude/commands/scripts/tw-config.sh"
 if [[ -x "$TW_CONFIG" ]] || [[ -f "$TW_CONFIG" ]]; then
   _S=$(bash "$TW_CONFIG" labels.status_prefix "" 2>/dev/null)
+  [[ -z "$_S" ]] && _S=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
   _P=$(bash "$TW_CONFIG" labels.priority_prefix "" 2>/dev/null)
+  [[ -z "$_P" ]] && _P=$(bash "$TW_CONFIG" label_prefix.priority "" 2>/dev/null)
   _M=$(bash "$TW_CONFIG" labels.mission "" 2>/dev/null)
+  [[ -z "$_M" ]] && _M=$(bash "$TW_CONFIG" github.mc_label "" 2>/dev/null)
+  [[ -z "$_M" ]] && _M=$(bash "$TW_CONFIG" mc_label "" 2>/dev/null)
   [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
   [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
   [[ -n "$_M" ]] && MC_LABEL="$_M"
 else
   # Fallback: grep from config files directly
-  for CONF in .teamwork/config.yml; do
+  for CONF in .teamwork/config.yml .teamspace/config.yml; do
     if [[ -f "$CONF" ]]; then
       _S=$(grep -v '^\s*#' "$CONF" | grep '^\s*status:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
       _P=$(grep -v '^\s*#' "$CONF" | grep '^\s*priority:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)

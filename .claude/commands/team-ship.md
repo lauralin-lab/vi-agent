@@ -155,9 +155,11 @@ git status --porcelain
 
 - If there are uncommitted changes → warn: "You have uncommitted changes. Committing them now."
   ```bash
-  git add -A
+  # Only stage tracked files — never use `git add -A` (risks committing secrets/.env)
+  git add -u
   git commit -m "chore: pre-ship cleanup | Mission: #{issue}"
   ```
+- If there are also untracked files, list them and ask the user which to include.
 
 ### 2d: Run tests
 
@@ -168,7 +170,7 @@ Read config for service-aware testing:
 # If project.services exists in config, run per-service tests for affected services
 # Otherwise fall back to project.test_command
 
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 
 # Determine affected services from changes
@@ -244,7 +246,7 @@ Closes #{issue}
 
 ```bash
 # Read base branch and extract Issue title from Contract
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 ISSUE_TITLE=$(bash ~/.claude/commands/scripts/tw-contract.sh read-field "$TEAMWORK_DIR/active/MISSION-{issue}.md" title)
 
@@ -529,7 +531,7 @@ Output: "Review published on PR #{pr}: {approve/request-changes/comment}"
 
 ```bash
 BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh current)
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 ```
 

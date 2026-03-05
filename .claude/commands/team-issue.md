@@ -115,8 +115,8 @@ STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status
 CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
 
 # Read base branch from config
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-main}"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
 
 # Read repo
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)

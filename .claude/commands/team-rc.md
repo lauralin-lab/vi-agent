@@ -1,6 +1,6 @@
 ---
 description: "RC lifecycle — prepare staging or promote to production. Try: /team-rc help"
-version: "0.1.0"
+version: "3.0.0"
 ---
 
 # /team-rc — Release Candidate Lifecycle
@@ -14,7 +14,7 @@ version: "0.1.0"
 | Input | Action |
 |-------|--------|
 | (empty) | Prepare: cut rc branch from develop → staging |
-| `promote` | Promote: squash merge rc → product → tag → GitHub Release |
+| `promote` | Promote: squash merge rc → main → tag → GitHub Release |
 | `help` or `-h` | Show usage guide |
 
 ---
@@ -26,25 +26,26 @@ Parse `$ARGUMENTS`:
 - If `help` or `-h` → output the following and **STOP**:
 
 ```
-/team-rc — Release Candidate lifecycle
+/team-rc — Release Candidate Lifecycle (Teamwork v3.0.0)
+Author: liyasong + casey | 2026-03-05
 
 USAGE:
-  /team-rc              Prepare: cut rc branch from pre-launch, deploy staging
-  /team-rc promote      Promote: squash merge rc → product, tag, release
+  /team-rc              Prepare: cut rc branch, deploy staging
+  /team-rc promote      Promote: squash merge rc → main, tag, release
   /team-rc help         Show this guide
 
 PREPARE (/team-rc):
   1. Check no active rc branch on remote
   2. Derive next version from remote tags
-  3. Verify pre-launch CI green
-  4. Cut rc/{version} from pre-launch, push
+  3. Verify develop CI green
+  4. Cut rc/{version} from develop, push
   5. Trigger staging deploy (if configured)
 
 PROMOTE (/team-rc promote):
   1. Find active rc branch on remote
   2. Check staging status
-  3. Create PR: rc → product (squash merge via GitHub)
-  4. Tag squash commit on product
+  3. Create PR: rc → main (squash merge via GitHub)
+  4. Tag squash commit on main
   5. Create GitHub Release
   6. Close milestone if complete
   7. Delete rc branch
@@ -54,10 +55,10 @@ HOTFIX (during rc — no special command):
   Cherry-pick fix to pre-launch immediately.
 
 CONFIG:
-  versions.current: "V0.1"                  Milestone prefix (patch auto-derived from tags)
-  conventions.base_branch: "pre-launch"      Development trunk (next version integration)
-  conventions.production_branch: "product"   Production branch (strict protection)
-  deploy.staging_workflow: "deploy.yml"      (optional) Staging deploy workflow name
+  versions.current: "V0.1"              Milestone prefix (patch auto-derived from tags)
+  conventions.base_branch: "pre-launch"  Development trunk
+  conventions.production_branch: "main"  Production branch
+  deploy.staging_workflow: "deploy.yml"  (optional) Staging deploy workflow name
 ```
 
 - If `promote` → jump to **Promote Flow**
@@ -72,10 +73,10 @@ CONFIG:
 Detect config directory:
 
 ```bash
-if [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-elif [ -f .teamwork/config.yml ]; then
+if [ -f .teamwork/config.yml ]; then
   TEAMWORK_DIR=".teamwork"
+elif [ -f .teamspace/config.yml ]; then
+  TEAMWORK_DIR=".teamspace"
 else
   echo "ERROR: No config found. Run /team to initialize."
   # STOP
@@ -102,8 +103,8 @@ fi
 BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
 
-PROD_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.production_branch "product" 2>/dev/null)
-PROD_BRANCH="${PROD_BRANCH:-product}"
+PROD_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.production_branch "main" 2>/dev/null)
+PROD_BRANCH="${PROD_BRANCH:-main}"
 
 STAGING_WORKFLOW=$(bash ~/.claude/commands/scripts/tw-config.sh deploy.staging_workflow "" 2>/dev/null)
 ```
@@ -150,8 +151,8 @@ LATEST_CI=$(gh run list --branch "$BASE_BRANCH" --limit 1 \
   --json conclusion --jq '.[0].conclusion' 2>/dev/null)
 ```
 
-- If `success` → `Pre-launch CI: green`
-- If not `success` → warn: `Pre-launch CI not green (${LATEST_CI}). Proceed with caution.`
+- If `success` → `Develop CI: green`
+- If not `success` → warn: `Develop CI not green (${LATEST_CI}). Proceed with caution.`
 - Ask user: `Proceed? / Abort` — If abort → **STOP**
 
 ### Step 5: Cut RC Branch
@@ -160,7 +161,7 @@ LATEST_CI=$(gh run list --branch "$BASE_BRANCH" --limit 1 \
 bash ~/.claude/commands/scripts/tw-git.sh cut-release "$NEXT_VERSION"
 ```
 
-This runs: checkout pre-launch → pull → create `rc/$NEXT_VERSION` → push to origin.
+This runs: checkout develop → pull → create `rc/$NEXT_VERSION` → push to origin.
 
 ### Step 6: Trigger Staging Deploy (optional)
 
@@ -368,6 +369,15 @@ gh release create "$VERSION" \
 Capture and output the release URL.
 
 If fails → warn but continue (tag exists, user can create release manually).
+
+### Step P8b: Notification
+
+```bash
+bash ~/.claude/commands/scripts/tw-notify.sh milestone.done \
+  --title "$VERSION"
+```
+
+Non-fatal: if notification fails, warn but continue.
 
 ### Step P9: Milestone Check
 

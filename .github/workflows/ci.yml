@@ -4,7 +4,11 @@ on:
   pull_request:
     branches: [pre-launch, main]
   push:
-    branches: [pre-launch, main]
+    branches: [pre-launch]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # API Server checks
@@ -64,7 +68,6 @@ jobs:
           JWT_ALGORITHM: HS256
           LIVEKIT_API_KEY: test-livekit-key
           LIVEKIT_API_SECRET: test-livekit-secret-must-be-256-bits!!
-        shell: bash
         run: |
           set +e
           timeout 60 python -m pytest tests/test_smoke.py -v --tb=long --timeout=30 -x
@@ -159,11 +162,16 @@ jobs:
     steps:
       - name: Check results
         run: |
-          if [ "${{ needs.api-server.result }}" = "failure" ] || \
-             [ "${{ needs.nanoclaw.result }}" = "failure" ] || \
-             [ "${{ needs.frontend.result }}" = "failure" ] || \
-             [ "${{ needs.realtime.result }}" = "failure" ]; then
-            echo "CI failed"
-            exit 1
-          fi
+          for job in api-server nanoclaw frontend realtime; do
+            case "$job" in
+              api-server) result="${{ needs.api-server.result }}" ;;
+              nanoclaw)   result="${{ needs.nanoclaw.result }}" ;;
+              frontend)   result="${{ needs.frontend.result }}" ;;
+              realtime)   result="${{ needs.realtime.result }}" ;;
+            esac
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "CI failed: $job result=$result"
+              exit 1
+            fi
+          done
           echo "All CI checks passed"

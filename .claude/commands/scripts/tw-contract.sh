@@ -19,10 +19,12 @@
 
 set -euo pipefail
 
-# Teamwork directory (v3: .teamwork only)
+# Detect teamwork directory
 _teamwork_dir() {
   if [ -f .teamwork/config.yml ]; then
     echo ".teamwork"
+  elif [ -f .teamspace/config.yml ]; then
+    echo ".teamspace"
   else
     echo ""
   fi

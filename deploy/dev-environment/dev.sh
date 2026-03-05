@@ -35,7 +35,7 @@ CONFIG_FILE="$REPO_ROOT/.dev.local"
 SERVER_IP="${SERVER_IP:-34.172.9.61}"  # can be set in .dev.local
 SERVER_USER=""  # resolved below: .dev.local → --user → $(whoami)
 DOCKER_ORG="collov"
-SERVICES=(api-server frontend gateway realtime)
+SERVICES=(api-server frontend nanoclaw realtime)
 
 # ----------- Load saved config -----------
 DEV_NAME=""

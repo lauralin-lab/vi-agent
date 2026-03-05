@@ -170,9 +170,11 @@ git status --porcelain
 If uncommitted changes exist:
 - "Uncommitted changes detected. Committing now."
   ```bash
-  git add -A
+  # Only stage tracked files — never use `git add -A` (risks committing secrets/.env)
+  git add -u
   git commit -m "chore: pre-ship cleanup | Mission: #{issue}"
   ```
+- If there are also untracked files, list them and ask the user which to include.
 
 ### 3d: Run tests
 
@@ -255,8 +257,12 @@ Closes #{issue}
 # Determine commit type from title
 COMMIT_TYPE=$(bash ~/.claude/commands/scripts/tw-pr.sh commit-type "$ISSUE_TITLE")
 
+# Derive scope from changed directories (api-server, frontend, nanoclaw, realtime, infra, etc.)
+SCOPE=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD | cut -d/ -f1 | sort -u | head -1)
+[ -z "$SCOPE" ] && SCOPE="project"
+
 PR_RESULT=$(bash ~/.claude/commands/scripts/tw-pr.sh create \
-  "$ISSUE_NUMBER" "${COMMIT_TYPE}(scope): ${ISSUE_TITLE}" "$PR_BODY" "$BASE_BRANCH" "$BRANCH")
+  "$ISSUE_NUMBER" "${COMMIT_TYPE}(${SCOPE}): ${ISSUE_TITLE}" "$PR_BODY" "$BASE_BRANCH" "$BRANCH")
 PR_NUMBER=$(echo "$PR_RESULT" | cut -d' ' -f1)
 PR_URL=$(echo "$PR_RESULT" | cut -d' ' -f2)
 ```

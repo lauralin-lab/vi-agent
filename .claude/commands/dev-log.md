@@ -1,72 +1,56 @@
-# /dev-log — 查看 Dev 环境日志
+# /dev-log — Dev Environment Logs
 
-查看某个 dev 环境实例的服务日志。
+View container logs for a dev instance. Runs via GitHub Actions — no SSH required.
 
-## SSH 连接
+## Parameters
 
-从本地 `.dev.local` 读取配置（和 `/dev` 共享）：
+- `/dev-log` — show logs for current user's instance (all services)
+- `/dev-log casey` — show logs for casey's instance
+- `/dev-log casey api-server` — show only api-server logs
 
-```bash
-bash deploy/dev-environment/dev.sh --show-config
-```
+## Flow
 
-从输出中读取 `SSH_KEY`。如果 `.dev.local` 不存在，按优先级检测：
-```
-~/.ssh/gcp_ssh_key → ~/.ssh/id_ed25519 → ~/.ssh/id_rsa → ~/.ssh/id_ecdsa
-```
-
-**注意**: 不要硬编码 `~/.ssh/gcp_ssh_key`，不同用户的 key 路径不同。
-
-## 参数
-
-`/dev-log` 可接受可选参数:
-- `/dev-log casey` — 直接查看 casey 的日志
-- `/dev-log casey api` — 查看 casey 的 api-server 日志
-- `/dev-log` — 交互式选择
-
-## 执行流程
-
-### Step 1: 获取 SSH key 和确定查看目标
+### Step 1: Determine Target
 
 ```bash
-# 读取本地配置
-bash deploy/dev-environment/dev.sh --show-config
+# Default to current user
+DEVELOPER="${1:-$(gh api user --jq .login)}"
+SERVICE="${2:-}"
+LINES="${3:-100}"
 ```
 
-如果没有提供实例参数，使用 AskUserQuestion 询问:
+If no parameters given, use current GitHub user.
 
-1. **查看谁的日志?**
-   - SSH 到服务器读取 registry.json 获取所有实例名称
-   - ```bash
-     SERVER=$(bash deploy/dev-environment/dev.sh --show-config 2>/dev/null | grep '^SERVER=' | cut -d= -f2)
-     ssh -A -i $SSH_KEY $SERVER "cat /opt/vi-agent/registry.json"
-     ```
-   - 列出选项让用户选择
-
-2. **查看哪个服务?**
-   - 选项: all (所有), api-server, frontend, vi-gateway, vi-realtime, postgres, redis
-
-3. **显示多少行?**
-   - 选项: 50 (快速), 100 (默认), 200, 500
-
-### Step 2: 获取日志
+### Step 2: Trigger Logs Action
 
 ```bash
-ssh -A -i $SSH_KEY $SERVER \
-  "cd /opt/vi-agent/instances/<NAME> && docker compose logs --tail <LINES> <SERVICE> 2>&1"
+gh workflow run deploy-dev.yml --ref pre-launch \
+  -f developer="$DEVELOPER" \
+  -f action=logs \
+  -f service="$SERVICE" \
+  -f lines="$LINES"
 ```
 
-### Step 3: 展示日志
+### Step 3: Wait and Read
 
-直接输出日志内容。如果日志很长，只展示最后部分并提示增加行数。
+```bash
+sleep 5
+RUN_ID=$(gh run list --workflow=deploy-dev.yml --event=workflow_dispatch --limit 1 \
+  --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN_ID" --exit-status
+```
 
-## 常用场景
+Read logs:
+```bash
+gh run view "$RUN_ID" --log 2>&1 | grep -A 500 "=== Container Logs" | head -500
+```
 
-- `/dev-log liya api` — 排查 API 报错
-- `/dev-log liya` — 查看所有服务日志
-- `/dev-log` — 交互式选择
+### Step 4: Display
 
-## 错误处理
+Show the logs directly. If too long, show last 100 lines and suggest increasing `lines` parameter.
 
-- 实例不存在: 提示可用实例名称
-- 实例已停止: 提示用 `docker compose logs`（不带 `-f`）查看历史
+## Services
+
+Valid service names: `api-server`, `frontend`, `nanoclaw`, `vi-realtime`, `postgres`, `redis`
+
+Empty = all services.

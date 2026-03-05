@@ -27,7 +27,7 @@
 # EXIT CODES:
 #   0 — always (non-fatal: notification failures warn but do not block callers)
 #
-# READS: .teamwork/config.yml via tw-config.sh
+# READS: .teamwork/config.yml or .teamspace/config.yml via tw-config.sh
 
 set -euo pipefail
 
@@ -67,16 +67,29 @@ PARAM_MC_COUNT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --issue)      PARAM_ISSUE="${2:-}"; shift 2 ;;
-    --title)      PARAM_TITLE="${2:-}"; shift 2 ;;
-    --assignee)   PARAM_ASSIGNEE="${2:-}"; shift 2 ;;
-    --branch)     PARAM_BRANCH="${2:-}"; shift 2 ;;
-    --pr)         PARAM_PR="${2:-}"; shift 2 ;;
-    --feedback)   PARAM_FEEDBACK="${2:-}"; shift 2 ;;
-    --mc_count)   PARAM_MC_COUNT="${2:-}"; shift 2 ;;
+    --issue)      PARAM_ISSUE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --title)      PARAM_TITLE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --assignee)   PARAM_ASSIGNEE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --branch)     PARAM_BRANCH="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --pr)         PARAM_PR="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --feedback)   PARAM_FEEDBACK="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --mc_count)   PARAM_MC_COUNT="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
     *)            shift ;;
   esac
 done
+
+# --- Detect config file ---
+detect_config() {
+  if [ -f ".teamwork/config.yml" ]; then
+    echo ".teamwork/config.yml"
+  elif [ -f ".teamspace/config.yml" ]; then
+    echo ".teamspace/config.yml"
+  else
+    echo ""
+  fi
+}
+
+CONFIG_FILE=$(detect_config)
 
 # --- Read config ---
 REPO=$(bash "$TW_CONFIG" team.repo "" 2>/dev/null)
@@ -84,15 +97,12 @@ REPO=$(bash "$TW_CONFIG" team.repo "" 2>/dev/null)
 # Parse notifications section directly (tw-config.sh can't handle nested lists).
 # Returns: "enabled|channel1,channel2" or "disabled|" or "no_event|"
 parse_notifications() {
-  local config_file=""
-  if [ -f ".teamwork/config.yml" ]; then
-    config_file=".teamwork/config.yml"
-  else
+  if [ -z "$CONFIG_FILE" ]; then
     echo "disabled|"
     return
   fi
 
-  python3 - "$config_file" "$EVENT" << 'PYEOF'
+  python3 - "$CONFIG_FILE" "$EVENT" << 'PYEOF'
 import sys, re
 
 config_file = sys.argv[1]
@@ -227,16 +237,12 @@ get_channel_config() {
   local channel_type="$1"
   local field="$2"
 
-  # Detect config file
-  local config_file=""
-  if [ -f ".teamwork/config.yml" ]; then
-    config_file=".teamwork/config.yml"
-  else
+  if [ -z "$CONFIG_FILE" ]; then
     echo ""
     return
   fi
 
-  python3 - "$config_file" "$channel_type" "$field" << 'PYEOF'
+  python3 - "$CONFIG_FILE" "$channel_type" "$field" << 'PYEOF'
 import sys, re
 
 config_file = sys.argv[1]
