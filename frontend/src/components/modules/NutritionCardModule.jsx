@@ -62,10 +62,10 @@ function MacroRing({ protein, carbs, fat, calories }) {
           })}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-white/90 font-bold" style={{ fontSize: 'var(--text-lg)' }}>
+          <span className="text-black/80 font-bold" style={{ fontSize: 'var(--text-lg)' }}>
             {calories}
           </span>
-          <span className="text-white/40" style={{ fontSize: 'var(--text-xs)' }}>
+          <span className="text-black/30" style={{ fontSize: 'var(--text-xs)' }}>
             kcal
           </span>
         </div>
@@ -78,16 +78,16 @@ function DailyBar({ label, percent, color }) {
   const clamped = Math.min(100, Math.max(0, percent || 0));
   return (
     <div className="flex items-center gap-2">
-      <span className="text-white/50 w-14 shrink-0 text-right" style={{ fontSize: 'var(--text-xs)' }}>
+      <span className="text-black/40 w-14 shrink-0 text-right" style={{ fontSize: 'var(--text-xs)' }}>
         {label}
       </span>
-      <div className="flex-1 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full ${color} transition-all duration-500`}
           style={{ width: `${clamped}%`, opacity: 0.7 }}
         />
       </div>
-      <span className="text-white/40 w-8 shrink-0" style={{ fontSize: 'var(--text-xs)' }}>
+      <span className="text-black/30 w-8 shrink-0" style={{ fontSize: 'var(--text-xs)' }}>
         {Math.round(clamped)}%
       </span>
     </div>
@@ -147,7 +147,7 @@ export default function NutritionCardModule({ data, onAction }) {
           ].map(({ key, value }) => value != null && (
             <div key={key} className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${MACRO_COLORS[key].bg}`} style={{ opacity: 0.8 }} />
-              <span className="text-white/50" style={{ fontSize: 'var(--text-xs)' }}>
+              <span className="text-black/40" style={{ fontSize: 'var(--text-xs)' }}>
                 {MACRO_COLORS[key].label} {value}g
               </span>
             </div>
@@ -155,7 +155,7 @@ export default function NutritionCardModule({ data, onAction }) {
         </div>
 
         {fiber_g != null && (
-          <div className="text-center text-white/40 mb-3" style={{ fontSize: 'var(--text-xs)' }}>
+          <div className="text-center text-black/30 mb-3" style={{ fontSize: 'var(--text-xs)' }}>
             Fiber: {fiber_g}g
           </div>
         )}
@@ -165,7 +165,7 @@ export default function NutritionCardModule({ data, onAction }) {
           <>
             <AccentBar className="mb-3" />
             <GlassSection>
-              <p className="text-white/40 font-medium uppercase tracking-wider mb-2" style={{ fontSize: 'var(--text-xs)' }}>
+              <p className="text-black/30 font-medium uppercase tracking-wider mb-2" style={{ fontSize: 'var(--text-xs)' }}>
                 Daily Value
               </p>
               <div className="space-y-2">
@@ -190,7 +190,7 @@ export default function NutritionCardModule({ data, onAction }) {
         {recommendation && (
           <>
             <GlassDivider />
-            <p className="text-white/60" style={{ fontSize: 'var(--text-sm)' }}>
+            <p className="text-black/50" style={{ fontSize: 'var(--text-sm)' }}>
               {recommendation}
             </p>
           </>

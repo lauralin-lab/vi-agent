@@ -32,17 +32,17 @@ export default function InfoCardModule({ data, onAction }) {
                 key={i}
                 className={`
                   flex justify-between items-baseline gap-3 py-2 px-2.5 rounded-lg
-                  ${field.highlight ? 'bg-purple-500/10 border border-purple-500/15' : 'bg-white/[0.02]'}
+                  ${field.highlight ? 'bg-purple-500/10 border border-purple-500/15' : 'bg-black/[0.02]'}
                 `}
               >
                 <span
-                  className={`shrink-0 ${field.highlight ? 'text-purple-300/80' : 'text-white/40'}`}
+                  className={`shrink-0 ${field.highlight ? 'text-purple-300/80' : 'text-black/30'}`}
                   style={{ fontSize: 'var(--text-xs)' }}
                 >
                   {field.label}
                 </span>
                 <span
-                  className={`text-right ${field.highlight ? 'text-purple-200 font-medium' : 'text-white/80'}`}
+                  className={`text-right ${field.highlight ? 'text-purple-200 font-medium' : 'text-black/70'}`}
                   style={{ fontSize: 'var(--text-sm)' }}
                 >
                   {field.value}

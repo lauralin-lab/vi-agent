@@ -47,7 +47,7 @@ export default function MapPinsModule({ data, onAction }) {
                 w-full text-left rounded-xl p-3 transition-all duration-200
                 ${isSelected
                   ? 'bg-purple-500/15 border border-purple-500/30 ring-1 ring-purple-500/20'
-                  : 'bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06]'
+                  : 'bg-black/[0.03] border border-black/[0.06] hover:bg-black/[0.06]'
                 }
               `}
             >
@@ -56,7 +56,7 @@ export default function MapPinsModule({ data, onAction }) {
                 <span
                   className={`
                     w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-base
-                    ${isSelected ? 'bg-purple-500/20' : 'bg-white/[0.06]'}
+                    ${isSelected ? 'bg-purple-500/20' : 'bg-black/[0.06]'}
                   `}
                 >
                   {marker.icon || '📍'}
@@ -66,7 +66,7 @@ export default function MapPinsModule({ data, onAction }) {
                   {/* Label */}
                   <div className="flex items-center gap-2">
                     <span
-                      className={`font-medium truncate ${isSelected ? 'text-purple-200' : 'text-white/80'}`}
+                      className={`font-medium truncate ${isSelected ? 'text-purple-200' : 'text-black/70'}`}
                       style={{ fontSize: 'var(--text-sm)' }}
                     >
                       {marker.label}
@@ -75,7 +75,7 @@ export default function MapPinsModule({ data, onAction }) {
 
                   {/* Description */}
                   {marker.description && (
-                    <p className="text-white/40 mt-0.5 line-clamp-2" style={{ fontSize: 'var(--text-xs)' }}>
+                    <p className="text-black/30 mt-0.5 line-clamp-2" style={{ fontSize: 'var(--text-xs)' }}>
                       {marker.description}
                     </p>
                   )}

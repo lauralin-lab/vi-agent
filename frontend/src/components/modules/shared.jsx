@@ -1,17 +1,17 @@
 /**
  * Shared glassmorphism primitives for module components.
  *
- * Design system: enhanced glassmorphism on black background.
+ * Design system: light glassmorphism on white background.
  * - Frosted glass containers with subtle borders
  * - Purple accent gradients
- * - Opacity-based text hierarchy (white/90, white/60, white/40)
+ * - Opacity-based text hierarchy (black/80, black/50, black/35)
  * - Mobile portrait optimized (~390px)
  */
 
 import { motion } from 'framer-motion';
 
 // ── Glass Card ──
-// Primary container for module content
+// Primary container for module content (light theme — rendered on white background)
 export function GlassCard({ children, className = '', padding = true, animate = true }) {
   const Wrapper = animate ? motion.div : 'div';
   const animProps = animate ? {
@@ -24,8 +24,8 @@ export function GlassCard({ children, className = '', padding = true, animate = 
     <Wrapper
       {...animProps}
       className={`
-        bg-white/[0.05] backdrop-blur-xl
-        border border-white/[0.08]
+        bg-black/[0.02] backdrop-blur-xl
+        border border-black/[0.06]
         rounded-2xl overflow-hidden
         ${padding ? 'p-4' : ''}
         ${className}
@@ -40,7 +40,7 @@ export function GlassCard({ children, className = '', padding = true, animate = 
 // Inner section within a card (no border, lighter bg)
 export function GlassSection({ children, className = '' }) {
   return (
-    <div className={`bg-white/[0.03] rounded-xl p-3 ${className}`}>
+    <div className={`bg-black/[0.02] rounded-xl p-3 ${className}`}>
       {children}
     </div>
   );
@@ -50,12 +50,12 @@ export function GlassSection({ children, className = '' }) {
 // Tag / badge / label
 export function GlassChip({ children, color = 'default', className = '' }) {
   const colors = {
-    default: 'bg-white/[0.08] text-white/70 border-white/[0.06]',
-    purple: 'bg-purple-500/15 text-purple-300 border-purple-500/20',
-    green: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20',
-    amber: 'bg-amber-500/15 text-amber-300 border-amber-500/20',
-    red: 'bg-red-500/15 text-red-300 border-red-500/20',
-    blue: 'bg-blue-500/15 text-blue-300 border-blue-500/20',
+    default: 'bg-black/[0.04] text-black/60 border-black/[0.06]',
+    purple: 'bg-purple-500/10 text-purple-700 border-purple-500/20',
+    green: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20',
+    amber: 'bg-amber-500/10 text-amber-700 border-amber-500/20',
+    red: 'bg-red-500/10 text-red-700 border-red-500/20',
+    blue: 'bg-blue-500/10 text-blue-700 border-blue-500/20',
   };
 
   return (
@@ -78,9 +78,9 @@ export function GlassChip({ children, color = 'default', className = '' }) {
 // Action button with hover/press states
 export function GlassButton({ children, onClick, icon: Icon, variant = 'default', className = '' }) {
   const variants = {
-    default: 'bg-white/[0.06] hover:bg-white/[0.10] border-white/[0.08] text-white/80',
-    primary: 'bg-purple-500/20 hover:bg-purple-500/30 border-purple-500/25 text-purple-200',
-    ghost: 'bg-transparent hover:bg-white/[0.06] border-transparent text-white/60',
+    default: 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.06] text-black/70',
+    primary: 'bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/25 text-purple-700',
+    ghost: 'bg-transparent hover:bg-black/[0.04] border-transparent text-black/50',
   };
 
   return (
@@ -104,7 +104,7 @@ export function GlassButton({ children, onClick, icon: Icon, variant = 'default'
 
 // ── Glass Divider ──
 export function GlassDivider({ className = '' }) {
-  return <div className={`h-px bg-white/[0.06] my-3 ${className}`} />;
+  return <div className={`h-px bg-black/[0.06] my-3 ${className}`} />;
 }
 
 // ── Module Header ──
@@ -116,7 +116,7 @@ export function ModuleHeader({ title, subtitle, icon, children }) {
         <div className="flex items-center gap-2">
           {icon && <span style={{ fontSize: 'var(--text-lg)' }}>{icon}</span>}
           <h3
-            className="text-white/90 font-semibold truncate"
+            className="text-black/80 font-semibold truncate"
             style={{ fontSize: 'var(--text-lg)' }}
           >
             {title}
@@ -124,7 +124,7 @@ export function ModuleHeader({ title, subtitle, icon, children }) {
         </div>
         {subtitle && (
           <p
-            className="text-white/50 mt-0.5 truncate"
+            className="text-black/40 mt-0.5 truncate"
             style={{ fontSize: 'var(--text-sm)' }}
           >
             {subtitle}
@@ -146,14 +146,14 @@ export function StarRating({ rating, max = 5, size = 14 }) {
     } else if (rating >= i - 0.5) {
       stars.push(
         <span key={i} className="relative inline-block" style={{ width: `${size}px` }}>
-          <span className="text-white/20">★</span>
+          <span className="text-black/20">★</span>
           <span className="absolute inset-0 overflow-hidden" style={{ width: '50%' }}>
             <span className="text-amber-400">★</span>
           </span>
         </span>
       );
     } else {
-      stars.push(<span key={i} className="text-white/20">★</span>);
+      stars.push(<span key={i} className="text-black/20">★</span>);
     }
   }
 
@@ -161,7 +161,7 @@ export function StarRating({ rating, max = 5, size = 14 }) {
     <span className="inline-flex items-center gap-px" style={{ fontSize: `${size}px` }}>
       {stars}
       {rating > 0 && (
-        <span className="text-white/50 ml-1.5" style={{ fontSize: 'var(--text-xs)' }}>
+        <span className="text-black/40 ml-1.5" style={{ fontSize: 'var(--text-xs)' }}>
           {rating.toFixed(1)}
         </span>
       )}
@@ -179,7 +179,7 @@ export function PriceLevel({ level }) {
   return (
     <span style={{ fontSize: 'var(--text-sm)' }}>
       {Array.from({ length: max }, (_, i) => (
-        <span key={i} className={i < count ? 'text-emerald-400' : 'text-white/15'}>$</span>
+        <span key={i} className={i < count ? 'text-emerald-400' : 'text-black/15'}>$</span>
       ))}
     </span>
   );
@@ -211,7 +211,7 @@ export function CheckboxItem({ checked, onToggle, children, strikethrough = true
         transition-all duration-200
         ${checked
           ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
-          : 'bg-white/[0.04] border-white/[0.12] text-transparent group-hover:border-white/20'
+          : 'bg-black/[0.03] border-black/[0.10] text-transparent group-hover:border-black/20'
         }
       `}>
         {checked && (
@@ -225,7 +225,7 @@ export function CheckboxItem({ checked, onToggle, children, strikethrough = true
         )}
       </span>
       <span
-        className={`transition-all duration-200 ${checked && strikethrough ? 'text-white/30 line-through' : 'text-white/80'}`}
+        className={`transition-all duration-200 ${checked && strikethrough ? 'text-black/25 line-through' : 'text-black/70'}`}
         style={{ fontSize: 'var(--text-sm)' }}
       >
         {children}
@@ -260,7 +260,7 @@ export function WeatherIcon({ condition, size = 32 }) {
 export function AccentBar({ className = '' }) {
   return (
     <div
-      className={`h-[2px] rounded-full bg-gradient-to-r from-purple-500/60 via-blue-500/40 to-transparent ${className}`}
+      className={`h-[2px] rounded-full bg-gradient-to-r from-purple-500/40 via-blue-500/25 to-transparent ${className}`}
     />
   );
 }
@@ -270,12 +270,12 @@ export function AccentBar({ className = '' }) {
 export function ModuleErrorFallback({ module_type, data }) {
   return (
     <GlassCard>
-      <div className="text-white/40 space-y-2">
+      <div className="text-black/35 space-y-2">
         <p style={{ fontSize: 'var(--text-sm)' }}>
-          Could not render <span className="text-white/60 font-medium">{module_type}</span> module
+          Could not render <span className="text-black/50 font-medium">{module_type}</span> module
         </p>
         <pre
-          className="bg-white/[0.03] rounded-lg p-3 overflow-x-auto text-white/30"
+          className="bg-black/[0.03] rounded-lg p-3 overflow-x-auto text-black/25"
           style={{ fontSize: 'var(--text-xs)' }}
         >
           {JSON.stringify(data, null, 2).slice(0, 500)}

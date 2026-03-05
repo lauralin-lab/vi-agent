@@ -83,7 +83,7 @@ class ModuleErrorBoundary extends Component {
 function ModuleLoadingFallback() {
   return (
     <div className="flex items-center justify-center py-8">
-      <Loader2 size={20} className="text-white/20 animate-spin" />
+      <Loader2 size={20} className="text-black/15 animate-spin" />
     </div>
   );
 }

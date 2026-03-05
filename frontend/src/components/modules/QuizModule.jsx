@@ -34,13 +34,13 @@ export default function QuizModule({ data, onAction }) {
       <ModuleHeader title="Quiz" icon="❓" />
 
       {/* Question */}
-      <p className="text-white/90 font-medium mb-4" style={{ fontSize: 'var(--text-lg)' }}>
+      <p className="text-black/80 font-medium mb-4" style={{ fontSize: 'var(--text-lg)' }}>
         {question}
       </p>
 
       {/* Optional image */}
       {image_url && (
-        <div className="rounded-xl overflow-hidden mb-4 border border-white/[0.06]">
+        <div className="rounded-xl overflow-hidden mb-4 border border-black/[0.06]">
           <img src={image_url} alt="Quiz" className="w-full h-auto object-cover" style={{ maxHeight: 200 }} />
         </div>
       )}
@@ -51,9 +51,9 @@ export default function QuizModule({ data, onAction }) {
           const isSelected = selectedId === option.id;
           const isCorrect = option.correct;
 
-          let borderClass = 'border-white/[0.08]';
-          let bgClass = 'bg-white/[0.03] hover:bg-white/[0.06]';
-          let textClass = 'text-white/80';
+          let borderClass = 'border-black/[0.08]';
+          let bgClass = 'bg-black/[0.03] hover:bg-black/[0.06]';
+          let textClass = 'text-black/70';
 
           if (revealed) {
             if (isCorrect) {
@@ -65,8 +65,8 @@ export default function QuizModule({ data, onAction }) {
               bgClass = 'bg-red-500/10';
               textClass = 'text-red-300';
             } else {
-              bgClass = 'bg-white/[0.02]';
-              textClass = 'text-white/30';
+              bgClass = 'bg-black/[0.02]';
+              textClass = 'text-black/25';
             }
           }
 
@@ -92,8 +92,8 @@ export default function QuizModule({ data, onAction }) {
                     w-6 h-6 rounded-full border flex items-center justify-center shrink-0
                     ${revealed && isCorrect ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300' : ''}
                     ${revealed && isSelected && !isCorrect ? 'border-red-500/50 bg-red-500/20 text-red-300' : ''}
-                    ${!revealed ? 'border-white/[0.12] bg-white/[0.04]' : ''}
-                    ${revealed && !isCorrect && !isSelected ? 'border-white/[0.06] bg-transparent' : ''}
+                    ${!revealed ? 'border-black/[0.12] bg-black/[0.04]' : ''}
+                    ${revealed && !isCorrect && !isSelected ? 'border-black/[0.06] bg-transparent' : ''}
                   `}
                   style={{ fontSize: 'var(--text-xs)' }}
                 >
@@ -119,10 +119,10 @@ export default function QuizModule({ data, onAction }) {
         >
           <GlassDivider />
           <GlassSection>
-            <p className="text-white/40 font-medium uppercase tracking-wider mb-1" style={{ fontSize: 'var(--text-xs)' }}>
+            <p className="text-black/30 font-medium uppercase tracking-wider mb-1" style={{ fontSize: 'var(--text-xs)' }}>
               Explanation
             </p>
-            <p className="text-white/60" style={{ fontSize: 'var(--text-sm)' }}>
+            <p className="text-black/50" style={{ fontSize: 'var(--text-sm)' }}>
               {explanation}
             </p>
           </GlassSection>

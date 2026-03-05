@@ -17,7 +17,7 @@ function StaticMap({ lat, lng }) {
   const src = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=400x200&scale=2&maptype=roadmap&style=feature:all|element:geometry|color:0x242f3e&style=feature:all|element:labels.text.fill|color:0x746855&markers=color:0xa855f7|${lat},${lng}&key=`;
 
   return (
-    <div className="rounded-xl overflow-hidden mt-3 border border-white/[0.06]">
+    <div className="rounded-xl overflow-hidden mt-3 border border-black/[0.06]">
       <img
         src={src}
         alt="Map"
@@ -80,7 +80,7 @@ export default function PlaceCardModule({ data, onAction }) {
               href={`https://maps.google.com/?q=${encodeURIComponent(address)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-start gap-2.5 text-white/70 hover:text-white/90 transition-colors"
+              className="flex items-start gap-2.5 text-black/60 hover:text-black/80 transition-colors"
               style={{ fontSize: 'var(--text-sm)' }}
             >
               <MapPin size={14} className="mt-0.5 shrink-0 text-purple-400" />
@@ -91,7 +91,7 @@ export default function PlaceCardModule({ data, onAction }) {
           {phone && (
             <a
               href={`tel:${phone}`}
-              className="flex items-center gap-2.5 text-white/70 hover:text-white/90 transition-colors"
+              className="flex items-center gap-2.5 text-black/60 hover:text-black/80 transition-colors"
               style={{ fontSize: 'var(--text-sm)' }}
             >
               <Phone size={14} className="shrink-0 text-purple-400" />
@@ -101,10 +101,10 @@ export default function PlaceCardModule({ data, onAction }) {
 
           {hours && (
             <div
-              className="flex items-center gap-2.5 text-white/60"
+              className="flex items-center gap-2.5 text-black/50"
               style={{ fontSize: 'var(--text-sm)' }}
             >
-              <Clock size={14} className="shrink-0 text-white/40" />
+              <Clock size={14} className="shrink-0 text-black/30" />
               <span>{hours}</span>
             </div>
           )}

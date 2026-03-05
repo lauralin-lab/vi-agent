@@ -51,38 +51,38 @@ export default function StepsGuideModule({ data, onAction }) {
                 {/* Timeline column */}
                 <div className="flex flex-col items-center shrink-0">
                   <span
-                    className="w-7 h-7 rounded-full bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 font-semibold z-10"
+                    className="w-7 h-7 rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-600 font-semibold z-10"
                     style={{ fontSize: 'var(--text-xs)' }}
                   >
                     {i + 1}
                   </span>
                   {!isLast && (
-                    <div className="w-px flex-1 bg-gradient-to-b from-purple-500/30 to-white/[0.05] min-h-[24px]" />
+                    <div className="w-px flex-1 bg-gradient-to-b from-purple-500/20 to-black/[0.03] min-h-[24px]" />
                   )}
                 </div>
 
                 {/* Content */}
                 <div className={`pb-${isLast ? '0' : '5'} min-w-0 flex-1`}>
-                  <h4 className="text-white/85 font-medium mb-1" style={{ fontSize: 'var(--text-sm)' }}>
+                  <h4 className="text-black/80 font-medium mb-1" style={{ fontSize: 'var(--text-sm)' }}>
                     {step.title || step.label}
                   </h4>
                   {step.description && (
-                    <p className="text-white/50 leading-relaxed" style={{ fontSize: 'var(--text-sm)' }}>
+                    <p className="text-black/45 leading-relaxed" style={{ fontSize: 'var(--text-sm)' }}>
                       {step.description}
                     </p>
                   )}
                   {step.content && step.content !== step.title && step.content !== step.label && (
-                    <p className="text-white/50 leading-relaxed" style={{ fontSize: 'var(--text-sm)' }}>
+                    <p className="text-black/45 leading-relaxed" style={{ fontSize: 'var(--text-sm)' }}>
                       {step.content}
                     </p>
                   )}
                   {step.tip && (
-                    <p className="text-purple-300/60 mt-1" style={{ fontSize: 'var(--text-xs)' }}>
+                    <p className="text-purple-600/60 mt-1" style={{ fontSize: 'var(--text-xs)' }}>
                       💡 {step.tip}
                     </p>
                   )}
                   {step.image_url && (
-                    <div className="mt-2 rounded-lg overflow-hidden border border-white/[0.06]">
+                    <div className="mt-2 rounded-lg overflow-hidden border border-black/[0.06]">
                       <img
                         src={step.image_url}
                         alt={step.title || step.label || `Step ${i + 1}`}
@@ -99,7 +99,7 @@ export default function StepsGuideModule({ data, onAction }) {
 
       {/* Conclusion text from Claude */}
       {conclusion && (
-        <div className="text-white/70 leading-relaxed whitespace-pre-wrap" style={{ fontSize: 'var(--text-sm)' }}>
+        <div className="text-black/60 leading-relaxed whitespace-pre-wrap" style={{ fontSize: 'var(--text-sm)' }}>
           {conclusion}
         </div>
       )}
