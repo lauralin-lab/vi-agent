@@ -3,7 +3,6 @@
 import time
 
 import pytest
-from jwt.exceptions import PyJWTError
 
 from app.services.token_service import create_access_token, decode_access_token
 

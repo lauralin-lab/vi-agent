@@ -60,7 +60,6 @@ class TestFullMainFlow:
 
         user_id = signup_data["user_id"]
         vi_user_id = signup_data["vi_user_id"]
-        signup_token = signup_data["token"]
 
         # ================================================================
         # Step 2: Login with the same credentials → get fresh token

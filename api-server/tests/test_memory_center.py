@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 
-from app.models import AgentMemory, User
+from app.models import User
 from app.services.memory_center import (
     ImportanceScorer,
     MemoryCenter,

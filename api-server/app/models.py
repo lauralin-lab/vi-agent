@@ -3,16 +3,15 @@ from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, MetaData, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import DateTime as _DateTime
+
+from .config import settings
 
 # Use timezone-aware TIMESTAMP WITH TIME ZONE for all datetime columns
 DateTime = _DateTime(timezone=True)
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, relationship
-
-from .config import settings
 
 engine = create_async_engine(settings.DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
