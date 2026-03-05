@@ -24,35 +24,15 @@ variable "project_id" {
   type        = string
 }
 
-# Allow HTTP/HTTPS for all vi-agent instances
-resource "google_compute_firewall" "vi_agent_allow_web" {
-  name    = "vi-agent-allow-web"
-  network = "default"
-  project = var.project_id
+# --- Existing rules (import these, don't recreate) ---
+# default-allow-http, default-allow-https, default-allow-ssh, default-allow-icmp,
+# default-allow-rdp, default-allow-internal are GCP default VPC rules.
+# "server" rule (tcp:3000-10000, tags: http-server,https-server) already exists.
+# We do NOT manage those here to avoid conflicts.
 
-  allow {
-    protocol = "tcp"
-    ports    = ["80", "443"]
-  }
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["vi-agent"]
-}
-
-# Allow dev instance port range (slot-based: 3100-3903)
-resource "google_compute_firewall" "vi_agent_allow_dev_ports" {
-  name    = "vi-agent-allow-dev-ports"
-  network = "default"
-  project = var.project_id
-
-  allow {
-    protocol = "tcp"
-    ports    = ["3100-3903"]
-  }
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["vi-agent-dev"]
-}
-
-# Deny external access to databases (high priority)
+# --- Deny external access to databases on staging/prod ---
+# Staging runs Postgres/Redis in Docker; block external access.
+# Prod uses managed services (private IP), but this is defense-in-depth.
 resource "google_compute_firewall" "vi_agent_deny_db" {
   name     = "vi-agent-deny-db"
   network  = "default"
@@ -64,5 +44,5 @@ resource "google_compute_firewall" "vi_agent_deny_db" {
     ports    = ["5432", "6379"]
   }
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["vi-agent"]
+  target_tags   = ["http-server"]
 }

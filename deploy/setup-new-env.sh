@@ -1,10 +1,16 @@
 #!/bin/bash
 # VI Agent — Bootstrap a fresh Ubuntu VM for staging/prod deployment
-# Usage: ssh user@vm 'bash -s' < deploy/setup-new-env.sh
+# Usage:
+#   ENV=staging ssh user@vm 'bash -s' < deploy/setup-new-env.sh
+#   ENV=prod    ssh user@vm 'bash -s' < deploy/setup-new-env.sh
 
 set -e
 
-echo "=== VI Agent — New Environment Setup ==="
+ENV="${ENV:-staging}"
+APP_DIR="/opt/vi-agent"
+REPO_URL="https://github.com/flair-home-stylist/vi_agent.git"
+
+echo "=== VI Agent — ${ENV} Environment Setup ==="
 echo ""
 
 # --- 1. System update ---
@@ -30,29 +36,39 @@ sudo usermod -aG docker "$USER"
 
 # --- 3. Create app directory structure ---
 echo "[3/6] Creating app directories..."
-sudo mkdir -p /opt/vi-agent/{ssl,data,logs}
-sudo chown -R "$USER:$USER" /opt/vi-agent
+sudo mkdir -p "${APP_DIR}"/{ssl,data,logs}
+sudo chown -R "$USER:$USER" "${APP_DIR}"
 
-# --- 4. Clone repo / copy compose files ---
+# --- 4. Clone repo and symlink compose file ---
 echo "[4/6] Setting up project files..."
-if [ ! -f /opt/vi-agent/docker-compose.yml ]; then
+if [ ! -d "${APP_DIR}/repo" ]; then
     echo "  Cloning repository..."
-    git clone https://github.com/flair-home-stylist/vi_agent.git /opt/vi-agent/repo
-    # Symlink compose files to app root
-    ln -sf /opt/vi-agent/repo/docker-compose.yml /opt/vi-agent/docker-compose.yml
-    ln -sf /opt/vi-agent/repo/docker-compose.deploy.yml /opt/vi-agent/docker-compose.deploy.yml
+    git clone "${REPO_URL}" "${APP_DIR}/repo"
 else
-    echo "  Compose files already present, skipping clone."
+    echo "  Repo exists, pulling latest..."
+    cd "${APP_DIR}/repo" && git pull || true
+fi
+
+# Symlink the environment-specific compose file
+COMPOSE_SRC="${APP_DIR}/repo/deploy/docker-compose.${ENV}.yml"
+COMPOSE_DST="${APP_DIR}/docker-compose.${ENV}.yml"
+if [ -f "$COMPOSE_SRC" ]; then
+    ln -sf "$COMPOSE_SRC" "$COMPOSE_DST"
+    echo "  Linked docker-compose.${ENV}.yml"
+else
+    echo "  WARNING: ${COMPOSE_SRC} not found!"
 fi
 
 # --- 5. Setup .env ---
 echo "[5/6] Setting up environment config..."
-if [ ! -f /opt/vi-agent/.env ]; then
-    if [ -f /opt/vi-agent/repo/.env.example ]; then
-        cp /opt/vi-agent/repo/.env.example /opt/vi-agent/.env
-        echo "  Copied .env.example -> .env (edit before starting!)"
+if [ ! -f "${APP_DIR}/.env" ]; then
+    ENV_EXAMPLE="${APP_DIR}/repo/deploy/env.${ENV}.example"
+    if [ -f "$ENV_EXAMPLE" ]; then
+        cp "$ENV_EXAMPLE" "${APP_DIR}/.env"
+        chmod 600 "${APP_DIR}/.env"
+        echo "  Copied env.${ENV}.example -> .env (edit before starting!)"
     else
-        echo "  WARNING: No .env.example found. Create .env manually."
+        echo "  WARNING: No env.${ENV}.example found. Create .env manually."
     fi
 else
     echo "  .env already exists, skipping."
@@ -63,22 +79,24 @@ echo "[6/6] Configuring UFW firewall..."
 sudo ufw allow OpenSSH 2>/dev/null || true
 sudo ufw allow 80/tcp 2>/dev/null || true
 sudo ufw allow 443/tcp 2>/dev/null || true
-sudo ufw allow 7880/tcp 2>/dev/null || true  # LiveKit WebRTC
 echo "y" | sudo ufw enable 2>/dev/null || true
 
 echo ""
-echo "=== Setup Complete ==="
+echo "=== Setup Complete (${ENV}) ==="
 echo ""
 echo "Next steps:"
 echo "  1. Log out and back in (for docker group to take effect)"
-echo "  2. Log in to Docker Hub:  docker login"
-echo "  3. Edit .env:             nano /opt/vi-agent/.env"
+echo "  2. Edit .env:             nano ${APP_DIR}/.env"
 echo "     - Set all API keys (LiveKit, Gemini, Anthropic)"
-echo "     - Set strong passwords (POSTGRES_PASSWORD, JWT_SECRET, REDIS_PASSWORD)"
-echo "     - Set CORS_ORIGINS to your domain"
-echo "  4. Setup SSL:             Place cert.pem + key.pem in /opt/vi-agent/ssl/"
-echo "  5. Deploy:"
-echo "     cd /opt/vi-agent"
-echo "     export IMAGE_TAG=<tag-from-ci>"
-echo "     docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d"
+if [ "$ENV" = "staging" ]; then
+echo "     - Set strong POSTGRES_PASSWORD and REDIS_PASSWORD"
+else
+echo "     - Set DB_HOST, REDIS_HOST from Terraform outputs"
+echo "     - Set DB_PASSWORD, REDIS_AUTH from Terraform"
+fi
+echo "     - Set JWT_SECRET, INTERNAL_API_TOKEN"
+echo "  3. Setup SSL:             Place cert.pem + key.pem in ${APP_DIR}/ssl/"
+echo "  4. Deploy:"
+echo "     cd ${APP_DIR}"
+echo "     docker compose -f docker-compose.${ENV}.yml up -d"
 echo ""
