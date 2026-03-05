@@ -35,11 +35,12 @@ ssl
 *.egg-info
 
 # Claude Code runtime artifacts (not committed)
-.claude/drive/
 .claude/worktrees/
 .claude/config/self-drive.json
 CLAUDE.md
 CLOUD_ACCESS.md
 test_results/
-# Teamwork ephemeral contracts (active/ is per-developer local state)
+# Teamwork ephemeral (per-developer local state, not committed)
+# Includes: drive sessions, team status, workflow guides
 .teamwork/active/
+.teamwork/local/

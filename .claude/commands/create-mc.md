@@ -244,13 +244,17 @@ If milestone assignment fails (milestone doesn't exist):
 ## Step 6: Create Branch
 
 ```bash
+# Read base branch from config
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
+
 # Slugify title
 SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 30)
 BRANCH="mission/${ISSUE_NUMBER}-${SLUG}"
 
-# Create and push branch from latest main
-git fetch origin main
-git branch "$BRANCH" origin/main
+# Create and push branch from latest base branch (pre-launch)
+git fetch origin "$BASE_BRANCH"
+git branch "$BRANCH" "origin/$BASE_BRANCH"
 git push -u origin "$BRANCH"
 ```
 

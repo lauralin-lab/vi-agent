@@ -49,7 +49,7 @@ Read broadly and deeply across the available collaboration artifacts:
    → How does the user communicate? What do they specify? What do they leave vague?
    → What questions do they ask? What questions do they NEVER ask?
 
-3. PROJECT ARTIFACTS — .claude/drive/ directories across projects
+3. PROJECT ARTIFACTS — .teamwork/local/drive/ directories across projects
    → research-*.md, plan-*.md, feedback-*.md
    → How did past missions go? Where was rework? Where was friction?
 
@@ -66,7 +66,7 @@ Read broadly and deeply across the available collaboration artifacts:
 
 ```
 Agent(Explore): "Scan all ~/.claude/projects/*/memory/ files for user patterns, preferences, recurring issues"
-Agent(Explore): "Search .claude/drive/ directories for feedback-*.md files and research-*.md files — extract friction points and rework patterns"
+Agent(Explore): "Search .teamwork/local/drive/ directories for feedback-*.md files and research-*.md files — extract friction points and rework patterns"
 Agent(Explore): "Analyze recent git history across the user's projects — look for reverts, force-pushes, incomplete features, commit message patterns"
 Agent(general-purpose): "WebSearch for cognitive biases in software development, developer productivity anti-patterns, expert-novice collaboration models"
 ```
@@ -76,24 +76,28 @@ Agent(general-purpose): "WebSearch for cognitive biases in software development,
 From the evidence, extract patterns across these dimensions:
 
 **A. Communication Patterns（沟通模式）**
+
 - How does the user specify requirements? (vague metaphors vs. concrete specs)
 - Do they provide context or assume you know? (implicit vs. explicit communication)
 - How do they respond to questions? (brief vs. detailed, deflective vs. engaged)
 - Do they review your output carefully or skim? (evidence: catch rate of intentional issues)
 
 **B. Decision-Making Patterns（决策模式）**
+
 - Do they decide too fast or too slow? (evidence: time-to-decision vs. decision quality)
 - Do they explore alternatives or lock onto the first idea? (divergent vs. convergent bias)
 - Do they change direction mid-execution? (scope instability)
 - How do they handle uncertainty? (act anyway vs. freeze vs. research)
 
 **C. Knowledge Topology（知识地图）**
+
 - Where is the user's knowledge deep? Where is it shallow?
 - Are there fundamental CS concepts they work around instead of understanding?
 - Are there tools, paradigms, or techniques they don't know exist?
 - Is their mental model of how their system works actually accurate?
 
 **D. Work Habits（工作习惯）**
+
 - Do they test before committing? (quality discipline)
 - Do they read error messages carefully or react to the first line? (debugging depth)
 - Do they plan before coding or dive in? (planning vs. improvisation ratio)
@@ -101,6 +105,7 @@ From the evidence, extract patterns across these dimensions:
 - Do they review AI output or trust blindly? (AI collaboration hygiene)
 
 **E. Thinking Patterns（思维模式）**
+
 - Do they think in abstractions or concrete examples? (abstraction level preference)
 - Do they see systems or components? (systemic vs. reductionist thinking)
 - Do they reason from first principles or from analogy? (reasoning mode)
@@ -108,6 +113,7 @@ From the evidence, extract patterns across these dimensions:
 - Do they challenge your suggestions or accept them? (critical thinking vs. authority bias)
 
 **F. AI Collaboration Anti-Patterns（AI协作反模式）**
+
 - Over-delegation: asking AI to do everything without understanding
 - Under-specification: giving vague instructions then being disappointed
 - Context amnesia: not providing relevant context that would change the outcome
@@ -159,6 +165,7 @@ For §4 (The Knowledge You Are Missing), do a deep research pass:
 4. **Prepare the mechanism** — not just "what" the concept is, but "how" it operates and "why" it produces the outcomes it does
 
 **Quality filter:** Only include knowledge that is:
+
 - From recognized experts or primary sources
 - Explains the WHY, not just the HOW
 - Directly applicable to the user's work context
@@ -175,7 +182,7 @@ For §4 (The Knowledge You Are Missing), do a deep research pass:
 Write the cognitive upgrade artifact to:
 
 ```
-.claude/drive/cognitive-upgrade-{YYYY-MM-DD}.md
+.teamwork/local/drive/cognitive-upgrade-{YYYY-MM-DD}.md
 ```
 
 Use the Write tool to save the file. This is a persistent artifact, not inline conversation output.
@@ -322,11 +329,13 @@ options:
 ```
 
 **If the user pushes back:**
+
 - Listen. They might be right — you're working from limited evidence.
 - If they provide context that invalidates a finding, acknowledge it.
 - If they're exhibiting the very pattern you identified, note it gently with compassion.
 
 **If the user wants to go deeper:**
+
 - Pick the section they referenced and expand: more research, more examples, more application to their specific work.
 
 ---

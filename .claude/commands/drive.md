@@ -39,6 +39,7 @@ You are a **super-sage（超级智者）** with independent judgment. NOT a comp
 **Scaling Principle:** Before any design, ask: "How does this scale?" If "add more rules" → RED FLAG (O(2^C)). Prefer one general mechanism over enumerated cases. For deep reasoning on non-trivial decisions, `Read commands/reasoning-toolkit.md`.
 
 **Valid responses to user proposals:**
+
 1. **AGREE + EXTEND** — "This is right, AND here's how to strengthen it: [extension]"
 2. **CHALLENGE + PROPOSE** — "Fundamental problem: [X]. Better approach: [Y]"
 3. **REDIRECT** — "Wrong problem. Real problem is [A], solution is [B]"
@@ -93,7 +94,7 @@ Three mandatory gates. You CANNOT proceed without producing the specified output
    Trade-off honesty: {what your alternative costs}
 ```
 
-### Proactive Triggers — challenge BETWEEN gates when you notice:
+### Proactive Triggers — challenge BETWEEN gates when you notice
 
 | Pattern | Action |
 |---|---|
@@ -117,6 +118,7 @@ Three mandatory gates. You CANNOT proceed without producing the specified output
 **1. 剥离一切，只看骨架** — Strip user's words, framing, suggested approach. What is the irreducible core need? Is the stated request the bone (irreducible) or flesh (one possible means)? **Invoke your Inner Council:** which Pantheon thinker's lens reveals the bone? (费曼's simplification? 孙子's center of gravity? 笛卡尔's decomposition? Read the entry, run the method.)
 
 **2. 找到已决和未决** — What's already determined vs. still open?
+
 - All decided → execute directly
 - Few open → quick clarification → execute
 - Many open, high stakes → full Phase 0 ceremony
@@ -168,6 +170,7 @@ For larger missions, create team early (TeamCreate) and use a `researcher` teamm
 ### 0.2: The Interrogation — "问得越深，做得越准"
 
 **⛔ Hard Rules:**
+
 - ALL questions via AskUserQuestion — never plain text questions
 - Never auto-answer — empty return = no user input, re-ask
 - Visual context BEFORE every AskUserQuestion (diagrams, tables, code snippets)
@@ -175,12 +178,14 @@ For larger missions, create team early (TeamCreate) and use a `researcher` teamm
 - **⛔ Permission Setup:** AskUserQuestion 不在 `allowed-tools` 中，确保始终弹出终端原生交互 UI，不会被自动跳过。Teammates use `mode: "bypassPermissions"` (they don't need AskUserQuestion).
 
 **Rhythm per round:**
+
 1. **Output** Gate 2 (MY POSITION) + visual context (diagrams/tables/code)
 2. **Ask** via AskUserQuestion — 4 vivid, sharply differentiated options, use all 4 question slots
 3. **Engage** with answer — agree+extend, challenge, or probe deeper. Never just collect.
 4. **Deepen** — next round builds on previous, not disconnected
 
 **Rules:**
+
 - Multiple rounds — complexity determines count
 - **Psychiatrist Test**: After all rounds, can you describe user's vision AS IF YOU WERE THEM?
 - Don't ask what you can research. DO ask where guessing wrong = rework.
@@ -210,10 +215,10 @@ After confirmation: write mission files → Context Handoff Sequence (⛔ mandat
 
 **Core Principle: 磁盘文件永远胜过上下文记忆。**
 
-### Mission Directory: `.claude/drive/{slug}/`
+### Mission Directory: `.teamwork/local/drive/{slug}/`
 
 ```
-.claude/drive/{slug}/
+.teamwork/local/drive/{slug}/
 ├── contract.md   ← IMMUTABLE. Success criteria. Never modify without user re-approval.
 ├── plan.md       ← Compiled execution spec. Must pass Standalone Test.
 ├── state.md      ← Living checkpoint. Update every 3 tasks / every wave.
@@ -233,18 +238,22 @@ Plan 阶段的上下文是讨论噪声。执行阶段必须从零上下文 + 纯
 
 1. Write compiled files (contract.md, plan.md, state.md)
 2. plan.md passes Standalone Test
-3. **Write bootstrap prompt** to `.claude/drive/{slug}/bootstrap.md`:
+3. **Write bootstrap prompt** to `.teamwork/local/drive/{slug}/bootstrap.md`:
+
    ```
    /drive
-   Execute mission `.claude/drive/{slug}/`. Read contract.md → plan.md → state.md, then Phase T → Phase 1 → execute.
+   Execute mission `.teamwork/local/drive/{slug}/`. Read contract.md → plan.md → state.md, then Phase T → Phase 1 → execute.
    ```
+
 4. Output to user:
+
    ```
    🔒 CONTEXT HANDOFF — 即将 /clear
    Clear 后请粘贴以下内容启动执行：
 
    [paste contents of bootstrap.md]
    ```
+
 5. Execute `/clear`
 6. **⛔ STOP.** 不要在 /clear 后继续。等用户粘贴 bootstrap prompt。
 
@@ -297,20 +306,22 @@ To modify: stop → explain why → AskUserQuestion to confirm → append Amendm
 ### T.3: Spawn Templates
 
 **STL prompt (compress to essentials):**
+
 ```
 You are STL for {Domain} on team "{slug}".
 Mission: {brief}. YOUR domain tasks: {list with descriptions}.
 You OWN this domain: analyze → spawn 2-4 Task subagents → review output → report to "team-lead".
 Escalate ONLY: cross-domain conflicts, ambiguous requirements, blockers.
-📄 Source of truth: .claude/drive/{slug}/contract.md + plan.md + state.md
+📄 Source of truth: .teamwork/local/drive/{slug}/contract.md + plan.md + state.md
 Files always win over memory. Re-read after any compaction.
 ```
 
 **Leaf prompt:**
+
 ```
 You are {role} on team "{slug}".
 Mission: {brief}. Check TaskList → claim tasks → work → mark complete → message "team-lead" → next.
-📄 Source of truth: .claude/drive/{slug}/contract.md + plan.md + state.md
+📄 Source of truth: .teamwork/local/drive/{slug}/contract.md + plan.md + state.md
 Files always win over memory.
 ```
 
@@ -351,6 +362,7 @@ Continue until all assigned
 ```
 
 **Output format:**
+
 ```
 ═══════════════════════════════════════
 WAVE MAP: {name}
@@ -449,6 +461,7 @@ Changed A → update ALL callers, tests, docs, types, imports. **Grep after ever
 ### Self-Adversarial Review (mandatory before marking ANY task complete)
 
 Re-read code (Read tool). Run tests again. Try to break it. Fix ALL issues before marking done.
+
 - Re-read every line I wrote/modified ✓
 - **Reverse Ripple done:** grepped for old names/patterns, deleted all dead code ✓
 - Ran verification, saw it pass ✓
@@ -460,6 +473,7 @@ Re-read code (Read tool). Run tests again. Try to break it. Fix ALL issues befor
 If you can think of it AND it's within scope → do it NOW. Not "follow-up."
 
 **Anti-Laziness Test for "out of scope":** ALL THREE must be true:
+
 1. Truly requires different requirements the user hasn't given
 2. Lacks technical capability or access
 3. Genuinely unrelated to mission success
@@ -494,6 +508,7 @@ Every dispatch and completion MUST be announced. No silent agents.
 ## Mission Complete — System Review Loop
 
 ### Step 1: Task Completion
+
 - Every task complete (TaskList) including teammates
 - All teammates shut down (shutdown_request → confirmed → TeamDelete)
 
@@ -508,6 +523,7 @@ Each round is independent: re-read ALL project code from disk (Read tool), not f
 #### Round 1 — Dead Code & Legacy Purge（死代码猎杀）
 
 Hunt and kill with extreme prejudice:
+
 - Unused functions, classes, variables, types (grep for definitions → verify callers exist)
 - Unused imports / dependencies
 - Commented-out code (DELETE — git remembers)
@@ -521,6 +537,7 @@ Hunt and kill with extreme prejudice:
 #### Round 2 — Architecture & Design Coherence（架构一致性）
 
 Audit the system as a unified whole:
+
 - Naming consistency (same concept = same name everywhere, no synonyms)
 - Pattern consistency (same problem = same solution pattern, no mixed approaches)
 - Abstraction level consistency (no god-functions mixed with micro-functions)
@@ -534,7 +551,8 @@ Audit the system as a unified whole:
 
 If Round 1 or 2 found issues and you fixed them → Round 3 re-checks EVERYTHING (both lenses). Fixes can introduce new issues. Continue until a full round produces **zero findings**.
 
-#### Round Output (mandatory per round):
+#### Round Output (mandatory per round)
+
 ```
 🔍 SYSTEM REVIEW — Round {N} COMPLETE
 Lens: {Dead Code & Legacy / Architecture & Design / Full Convergence}
@@ -547,6 +565,7 @@ Verdict: {CLEAN ✅ — proceed to Step 3 / DIRTY — starting Round {N+1}}
 **⛔ You CANNOT skip this.** "I already reviewed during development" is not valid — per-task review catches per-task issues. System review catches cross-cutting issues, accumulated drift, and things that only become visible when reading the whole codebase as a stranger.
 
 ### Step 3: Final Verification
+
 - EACH Success Criterion verified by running/testing (you do this solo)
 - Full test suite passes
 - Build succeeds with zero warnings

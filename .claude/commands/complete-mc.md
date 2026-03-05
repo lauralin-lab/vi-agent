@@ -28,7 +28,7 @@ USAGE:
 
 WHAT HAPPENS:
   1. Verify ownership (you must be the assignee)
-  2. Pre-flight: correct branch, tests pass, rebase on main
+  2. Pre-flight: correct branch, tests pass, rebase on pre-launch
   3. Push branch to GitHub
   4. Create PR with "Closes #N" (auto-closes Issue on merge)
   5. Update Issue label: wip -> review
@@ -67,8 +67,8 @@ Read config values:
 ```bash
 MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh labels.mission "mission" 2>/dev/null)
 STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "status:" 2>/dev/null)
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-main}"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
 ```
 
 ---

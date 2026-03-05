@@ -7,7 +7,7 @@
 # EXAMPLES:
 #   bash tw-config.sh labels.mission "mission"
 #   bash tw-config.sh labels.status_prefix "status:"
-#   bash tw-config.sh conventions.base_branch "main"
+#   bash tw-config.sh conventions.base_branch "pre-launch"
 #   bash tw-config.sh versions.current ""
 #   bash tw-config.sh quality.ci "false"
 #

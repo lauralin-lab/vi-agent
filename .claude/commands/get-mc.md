@@ -74,6 +74,8 @@ STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefi
 REPO=$(bash ~/.claude/commands/scripts/tw-config.sh team.repo "" 2>/dev/null)
 BRANCH_PATTERN=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.branch_pattern "mission/{issue}-{slug}" 2>/dev/null)
 CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
 ```
 
 Also read the user's role from config (by matching `members[].github` == `$GH_USER`), to display in the output header.
@@ -188,7 +190,7 @@ git ls-remote --heads origin "$BRANCH" 2>/dev/null
 
 If branch exists, get commit log:
 ```bash
-git log origin/main..origin/${BRANCH} --oneline --limit 20 2>/dev/null
+git log "origin/${BASE_BRANCH}..origin/${BRANCH}" --oneline --limit 20 2>/dev/null
 ```
 
 Check if local branch exists:

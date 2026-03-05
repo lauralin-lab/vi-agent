@@ -74,7 +74,8 @@ project:
       lint_command: "cd nanoclaw && npx tsc --noEmit"
 
 conventions:
-  base_branch: main
+  base_branch: pre-launch
+  production_branch: product
   branch_pattern: "mission/{issue}-{slug}"
   commit_format: "type(scope): description | Mission: #{issue}"
 

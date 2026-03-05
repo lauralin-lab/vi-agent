@@ -83,7 +83,7 @@ info "Current branch: $ORIGINAL_BRANCH"
 # ─── Phase 1: Config reads ───────────────────────────────
 section "PHASE 1: CONFIG READS (tw-config.sh)"
 
-BASE_BRANCH=$(run_script tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH=$(run_script tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
 if [ -n "$BASE_BRANCH" ]; then
   pass "base_branch = $BASE_BRANCH"
 else

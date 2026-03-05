@@ -14,7 +14,7 @@ version: "0.1.0"
 | Input | Action |
 |-------|--------|
 | (empty) | Prepare: cut rc branch from develop → staging |
-| `promote` | Promote: squash merge rc → main → tag → GitHub Release |
+| `promote` | Promote: squash merge rc → product → tag → GitHub Release |
 | `help` or `-h` | Show usage guide |
 
 ---
@@ -29,35 +29,35 @@ Parse `$ARGUMENTS`:
 /team-rc — Release Candidate lifecycle
 
 USAGE:
-  /team-rc              Prepare: cut rc branch, deploy staging
-  /team-rc promote      Promote: squash merge rc → main, tag, release
+  /team-rc              Prepare: cut rc branch from pre-launch, deploy staging
+  /team-rc promote      Promote: squash merge rc → product, tag, release
   /team-rc help         Show this guide
 
 PREPARE (/team-rc):
   1. Check no active rc branch on remote
   2. Derive next version from remote tags
-  3. Verify develop CI green
-  4. Cut rc/{version} from develop, push
+  3. Verify pre-launch CI green
+  4. Cut rc/{version} from pre-launch, push
   5. Trigger staging deploy (if configured)
 
 PROMOTE (/team-rc promote):
   1. Find active rc branch on remote
   2. Check staging status
-  3. Create PR: rc → main (squash merge via GitHub)
-  4. Tag squash commit on main
+  3. Create PR: rc → product (squash merge via GitHub)
+  4. Tag squash commit on product
   5. Create GitHub Release
   6. Close milestone if complete
   7. Delete rc branch
 
 HOTFIX (during rc — no special command):
   Branch from rc/V0.x.y → fix → PR to rc branch (squash).
-  Cherry-pick fix to develop immediately.
+  Cherry-pick fix to pre-launch immediately.
 
 CONFIG:
-  versions.current: "V0.1"              Milestone prefix (patch auto-derived from tags)
-  conventions.base_branch: "develop"     Development trunk
-  conventions.production_branch: "main"  Production branch
-  deploy.staging_workflow: "deploy.yml"  (optional) Staging deploy workflow name
+  versions.current: "V0.1"                  Milestone prefix (patch auto-derived from tags)
+  conventions.base_branch: "pre-launch"      Development trunk (next version integration)
+  conventions.production_branch: "product"   Production branch (strict protection)
+  deploy.staging_workflow: "deploy.yml"      (optional) Staging deploy workflow name
 ```
 
 - If `promote` → jump to **Promote Flow**
@@ -99,11 +99,11 @@ if [ -z "$VERSION_PREFIX" ]; then
   # STOP
 fi
 
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "develop" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-develop}"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
 
-PROD_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.production_branch "main" 2>/dev/null)
-PROD_BRANCH="${PROD_BRANCH:-main}"
+PROD_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.production_branch "product" 2>/dev/null)
+PROD_BRANCH="${PROD_BRANCH:-product}"
 
 STAGING_WORKFLOW=$(bash ~/.claude/commands/scripts/tw-config.sh deploy.staging_workflow "" 2>/dev/null)
 ```
@@ -150,8 +150,8 @@ LATEST_CI=$(gh run list --branch "$BASE_BRANCH" --limit 1 \
   --json conclusion --jq '.[0].conclusion' 2>/dev/null)
 ```
 
-- If `success` → `Develop CI: green`
-- If not `success` → warn: `Develop CI not green (${LATEST_CI}). Proceed with caution.`
+- If `success` → `Pre-launch CI: green`
+- If not `success` → warn: `Pre-launch CI not green (${LATEST_CI}). Proceed with caution.`
 - Ask user: `Proceed? / Abort` — If abort → **STOP**
 
 ### Step 5: Cut RC Branch
@@ -160,7 +160,7 @@ LATEST_CI=$(gh run list --branch "$BASE_BRANCH" --limit 1 \
 bash ~/.claude/commands/scripts/tw-git.sh cut-release "$NEXT_VERSION"
 ```
 
-This runs: checkout develop → pull → create `rc/$NEXT_VERSION` → push to origin.
+This runs: checkout pre-launch → pull → create `rc/$NEXT_VERSION` → push to origin.
 
 ### Step 6: Trigger Staging Deploy (optional)
 

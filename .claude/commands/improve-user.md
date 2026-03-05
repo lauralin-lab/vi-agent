@@ -36,9 +36,10 @@ From recon, generate **10-12 concept questions** across these knowledge pillars:
 | **Architecture** | Service boundaries, tech stack choices, communication patterns, trade-offs | "What breaks if you merge api-server and realtime into one service?" |
 | **Teamwork** | MC lifecycle, roles, GitHub Issues as source of truth, leader/member workflow | "After /complete-mc, what must happen before the Issue auto-closes?" |
 | **Skills & Tools** | When to use which skill, how /drive works, agent modes, skill system design | "When should you use /architect vs just starting to code?" |
-| **Dev Process** | Branch strategy, commit conventions, PR flow, rebase, CI/CD, quality gates | "Why must you rebase on main BEFORE creating a PR?" |
+| **Dev Process** | Branch strategy, commit conventions, PR flow, rebase, CI/CD, quality gates | "Why must you rebase on pre-launch BEFORE creating a PR?" |
 
 **Question design rules:**
+
 - Test **WHY and WHAT-IF**, not WHAT — "Why does X use Y?" not "What does X use?"
 - Every question targets a **decision or trade-off** — there must be a reason the wrong answers are wrong
 - Distractors reflect **real misconceptions** a new team member would have
@@ -88,6 +89,7 @@ Show relevant context first (Read actual files if needed — config, docs, code)
 **Step 3 — Branch**
 
 Correct:
+
 ```
 Correct. {WHY it's right — 1-2 sentences connecting to the deeper principle}
 {Bonus insight they might not have considered}
@@ -130,6 +132,7 @@ Go beyond the project. Explain the underlying principle:
 5. **Mental model** — a sticky way to remember this
 
 **Depth examples:**
+
 - Teamwork question → explain WHY GitHub Issues beat local board files (single source of truth, auto-close on merge, visibility, async collaboration)
 - Architecture question → explain the principle behind the split (separation of concerns, independent scaling, failure isolation) + what happens at 10x load
 - Process question → explain WHY rebase-before-PR (clean history, conflict resolution ownership, CI reliability) + what goes wrong without it
@@ -144,6 +147,7 @@ AskUserQuestion — 4 new options
 If correct → reinforce + return to quiz.
 
 If still wrong:
+
 ```
 换个角度再讲一次...
 {Different analogy, different code example, simpler framing}
@@ -151,6 +155,7 @@ If still wrong:
 ```
 
 Then AskUserQuestion:
+
 - "懂了，继续"
 - "给我看更多相关的项目代码"
 - "推荐我读什么文件"
@@ -183,9 +188,10 @@ Weak:   {pillar} — {what to study}
 - {file_path} — {why read this}
 ```
 
-Save to `.claude/drive/quiz-{YYYY-MM-DD}.md`.
+Save to `.teamwork/local/drive/quiz-{YYYY-MM-DD}.md`.
 
 AskUserQuestion:
+
 - "针对弱项再出几道题"
 - "生成学习笔记"
 - "结束"

@@ -34,14 +34,14 @@ TW_CONFIG="$SCRIPT_DIR/tw-config.sh"
 # Read config values
 _base_branch() {
   local b
-  b=$(bash "$TW_CONFIG" conventions.base_branch "main" 2>/dev/null)
-  echo "${b:-main}"
+  b=$(bash "$TW_CONFIG" conventions.base_branch "pre-launch" 2>/dev/null)
+  echo "${b:-pre-launch}"
 }
 
 _production_branch() {
   local p
-  p=$(bash "$TW_CONFIG" conventions.production_branch "main" 2>/dev/null)
-  echo "${p:-main}"
+  p=$(bash "$TW_CONFIG" conventions.production_branch "product" 2>/dev/null)
+  echo "${p:-product}"
 }
 
 _branch_pattern() {
@@ -114,7 +114,7 @@ cmd_protect_check() {
   base=$(_base_branch)
   prod=$(_production_branch)
 
-  # Block: base branch (develop), production branch (main), rc/* branches
+  # Block: base branch (pre-launch), production branch (product), rc/* branches
   if [ "$current" = "$base" ] || [ "$current" = "$prod" ]; then
     echo "SAFETY: On protected branch '$current'" >&2
     exit 3

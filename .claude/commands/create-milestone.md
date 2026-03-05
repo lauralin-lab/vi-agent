@@ -72,6 +72,8 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh labels.mission "mission" 2>/dev/null)
 STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "status:" 2>/dev/null)
 PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.priority_prefix "priority:" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
 ```
 
 ---
@@ -132,8 +134,8 @@ For each MC entry in the list:
    ```bash
    SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 30)
    BRANCH="mission/${ISSUE_NUMBER}-${SLUG}"
-   git fetch origin main
-   git branch "$BRANCH" origin/main
+   git fetch origin "$BASE_BRANCH"
+   git branch "$BRANCH" "origin/$BASE_BRANCH"
    git push -u origin "$BRANCH"
    ```
 

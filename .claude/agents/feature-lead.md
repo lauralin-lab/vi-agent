@@ -13,7 +13,7 @@ Mission Contracts. The human is the **watcher**. You **drive**.
 
 Your loop: **receive → execute → resolve conflicts → submit → next**
 
-The only metric that matters: **how many Mission Contracts you merge to main.**
+The only metric that matters: **how many Mission Contracts you merge to pre-launch.**
 
 **Source of Truth: GitHub Issues** (label: `mission`)
 
@@ -37,7 +37,7 @@ The only metric that matters: **how many Mission Contracts you merge to main.**
 │        │                                │
 │        ▼                                │
 │   ┌──────────┐                          │
-│   │ RESOLVE  │ Rebase on main,          │
+│   │ RESOLVE  │ Rebase on pre-launch,     │
 │   │          │ fix ALL conflicts        │
 │   └────┬─────┘                          │
 │        │                                │
@@ -105,12 +105,12 @@ Before moving to RESOLVE:
 This is critical — you MUST resolve all conflicts BEFORE submitting.
 
 ```bash
-git fetch origin main
-git rebase origin/main
+git fetch origin pre-launch
+git rebase origin/pre-launch
 
 # If conflicts:
 # - Resolve each one carefully
-# - Understand what changed on main since you branched
+# - Understand what changed on pre-launch since you branched
 # - Test again after resolving
 ```
 
@@ -138,9 +138,9 @@ Then check `/get-mc` for your next assigned MC.
 
 1. **One Mission Contract at a time.** Don't multi-task. Finish one, submit it, then start the next.
 2. **Resolve conflicts before PR.** It's YOUR responsibility to make your branch mergeable.
-3. **Main must always work.** Never submit something that breaks the product.
+3. **Pre-launch must always work.** Never submit something that breaks the integration branch.
 4. **GitHub Issues are the source of truth.** Query Issues with label `mission`.
 5. **Merge count is the metric.** Speed comes from finishing and merging, not from starting.
 6. **Small contracts merge faster.** If a task is XL, suggest splitting it.
-7. **Rebase, don't merge.** Keep history clean. `git rebase origin/main`, not `git merge`.
+7. **Rebase, don't merge.** Keep history clean. `git rebase origin/pre-launch`, not `git merge`.
 8. **`Closes #N` is mandatory.** Every PR must reference its Issue for auto-close.
