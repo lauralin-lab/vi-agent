@@ -255,10 +255,6 @@ class ApiClient {
     );
   }
 
-  async getMemoryContext() {
-    return this.request('/api/users/memories/context');
-  }
-
   // S3 Upload endpoints
   async getPresignedUploadUrl(ext = 'jpg') {
     const params = new URLSearchParams({ ext });
@@ -341,13 +337,28 @@ class ApiClient {
     if (priority) body.priority = priority;
     if (params) body.params = params;
 
-    const res = await fetch(`${this.baseUrl}/api/users/exec?vi_user_id=${viUserId}`, {
+    return this.request(`/api/users/exec?vi_user_id=${viUserId}`, {
       method: 'POST',
-      headers: this._headers(),
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`Exec dispatch failed: ${res.status}`);
-    return res.json();
+  }
+
+  /**
+   * Send a card action upstream to NanoClaw (V5 Card Template Protocol).
+   * Used when users interact with living cards (check items, select options, etc.).
+   */
+  async sendCardAction(cardId, action, payload = {}) {
+    const viUserId = this.getViUserId();
+    const body = {
+      cardId,
+      action,
+      payload,
+      timestamp: new Date().toISOString(),
+    };
+    return this.request(`/api/users/card-action?vi_user_id=${viUserId}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 
   // OAuth token endpoints

@@ -104,7 +104,7 @@ bash deploy/dev-environment/dev.sh --mode head
    Frontend:  http://34.172.9.61:<FRONTEND_PORT>
    API:       http://34.172.9.61:<API_PORT>
    API Docs:  http://34.172.9.61:<API_PORT>/docs
-   Gateway:   http://34.172.9.61:<GATEWAY_PORT>
+   Nanoclaw:  http://34.172.9.61:<NANOCLAW_PORT>
 
 📦 版本: <TAG> | 模式: <MODE> | 时间: <TIMESTAMP>
 🧪 测试: <RESULTS>

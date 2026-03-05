@@ -1,0 +1,31 @@
+{
+  "$id": "thinking-process",
+  "category": "think",
+  "renderer": "html",
+  "mutable": true,
+  "streamable": true,
+  "slots": {
+    "title": {
+      "type": "string",
+      "default": "Thinking...",
+      "streamable": true
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "content": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "done", "skipped"] }
+        }
+      },
+      "streamable": true
+    },
+    "conclusion": {
+      "type": "string",
+      "streamable": true
+    }
+  },
+  "mutable_slots": ["steps", "conclusion"]
+}

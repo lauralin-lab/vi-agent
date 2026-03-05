@@ -1,16 +1,20 @@
-import { readFile, writeFile, readdir, mkdir, rm, stat } from 'node:fs/promises';
+import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { config } from '../config.js';
 
 /**
- * User filesystem manager.
- * Provides read/write access to the user's workspace directory.
- * In Docker: /workspace maps to /data/users/{uid}/
+ * Per-User Data Volume Filesystem (V5)
+ *
+ * Each user's data lives under: /users/{uid}/
+ * In Docker: USER_DATA_DIR maps to /workspace (which is /data/users/{uid}/)
  * In dev: ./data/dev/user/
  */
 
+// ---------------------------------------------------------------------------
+// Path resolution with traversal guard
+// ---------------------------------------------------------------------------
+
 function resolvePath(relativePath: string): string {
-  // Prevent directory traversal
   const resolved = join(config.userDataDir, relativePath);
   if (!resolved.startsWith(config.userDataDir)) {
     throw new Error(`Path traversal detected: ${relativePath}`);
@@ -18,40 +22,33 @@ function resolvePath(relativePath: string): string {
   return resolved;
 }
 
+// ---------------------------------------------------------------------------
+// Core filesystem operations
+// ---------------------------------------------------------------------------
+
 export async function readUserFile(relativePath: string): Promise<string> {
-  const fullPath = resolvePath(relativePath);
-  return readFile(fullPath, 'utf-8');
+  return readFile(resolvePath(relativePath), 'utf-8');
 }
 
-export async function writeUserFile(
-  relativePath: string,
-  content: string,
-): Promise<void> {
+export async function writeUserFile(relativePath: string, content: string): Promise<void> {
   const fullPath = resolvePath(relativePath);
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, content, 'utf-8');
 }
 
-export async function listUserDir(relativePath: string): Promise<string[]> {
-  const fullPath = resolvePath(relativePath);
+export async function readFileOrNull(filePath: string): Promise<string | null> {
   try {
-    const entries = await readdir(fullPath, { withFileTypes: true });
-    return entries.map((e) => (e.isDirectory() ? e.name + '/' : e.name));
+    return await readFile(filePath, 'utf-8');
   } catch {
-    return [];
+    return null;
   }
 }
 
-export async function deleteUserFile(relativePath: string): Promise<void> {
-  const fullPath = resolvePath(relativePath);
-  await rm(fullPath, { recursive: true, force: true });
-}
-
-export async function userFileExists(relativePath: string): Promise<boolean> {
+export async function listUserDir(relativePath: string): Promise<string[]> {
   try {
-    await stat(resolvePath(relativePath));
-    return true;
+    const entries = await readdir(resolvePath(relativePath), { withFileTypes: true });
+    return entries.map((e) => (e.isDirectory() ? e.name + '/' : e.name));
   } catch {
-    return false;
+    return [];
   }
 }

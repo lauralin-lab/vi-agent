@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { api } from '../services/api';
-
-const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
+import { IOS_SPRING } from '../constants';
 
 // ── Skill Card ──
 const SkillCard = memo(function SkillCard({ skill, onToggle, index }) {
@@ -97,7 +96,6 @@ const SkillCard = memo(function SkillCard({ skill, onToggle, index }) {
 export default function SkillsView() {
   const [skills, setSkills] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState(null);
 
   const loadSkills = useCallback(async () => {
     try {
@@ -119,7 +117,6 @@ export default function SkillsView() {
   const handleToggle = useCallback(async (skill) => {
     const slug = skill.slug;
     const isEnabled = skill.enabled !== false;
-    setToggling(slug);
     try {
       if (isEnabled) {
         await api.request(`/api/skills/${encodeURIComponent(slug)}/disable`, { method: 'POST' });
@@ -132,8 +129,6 @@ export default function SkillsView() {
       );
     } catch (e) {
       console.error('Failed to toggle skill:', e);
-    } finally {
-      setToggling(null);
     }
   }, []);
 

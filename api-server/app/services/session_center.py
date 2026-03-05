@@ -16,7 +16,7 @@ from ..utils import resolve_user_id, to_iso
 from .events import publish_event
 
 
-VALID_SESSION_STATUSES = {"active", "paused", "completed", "failed", "ended"}
+VALID_SESSION_STATUSES = {"created", "dispatched", "active", "paused", "completed", "failed", "ended"}
 
 
 class SessionCenter:
@@ -42,7 +42,7 @@ class SessionCenter:
         await db.refresh(session)
         session_id = str(session.id)
         await publish_event(redis, vi_user_id, {
-            "event_type": "session_update",
+            "type": "session_update",
             "session_id": session_id,
             "status": "created",
         })
@@ -61,7 +61,7 @@ class SessionCenter:
         await db.commit()
         if vi_user_id:
             await publish_event(redis, vi_user_id, {
-                "event_type": "session_update",
+                "type": "session_update",
                 "session_id": session_id,
                 "status": "dispatched",
             })
@@ -83,7 +83,7 @@ class SessionCenter:
         await db.commit()
         if vi_user_id:
             await publish_event(redis, vi_user_id, {
-                "event_type": "session_update",
+                "type": "session_update",
                 "session_id": session_id,
                 "status": "completed",
                 "result_summary": result.get("summary", ""),
@@ -102,7 +102,7 @@ class SessionCenter:
         await db.commit()
         if vi_user_id:
             await publish_event(redis, vi_user_id, {
-                "event_type": "session_update",
+                "type": "session_update",
                 "session_id": session_id,
                 "status": "failed",
                 "error": error,

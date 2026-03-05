@@ -22,10 +22,9 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
-    RunContext,
-    function_tool,
     room_io,
 )
+from livekit.api import LiveKitAPI
 from livekit.plugins import noise_cancellation, silero
 
 from utils import escape_xml, publish_info_bar
@@ -130,23 +129,6 @@ PAGE_PROMPTS = {
     ),
 }
 
-CATCH_UP_FOLLOWUP_PROMPT = """
-
-[FOLLOW-UP INSTRUCTION]
-The above context was retrieved to help you catch up on the conversation so far.
-Inheritently acknowledge the context provided and continue assisting the user seamlessly.
-
-Recommended response:
-**Conversation not started**: greet the user and offer help based on the context.
-**Already chatting**: seamlessly continue the conversation without referencing the context retrieval.
-
-Important:
-- DO NOT mention that you are catching up or that context was retrieved.
-- DO NOT call dispatch_to_nanoclaw or update_memory as part of catch-up.
-- BE VERY CONCISE in your response to avoid overwhelming the user with a long reply immediately after catch-up.
-
-DO NOT call dispatch_to_nanoclaw or update_memory as part of catch-up!!!
-"""
 
 
 def log_info(message: str, participant_identity: str):
@@ -156,21 +138,6 @@ def log_info(message: str, participant_identity: str):
         logger.info(f"[agent] {message}")
     else:
         logger.info(f"{message}")
-
-
-def expand_media_tags(text: str) -> str:
-    pattern = re.compile(r'<media\s+id="([^"]+)"\s+ext="([^"]*)"\s*></media>')
-
-    def replace_tag(match: re.Match) -> str:
-        media_id = match.group(1)
-        ext = match.group(2)
-        filename = f"{media_id}.{ext}" if ext else media_id
-        path = f"uploads/{filename}"
-        replaced = f"{path}"
-        logger.debug(f"[replace_tag] {replaced}")
-        return replaced
-
-    return pattern.sub(replace_tag, text)
 
 
 def extract_xml_tags(message: str) -> dict:
@@ -187,18 +154,6 @@ def extract_xml_tags(message: str) -> dict:
     cleaned = pattern.sub(replace_result, message)
     cleaned = re.sub(r"\s{3,}", "\n\n", cleaned).strip()
     return {"text": cleaned, "results": results}
-
-
-def strip_medias_section(text: str) -> str:
-    """Remove **Medias** section and everything after it from task response."""
-    if not text:
-        return text
-    marker_patterns = [r"\n\*\*Medias\*\*", r"\*\*Medias\*\*"]
-    for pattern in marker_patterns:
-        match = re.search(pattern, text)
-        if match:
-            return text[:match.start()].strip()
-    return text
 
 
 async def publish_transcript(room: rtc.Room, transcript_type: str, content: str):
@@ -286,11 +241,13 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         self._conversation_timeline: list[dict] = []
         self._conversation_session_lock = asyncio.Lock()
         self._conversation_timeline_last_flush: float = 0.0
-        # V4: Latest context snapshot from NanoClaw (updated via vi:ctx subscription)
+        # Latest context snapshot from NanoClaw (updated via vi:ctx subscription)
         self._latest_context: str = ""
-        # V4: Background task handles for context subscription
+        # Background task handles for context subscription
         self._context_sub_task: asyncio.Task | None = None
         self._keyframe_sampler_task: asyncio.Task | None = None
+        # Catch-up context from greeting (used by _update_page_context)
+        self._catch_up_section: str | None = None
         # Background tasks list — prevents fire-and-forget tasks from being GC'd
         self._background_tasks: list[asyncio.Task] = []
         # Shared HTTP session — lazy-initialized, reused across all internal API calls
@@ -432,13 +389,12 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
     async def persist_session(self, text: str):
         """Persist a dispatch prompt as a session in the DB."""
         try:
-            import re as _re
             clean_prompt = text.strip()
             photo_urls = []
             if "\nPhotos:" in clean_prompt:
                 photos_section = clean_prompt[clean_prompt.index("\nPhotos:"):]
                 clean_prompt = clean_prompt[:clean_prompt.index("\nPhotos:")]
-                photo_urls = _re.findall(r'https?://[^\s]+', photos_section)
+                photo_urls = re.findall(r'https?://[^\s]+', photos_section)
             if clean_prompt.startswith("intention:"):
                 clean_prompt = clean_prompt[len("intention:"):].strip()
 
@@ -566,7 +522,7 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         self._current_page = page
         page_section = PAGE_PROMPTS.get(page, PAGE_PROMPTS["camera"])
         base = AGENT_INSTRUCTIONS_CORE
-        if hasattr(self, '_catch_up_section'):
+        if self._catch_up_section:
             new_instructions = base + "\n\n" + page_section + "\n\n## Context\n" + self._catch_up_section
         else:
             new_instructions = base + "\n\n" + page_section
@@ -577,10 +533,9 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         """Perform complete shutdown of agent session and room."""
         logger.warning(f"[shutdown] Initiating shutdown: {reason}")
 
-        # V4: Publish session_ended event
         await self._publish_user_event("session_ended", {"reason": reason})
 
-        # Cancel V4 background tasks
+        # Cancel background tasks
         if self._context_sub_task and not self._context_sub_task.done():
             self._context_sub_task.cancel()
         if self._keyframe_sampler_task and not self._keyframe_sampler_task.done():
@@ -693,53 +648,12 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         except Exception as e:
             logger.error(f"[shutdown] Error during shutdown: {e}", exc_info=True)
 
-    # V4 methods (_publish_user_event, _push_to_frontend, _start_context_subscription,
+    # Internal methods (_publish_user_event, _push_to_frontend, _start_context_subscription,
     # _format_intention_hints, _start_keyframe_sampler) are provided by ContextMixin.
 
 
-def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
-    """Register RPC methods for agent to receive from frontend."""
-
-    async def handle_f2b_send_message(request: rtc.RpcInvocationData):
-        """Receive message from frontend user and process with LLM."""
-        data = json.loads(request.payload) if request.payload else {}
-
-        if data.get("action") == "page_context":
-            page = data.get("page", "camera")
-            assistant._current_page = page
-            assistant._page_metadata = data.get("metadata", {})
-            if hasattr(assistant, '_update_page_context'):
-                await assistant._update_page_context(page)
-            await assistant._publish_user_event("page_navigate", {"page": page})
-            logger.info(f"[page_context] User is now on: {page}")
-            return json.dumps({"ok": True})
-
-        text = data.get("text", "")
-        images = data.get("images", [])
-        log_info(f"[rpc_f2b_send_message] Received message from user: {text[:100]}", "user")
-
-        # V4: record timeline + publish event for all messages
-        if text:
-            assistant.record_timeline_entry("user", text)
-            assistant._track_task(asyncio.create_task(assistant.ensure_conversation_session()))
-            await assistant._publish_user_event("text_message", {"text": text[:500]})
-
-        # V4: Task dispatch now goes through REST API → Redis → NanoClaw.
-        # All messages here are voice/chat — process with LLM for voice response.
-        try:
-            if assistant._agent_session:
-                log_info("[rpc_f2b_send_message] Processing message with generate_reply", "agent")
-                assistant._agent_session.generate_reply(user_input=text)
-                log_info("[rpc_f2b_send_message] Message queued for processing", "agent")
-                return json.dumps({"ok": True, "status": "processing"})
-            logger.warning("[rpc_f2b_send_message] Agent session not ready")
-            return json.dumps({"ok": False, "error": "Agent session not ready"})
-        except Exception as e:
-            logger.error(f"[rpc_f2b_send_message] Failed to process message: {e}")
-            return json.dumps({"ok": False, "error": str(e)})
-
-    room.local_participant.register_rpc_method("rpcF2BSendMessage", handle_f2b_send_message)
-    log_info("[rpc] Agent RPC methods registered (V4 — no gateway)", "agent")
+    # V5: Legacy RPC methods removed. All task dispatch goes through REST → Redis → NanoClaw.
+    # Page context now arrives via DataChannel (topic: vi-user).
 
 
 server = AgentServer()
@@ -833,7 +747,7 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
             if not catch_up_done and session is not None:
                 catch_up_done = True
                 assistant.catch_up_done = True
-                logger.info("[init] User ready, catch-up marked done (V4 Redis context)")
+                logger.info("[init] User ready, catch-up marked done (Redis context)")
 
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
@@ -863,42 +777,54 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
 
     logger.info("Connecting to LiveKit room...")
     await ctx.connect()
-    logger.info("Connected to room, registering RPC methods...")
+    logger.info("Connected to room, setting up event handlers...")
 
-    # Duplicate agent guard
+    # Duplicate agent guard — kick old agent, new agent always proceeds
     my_identity = ctx.room.local_participant.identity
-    other_agent = None
-    for participant in ctx.room.remote_participants.values():
-        if participant.identity.startswith("agent-") and participant.identity != my_identity:
-            other_agent = participant.identity
-            break
+    other_agents = [
+        p.identity
+        for p in ctx.room.remote_participants.values()
+        if p.identity.startswith("agent-") and p.identity != my_identity
+    ]
 
-    if other_agent:
+    if other_agents:
         logger.warning(
-            f"[init] Another agent in room ({other_agent}), "
-            f"waiting up to 10s for it to leave..."
+            f"[init] Old agent(s) in room: {other_agents}, removing via Server API..."
         )
-        for _wait in range(10):
-            await asyncio.sleep(1)
-            still_present = any(
-                p.identity == other_agent
-                for p in ctx.room.remote_participants.values()
-            )
-            if not still_present:
-                logger.info(f"[init] Old agent ({other_agent}) left, proceeding normally")
-                break
-        else:
-            logger.warning(
-                f"[init] Old agent ({other_agent}) still in room after 10s, "
-                f"shutting down duplicate job {ctx.room.name}"
-            )
-            await ctx.room.disconnect()
-            return
+        try:
+            lk_url = os.environ.get("LIVEKIT_URL", "")
+            lk_key = os.environ.get("LIVEKIT_API_KEY", "")
+            lk_secret = os.environ.get("LIVEKIT_API_SECRET", "")
+            async with LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret) as lk_api:
+                for agent_id in other_agents:
+                    try:
+                        await lk_api.room.remove_participant(
+                            room=ctx.room.name, identity=agent_id
+                        )
+                        logger.info(f"[init] Kicked old agent: {agent_id}")
+                    except Exception as e:
+                        logger.warning(f"[init] Failed to kick {agent_id}: {e}")
+        except Exception as e:
+            logger.warning(f"[init] LiveKit API error: {e}, waiting 5s for old agent to leave")
+            await asyncio.sleep(5)
 
     duplicate_check_passed = True
     logger.info("[init] Duplicate check passed, enabling event processing")
 
-    register_agent_rpc_methods(ctx.room, assistant)
+    # V5: Handle page_context from DataChannel (best-effort, for voice agent context)
+    @ctx.room.on("data_received")
+    def _on_data_received(data_packet):
+        try:
+            msg = json.loads(data_packet.data.decode("utf-8"))
+            if msg.get("type") == "page_context":
+                page = msg.get("page", "camera")
+                assistant._current_page = page
+                if hasattr(assistant, '_update_page_context'):
+                    asyncio.create_task(assistant._update_page_context(page))
+                asyncio.create_task(assistant._publish_user_event("page_navigate", {"page": page}))
+                logger.info(f"[page_context] Updated instructions for page: {page}")
+        except Exception as e:
+            logger.debug(f"[data] Failed to parse DataChannel message: {e}")
 
     for participant in ctx.room.remote_participants.values():
         if participant.identity.startswith("user-") and not user_state["identity"]:
@@ -916,9 +842,6 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         session = create_session(ctx)
     assistant._agent_session = session
     assistant._job_context = ctx
-
-    # V4: Task dispatch goes through REST API → Redis → NanoClaw (not LiveKit RPC).
-    # rpcF2BSendMessage only handles voice/chat messages for LLM conversation.
 
     @session.on("user_input_transcribed")
     def on_user_input_transcribed(event):
@@ -1005,12 +928,12 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
     if not catch_up_done and user_state["identity"]:
         catch_up_done = True
         assistant.catch_up_done = True
-        logger.info("[init] Catch-up marked done (V4 Redis context)")
+        logger.info("[init] Catch-up marked done (Redis context)")
 
     assistant._context_sub_task = asyncio.create_task(
         assistant._start_context_subscription()
     )
-    logger.info("[init] V4 context subscription started")
+    logger.info("[init] Context subscription started")
 
     await assistant._publish_user_event("session_started", {
         "room": ctx.room.name,
@@ -1020,6 +943,6 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         assistant._keyframe_sampler_task = asyncio.create_task(
             assistant._start_keyframe_sampler()
         )
-        logger.info("[init] V4 keyframe sampler started (stub)")
+        logger.info("[init] Keyframe sampler started (stub)")
 
     assistant.start_heartbeat()

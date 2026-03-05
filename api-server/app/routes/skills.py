@@ -1,8 +1,6 @@
 """Skill Manager routes — CRUD + enable/disable + stats."""
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -18,8 +16,6 @@ from ..services.skill_manager import (
     list_skills,
     update_skill,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

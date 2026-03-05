@@ -567,36 +567,45 @@ export default function LiveCameraView({
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
 
-    // Wait for all uploads to complete (max 10s)
+    // Wait for all uploads to complete (max 10s), collect URLs from promises directly
+    // (capturedMediaRef won't update after navigation unmounts this component)
     const pendingPromises = [...uploadPromisesRef.current];
+    let allUrls = [];
     if (pendingPromises.length > 0) {
-      await Promise.race([
+      const results = await Promise.race([
         Promise.allSettled(pendingPromises),
         new Promise(resolve => setTimeout(resolve, 10000)),
       ]);
+      if (Array.isArray(results)) {
+        allUrls = results
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => r.value);
+      }
     }
 
-    // Collect all successfully uploaded S3 URLs
-    const allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
-
-    // V4: Notify Redis about captured media — NanoClaw auto-triggers analysis.
-    // Each URL gets a vi:media event; NanoClaw debounces and batches them.
-    for (const url of allUrls) {
-      const mediaType = url.match(/\.(mp4|webm)/) ? 'video' : 'image';
-      api._notifyUploadComplete(url, '', mediaType);
+    // Fallback: if promises didn't yield URLs, try the snapshot (which captured refs before unmount)
+    if (allUrls.length === 0 && mediaSnapshot.length > 0) {
+      allUrls = mediaSnapshot.filter(m => m.s3Url).map(m => m.s3Url);
     }
-    console.log('[redis][frontend] Done: notified', allUrls.length, 'media files');
 
-    // Notify LiveKit for voice acknowledgment (optional — works without it)
-    if (finalIntention) {
-      livekit.sendMessage?.(`Processing: ${finalIntention}`);
+    // V5: Dispatch exec request via REST → Redis → NanoClaw.
+    const prompt = finalIntention || 'Analyze this photo';
+    try {
+      await api.dispatchExec({
+        prompt,
+        mediaUrls: allUrls,
+        priority: 'thorough',
+      });
+      console.log('[redis][frontend] Exec dispatched:', prompt, allUrls.length, 'media files');
+    } catch (e) {
+      console.error('[redis][frontend] Failed to dispatch exec:', e);
     }
   };
 
   // ── Action card option handler ──
   const handleActionCardOption = (option) => {
-    livekit.sendMessage(option);
-    livekit.dismissActionCard();
+    api.dispatchExec({ prompt: option }).catch(e => console.error('[action] dispatch failed:', e));
+    livekit.dismissActionCard?.();
   };
 
   // ── Mic toggle ──

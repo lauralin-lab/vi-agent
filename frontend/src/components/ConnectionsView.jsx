@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { api } from '../services/api';
-
-const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
+import { IOS_SPRING } from '../constants';
 
 const PROVIDERS = [
   {

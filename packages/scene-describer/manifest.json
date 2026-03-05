@@ -1,0 +1,39 @@
+{
+  "id": "scene-describer",
+  "version": "1.0.0",
+  "name": "Scene Describer",
+  "description": "Analyze photos to describe scenes, identify objects, suggest activities, and provide context",
+  "icon": "🔍",
+  "category": "general",
+
+  "trigger": {
+    "visual_cues": ["scene", "landscape", "room", "building", "street", "nature", "object"],
+    "voice_keywords": ["what is this", "describe", "tell me about", "what do you see", "analyze"],
+    "intention_level": "L1"
+  },
+
+  "skill": {
+    "prompt": "skill.md",
+    "model": "claude-sonnet-4-6",
+    "max_turns": 3,
+    "max_tokens": 4096
+  },
+
+  "templates": {
+    "bundled": [],
+    "shared": ["thinking-process", "image-analysis"]
+  },
+
+  "tools": {
+    "bundled": [],
+    "builtin": ["web_search", "publish_result"]
+  },
+
+  "apis": {},
+
+  "output": {
+    "card_sequence": ["thinking-process", "image-analysis"],
+    "estimated_time": "5-10s",
+    "estimated_cost": "$0.01-0.03"
+  }
+}

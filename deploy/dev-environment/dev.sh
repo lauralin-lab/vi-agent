@@ -32,7 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
 CONFIG_FILE="$REPO_ROOT/.dev.local"
 
-SERVER_IP="34.172.9.61"
+SERVER_IP="${SERVER_IP:-34.172.9.61}"  # can be set in .dev.local
 SERVER_USER=""  # resolved below: .dev.local → --user → $(whoami)
 DOCKER_ORG="collov"
 SERVICES=(api-server frontend gateway realtime)
@@ -369,14 +369,6 @@ else
   BUILD_MODE_SERVER="image"
 fi
 
-# ----------- Save config (persist resolved values) -----------
-cat > "$CONFIG_FILE" << EOF
-# Dev environment local config — NOT committed to git (covered by *.local in .gitignore)
-DEV_NAME=$DEV_NAME
-SSH_KEY=$SSH_KEY
-SERVER_USER=$SERVER_USER
-EOF
-
 echo "=== /dev Deployment ==="
 echo "  Developer: $DEV_NAME"
 echo "  Mode:      $BUILD_MODE"
@@ -419,7 +411,7 @@ echo ""
 echo "--- Syncing deploy templates to server ---"
 $SCP_CMD "$SCRIPT_DIR"/*.sh "$SCRIPT_DIR"/*.tpl \
   "${SERVER_USER}@${SERVER_IP}:/opt/vi-agent/templates/" 2>&1
-$SSH_CMD "chmod +x /opt/vi-agent/templates/*.sh"
+$SSH_CMD "chmod +x /opt/vi-agent/templates/*.sh" 2>/dev/null || echo "WARNING: Could not chmod templates (owned by another user). Continuing."
 echo "Templates synced."
 
 # ----------- Read and upload API keys from local .env -----------
@@ -473,15 +465,40 @@ $SSH_CMD "
 "
 echo "API keys uploaded."
 
-# ----------- Build on server (if needed) -----------
-if [ "$BUILD_MODE" = "build" ] || [ "$BUILD_MODE" = "head" ]; then
-  echo ""
-  echo "--- Building images on server ---"
-  echo "This may take several minutes..."
+# ----------- Resolve branch and repo dir -----------
+BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+SERVER_REPO_DIR="/home/${SERVER_USER}/vi-agent-repos/${DEV_NAME}"
 
+# ----------- Build on server (if needed) -----------
+if [ "$BUILD_MODE" = "head" ]; then
+  # Head mode: push current branch, pull on server, build locally (no Docker Hub)
+  echo ""
+  echo "--- Pushing branch '$BRANCH' ---"
+  git -C "$REPO_ROOT" push origin "$BRANCH" 2>&1 || true
+
+  echo ""
+  echo "--- Pulling branch on server ---"
   $SSH_CMD "
     set -e
-    REPO_DIR=~/vi-agent-repos/$DEV_NAME
+    REPO_DIR='$SERVER_REPO_DIR'
+    if [ ! -d \"\$REPO_DIR/.git\" ]; then
+      echo 'Cloning repository...'
+      git clone git@github.com:flair-home-stylist/vi_agent.git \"\$REPO_DIR\"
+    fi
+    cd \"\$REPO_DIR\"
+    git fetch origin '$BRANCH'
+    git checkout '$BRANCH' 2>/dev/null || git checkout -b '$BRANCH' origin/'$BRANCH'
+    git reset --hard origin/'$BRANCH'
+    echo \"Server repo at: \$(git log --oneline -1)\"
+  "
+
+elif [ "$BUILD_MODE" = "build" ]; then
+  echo ""
+  echo "--- Building images on server (tag: $IMAGE_TAG) ---"
+  echo "This may take several minutes..."
+  $SSH_CMD "
+    set -e
+    REPO_DIR='$SERVER_REPO_DIR'
     if [ ! -d \"\$REPO_DIR/.git\" ]; then
       echo 'Cloning repository...'
       git clone git@github.com:flair-home-stylist/vi_agent.git \"\$REPO_DIR\"
@@ -493,8 +510,7 @@ fi
 # ----------- Deploy instance -----------
 echo ""
 echo "--- Deploying instance ---"
-BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-$SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh \
+$SSH_CMD "REPO_DIR='$SERVER_REPO_DIR' bash /opt/vi-agent/templates/create-instance.sh \
   '$DEV_NAME' '$BRANCH' 'HEAD' '$BUILD_MODE_SERVER' '$IMAGE_TAG'"
 
 echo ""

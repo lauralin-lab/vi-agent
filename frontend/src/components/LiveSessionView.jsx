@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronLeft, Sparkles, Loader2, Mic, MicOff,
+  ChevronLeft, Sparkles, Loader2,
   X, Maximize2, ChevronDown, ChevronUp, Plus, ArrowUp,
   Camera, ImagePlus as ImageIcon, MessageCircle
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import PersistentHtmlRenderer from './PersistentHtmlRenderer';
 import ModuleRenderer, { extractModuleTitle } from './modules/ModuleRenderer';
 import { IFRAME_DESIGN_CSS } from './iframeDesignSystem';
 import { IntentionCardStrip } from './IntentionCard';
+import { resolveTemplate } from './TemplateEngine';
 
 // ── STT noise filter ──
 // Deepgram/Google STT sometimes transcribes silence as literal noise tokens.
@@ -622,12 +623,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   const activeSourceRef = useRef(null);
 
   // ── Session timeout detection ──
+  // V5: Don't show "Connection issue" if NanoClaw has active tasks
+  const hasActiveTasks = nanoClaw?.tasks && Object.values(nanoClaw.tasks).some(t => t.status === 'running' || t.status === 'pending');
   const [sessionTimedOut, setSessionTimedOut] = useState(false);
   useEffect(() => {
-    if (blocks.length > 0) { setSessionTimedOut(false); return; }
+    if (blocks.length > 0 || hasActiveTasks) { setSessionTimedOut(false); return; }
     const timer = setTimeout(() => setSessionTimedOut(true), 60000);
     return () => clearTimeout(timer);
-  }, [blocks.length]);
+  }, [blocks.length, hasActiveTasks]);
 
   // Save blocks to session cache on unmount
   useEffect(() => {
@@ -696,24 +699,11 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       });
     }
 
+    // V5: Dispatch via REST → Redis → NanoClaw (replaces LiveKit RPC)
     try {
-      const result = await livekit?.sendMessage?.(text, images);
-      if (result && typeof result === 'string') {
-        try {
-          const parsed = JSON.parse(result);
-          if (parsed.ok === false) {
-            upsertBlock({
-              id: `error_${Date.now()}`,
-              type: 'bubble',
-              status: 'done',
-              content: `Failed to send: ${parsed.error || 'Unknown error'}`,
-              role: 'system',
-            });
-          }
-        } catch { /* not JSON */ }
-      }
+      await api.dispatchExec({ prompt: text, mediaUrls: images });
     } catch (e) {
-      console.error('[Session] Failed to send message:', e);
+      console.error('[Session] Failed to dispatch exec:', e);
       upsertBlock({
         id: `error_${Date.now()}`,
         type: 'bubble',
@@ -722,7 +712,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         role: 'system',
       });
     }
-  }, [chatText, chatImages, livekit, play, upsertBlock]);
+  }, [chatText, chatImages, play, upsertBlock]);
 
   // ── File select handler ──
   const handleFileSelect = useCallback(async (e) => {
@@ -752,47 +742,44 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // Listen to livekit + NanoClaw state → blocks
   // ══════════════════════════════════════════
 
-  // V4: NanoClaw active streams → blocks
-  const prevNanoClawStreamsRef = useRef({});
+  // V5: NanoClaw cards → canvas blocks (Card Template Protocol)
+  const prevCardsRef = useRef({});
   useEffect(() => {
-    if (!nanoClaw?.activeStreams) return;
-    const streams = nanoClaw.activeStreams;
+    if (!nanoClaw?.cards) return;
+    const cards = nanoClaw.cards;
+    const orderedIds = nanoClaw.orderedCardIds || [];
 
     let chunksChanged = false;
 
-    for (const [taskId, stream] of Object.entries(streams)) {
-      const prev = prevNanoClawStreamsRef.current[taskId];
-      if (prev && prev._ts === stream._ts) continue;
+    for (const cardId of orderedIds) {
+      const card = cards[cardId];
+      if (!card) continue;
+
+      const prev = prevCardsRef.current[cardId];
+      if (prev && prev.updatedAt === card.updatedAt) continue;
 
       activeSourceRef.current = 'nanoclaw';
-      const blockId = `nc_${taskId}`;
+      const blockId = `nc_${cardId}`;
+      const templateEntry = resolveTemplate(card.template);
+      const blockStatus = card.status === 'finalized' ? 'done' : card.status === 'streaming' ? 'streaming' : 'loading';
 
-      if (stream.status === 'loading') {
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'loading',
-          content: stream.progress?.message
-            ? `<div style="display:flex;align-items:center;gap:8px;padding:16px;color:rgba(0,0,0,0.4);font-family:system-ui,sans-serif;font-size:14px;"><div style="width:16px;height:16px;border:2px solid rgba(0,0,0,0.1);border-top-color:rgba(168,85,247,0.7);border-radius:50%;animation:spin 0.8s linear infinite;"></div> ${stream.progress.message}</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>`
-            : LOADING_SPINNER_HTML,
-          source: 'nanoclaw',
-        });
-      } else if (stream.contentType === 'module') {
+      if (templateEntry.renderer === 'react' && templateEntry.component) {
+        // React-rendered card → module block
         upsertBlock({
           id: blockId,
           type: 'module',
-          module_type: stream.moduleType,
-          data: stream.moduleData,
-          status: 'done',
+          module_type: card.template,
+          data: card.data,
+          status: blockStatus,
           content: '',
           source: 'nanoclaw',
         });
-      } else if (stream.contentType === 'html') {
-        // Track streaming chunks for PersistentHtmlRenderer
-        const prevLen = (prev?.content || '').length;
-        const fullContent = stream.content || '';
-        if (fullContent.length > prevLen) {
-          const newChunk = fullContent.slice(prevLen);
+      } else if (card.htmlContent) {
+        // HTML content card (freeform-html, html_stream, or html-rendered template)
+        const htmlContent = card.htmlContent;
+        const prevHtml = prev?.htmlContent || '';
+        if (card.status === 'streaming' && htmlContent.length > prevHtml.length) {
+          const newChunk = htmlContent.slice(prevHtml.length);
           const chunks = streamingChunksRef.current.get(blockId) || [];
           chunks.push(newChunk);
           streamingChunksRef.current.set(blockId, chunks);
@@ -801,81 +788,58 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         upsertBlock({
           id: blockId,
           type: 'html',
-          status: stream.status === 'done' ? 'done' : 'streaming',
-          content: fullContent,
+          status: blockStatus,
+          content: htmlContent || LOADING_SPINNER_HTML,
           source: 'nanoclaw',
         });
-      } else {
-        // Text or other content
-        const textContent = stream.content || '';
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: stream.status === 'done' ? 'done' : 'streaming',
-          content: `<div style="color:#000;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${textContent}</div>`,
-          source: 'nanoclaw',
-        });
-      }
-    }
-
-    prevNanoClawStreamsRef.current = { ...streams };
-    if (chunksChanged) {
-      setStreamingChunksVersion(v => v + 1);
-    }
-  }, [nanoClaw?.activeStreams, upsertBlock]);
-
-  // V4: NanoClaw completed results → blocks
-  const prevCompletedCountRef = useRef(0);
-  useEffect(() => {
-    if (!nanoClaw?.completedResults) return;
-    const results = nanoClaw.completedResults;
-    if (results.length <= prevCompletedCountRef.current) {
-      prevCompletedCountRef.current = results.length;
-      return;
-    }
-    const newResults = results.slice(prevCompletedCountRef.current);
-    prevCompletedCountRef.current = results.length;
-
-    for (const result of newResults) {
-      const blockId = `nc_${result.taskId}`;
-
-      if (result.error) {
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'done',
-          content: `<div style="color:#f87171;font-family:system-ui;padding:16px;border:1px solid rgba(248,113,113,0.3);border-radius:12px;background:rgba(248,113,113,0.05);">${result.error}</div>`,
-          source: 'nanoclaw',
-        });
-      } else if (result.contentType === 'module') {
+      } else if (card.data && Object.keys(card.data).length > 0) {
+        // Data-slot card (e.g., thinking-process with structured data) → render as module
         upsertBlock({
           id: blockId,
           type: 'module',
-          module_type: result.moduleType,
-          data: result.moduleData,
-          status: 'done',
+          module_type: card.template,
+          data: card.data,
+          status: blockStatus,
           content: '',
           source: 'nanoclaw',
         });
-      } else if (result.contentType === 'html') {
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'done',
-          content: result.content,
-          source: 'nanoclaw',
-        });
       } else {
+        // Empty or loading card
         upsertBlock({
           id: blockId,
           type: 'html',
-          status: 'done',
-          content: `<div style="color:#000;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${result.content || result.summary || ''}</div>`,
+          status: 'loading',
+          content: LOADING_SPINNER_HTML,
           source: 'nanoclaw',
         });
       }
     }
-  }, [nanoClaw?.completedResults, upsertBlock]);
+
+    prevCardsRef.current = Object.fromEntries(
+      Object.entries(cards).map(([id, c]) => [id, { updatedAt: c.updatedAt, htmlContent: c.htmlContent || '' }])
+    );
+    if (chunksChanged) {
+      setStreamingChunksVersion(v => v + 1);
+    }
+  }, [nanoClaw?.cards, nanoClaw?.orderedCardIds, upsertBlock]);
+
+  // V5: NanoClaw task errors → error blocks
+  const prevTaskErrorsRef = useRef({});
+  useEffect(() => {
+    if (!nanoClaw?.tasks) return;
+    for (const [taskId, task] of Object.entries(nanoClaw.tasks)) {
+      if (task.status !== 'error') continue;
+      if (prevTaskErrorsRef.current[taskId]) continue;
+      prevTaskErrorsRef.current[taskId] = true;
+      upsertBlock({
+        id: `nc_error_${taskId}`,
+        type: 'html',
+        status: 'done',
+        content: `<div style="color:#f87171;font-family:system-ui;padding:16px;border:1px solid rgba(248,113,113,0.3);border-radius:12px;background:rgba(248,113,113,0.05);">${task.error || 'Unknown error'}</div>`,
+        source: 'nanoclaw',
+      });
+    }
+  }, [nanoClaw?.tasks, upsertBlock]);
 
   // Legacy: last result → html block (fallback when NanoClaw is not active)
   useEffect(() => {
@@ -1042,6 +1006,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // ── Action Runtime ──
   const handleAction = useCallback((data) => {
     const { action, ...payload } = data;
+
+    // V5: Card actions — send upstream to NanoClaw for living card interactions
+    if (payload.cardId) {
+      api.sendCardAction(payload.cardId, action, payload).catch(e =>
+        console.error('[CardAction] Failed to send:', e)
+      );
+    }
+
     switch (action) {
       case 'open_url':
         window.open(payload.url, '_blank');
@@ -1073,13 +1045,22 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       case 'deep_link':
         window.location.href = payload.href;
         break;
+      // V5 card interaction actions
+      case 'item_checked':
+      case 'option_selected':
+      case 'rating_set':
+      case 'form_submitted':
+      case 'marker_tapped':
+      case 'slide_changed':
+      case 'message_sent':
+        showToast('Done');
+        break;
       case 'vi_select': {
-        // Action card button clicked in gateway HTML — forward to LiveKit agent
         const selected = payload.option || '';
         const title = payload.title || '';
         const allOptions = (payload.allOptions || '').split('|').filter(Boolean);
         const optionsStr = allOptions.length ? ` (options: ${allOptions.join(', ')})` : '';
-        livekit?.sendMessage?.(`[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}`);
+        api.dispatchExec({ prompt: `[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}` }).catch(() => {});
         showToast(selected || 'Selected');
         break;
       }
@@ -1088,11 +1069,11 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       default:
         showToast('Done');
     }
-  }, [showToast, livekit]);
+  }, [showToast]);
 
   // ── Action card handler ──
   const handleActionSelect = useCallback((option) => {
-    livekit?.sendMessage?.(option);
+    api.dispatchExec({ prompt: option }).catch(() => {});
     livekit?.dismissActionCard?.();
   }, [livekit]);
 
@@ -1135,16 +1116,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // ── Split blocks into canvas vs conversation ──
   const canvasBlocks = useMemo(() => {
     const all = blocks.filter(b => b.type === 'html' || b.type === 'image' || b.type === 'module');
-    // When NanoClaw blocks exist, filter out legacy fallback blocks
+    // When NanoClaw card blocks exist, filter out legacy fallback blocks
     const hasNcBlocks = all.some(b => b.id.startsWith('nc_'));
     if (hasNcBlocks) {
       const legacyIds = new Set(['rich_text_summary', 'home_result', 'result_main']);
       return all.filter(b => !legacyIds.has(b.id));
     }
     return all;
-  },
-    [blocks]
-  );
+  }, [blocks]);
   const conversationMessages = useMemo(() =>
     blocks.filter(b => b.type === 'bubble'),
     [blocks]
@@ -1195,7 +1174,6 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       exit={{ opacity: 0, y: 16 }}
       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
       className="absolute inset-0 flex flex-col z-50"
-      className="relative w-full h-full flex flex-col z-50"
       style={{ background: '#fff', willChange: 'transform, opacity' }}
     >
       {/* Header — pinned at top via visualViewport on iOS */}
@@ -1340,9 +1318,9 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
             const isPlaceholder = isDone && !isActive && !staticWithIframes.has(block.id);
             const chunks = isActive ? (streamingChunksRef.current.get(block.id) || []) : null;
 
-            // Extract intermediates for active NanoClaw streams
-            const ncTaskId = block.id.startsWith('nc_') ? block.id.slice(3) : null;
-            const intermediates = ncTaskId && nanoClaw?.activeStreams?.[ncTaskId]?.intermediates;
+            // V5: Task progress from nanoClaw.tasks for this card's task
+            const cardEntry = nanoClaw?.cards?.[block.id.startsWith('nc_') ? block.id.slice(3) : null];
+            const taskProgress = cardEntry?.taskId ? nanoClaw?.tasks?.[cardEntry.taskId]?.progress : null;
 
             return (
               <div key={block.id}>
@@ -1356,30 +1334,27 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
                   streamingChunks={chunks}
                   isPlaceholder={isPlaceholder}
                 />
-                {intermediates?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-3 -mt-1 px-1">
-                    {intermediates.map((step, idx) => (
-                      <motion.div
-                        key={`${block.id}-step-${idx}`}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                        className="flex items-center gap-1.5"
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: 12,
-                          background: 'rgba(168,85,247,0.06)',
-                          border: '1px solid rgba(168,85,247,0.1)',
-                          fontSize: 12,
-                          color: 'rgba(0,0,0,0.45)',
-                        }}
-                      >
-                        <span style={{ fontSize: 11, color: 'rgba(168,85,247,0.5)', fontWeight: 600 }}>
-                          {step.step ?? idx + 1}
-                        </span>
-                        <span>{step.label || 'Processing...'}</span>
-                      </motion.div>
-                    ))}
+                {taskProgress && (
+                  <div className="flex items-center gap-1.5 mb-3 -mt-1 px-1">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      className="flex items-center gap-1.5"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        background: 'rgba(168,85,247,0.06)',
+                        border: '1px solid rgba(168,85,247,0.1)',
+                        fontSize: 12,
+                        color: 'rgba(0,0,0,0.45)',
+                      }}
+                    >
+                      <span style={{ fontSize: 11, color: 'rgba(168,85,247,0.5)', fontWeight: 600 }}>
+                        {taskProgress.step}/{taskProgress.total}
+                      </span>
+                      <span>{taskProgress.message || 'Processing...'}</span>
+                    </motion.div>
                   </div>
                 )}
               </div>
@@ -1403,7 +1378,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
             <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(255,59,48,0.08)' }}>
               <X size={24} style={{ color: 'rgba(255,59,48,0.5)' }} />
             </div>
-            <p className="font-light" style={{ fontSize: 'var(--text-base)', color: 'rgba(255,59,48,0.6)' }}>Connection issue</p>
+            <p className="font-light" style={{ fontSize: 'var(--text-base)', color: 'rgba(255,59,48,0.6)' }}>No response received</p>
             <p className="mt-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.2)' }}>Go back and try again</p>
           </div>
         )}

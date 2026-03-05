@@ -136,28 +136,6 @@ export function ModuleHeader({ title, subtitle, icon, children }) {
   );
 }
 
-// ── Module Actions ──
-// Row of action buttons at the bottom of a module
-export function ModuleActions({ actions = [], onAction }) {
-  if (!actions.length) return null;
-
-  return (
-    <div className="flex gap-2 mt-4 overflow-x-auto scrollbar-none">
-      {actions.map((action, i) => (
-        <GlassButton
-          key={i}
-          onClick={() => onAction?.(action)}
-          variant={i === 0 ? 'primary' : 'default'}
-          className="shrink-0"
-        >
-          {action.icon && <span>{action.icon}</span>}
-          {action.label}
-        </GlassButton>
-      ))}
-    </div>
-  );
-}
-
 // ── Star Rating ──
 // Renders 0-5 stars with half-star support
 export function StarRating({ rating, max = 5, size = 14 }) {

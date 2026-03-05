@@ -1,7 +1,7 @@
 """
 DispatchMixin — NanoClaw dispatch via Redis, session header publishing, URL pre-signing.
 
-V4: LiveKit agent dispatches prompts to NanoClaw via Redis. NanoClaw decides
+LiveKit agent dispatches prompts to NanoClaw via Redis. NanoClaw decides
 skill routing autonomously — the agent never specifies skill slugs.
 """
 import asyncio
@@ -80,7 +80,7 @@ class DispatchMixin:
             logger.warning(f"[session_header] Failed to publish: {e}")
 
     async def _dispatch_via_nanoclaw(self, text: str) -> dict:
-        """V4: Dispatch task to NanoClaw via Redis vi:exec:{uid}.
+        """Dispatch task to NanoClaw via Redis vi:exec:{uid}.
 
         NanoClaw decides skill routing autonomously — no skill_slug needed.
         Results are delivered asynchronously via vi:stream -> SSE -> Frontend.
@@ -117,7 +117,7 @@ class DispatchMixin:
             full_prompt=text,
         )
 
-        # Build V4 ExecRequest — no skillSlug, NanoClaw auto-routes
+        # Build ExecRequest — no skillSlug, NanoClaw auto-routes
         task_id = self._current_session_id or f"dispatch-{int(time.time())}"
         photo_urls = self._GCS_URL_RE.findall(text)
 

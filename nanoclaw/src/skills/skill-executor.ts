@@ -1,14 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { exec } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join, normalize, resolve } from 'node:path';
+import { normalize, resolve } from 'node:path';
 import { config } from '../config.js';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { readUserFile, writeUserFile, listUserDir } from '../fs/user-fs.js';
 import { updateMemory, appendMemory } from '../tools/memory-update.js';
 import { oauthCall } from '../tools/oauth-call.js';
-import { publishResult } from '../tools/publish-result.js';
-import type { ExecRequest } from '../channels/types.js';
+import type { ExecRequest, CardOp } from '../channels/types.js';
 import type { LoadedSkill } from './types.js';
 
 let client: Anthropic | null = null;
@@ -18,6 +17,83 @@ function getClient(): Anthropic {
     client = new Anthropic({ apiKey: config.anthropicApiKey });
   }
   return client;
+}
+
+// ---------------------------------------------------------------------------
+// Card ID generation
+// ---------------------------------------------------------------------------
+
+let cardIdCounter = 0;
+
+function genCardId(): string {
+  return `card_${Date.now()}_${++cardIdCounter}`;
+}
+
+// ---------------------------------------------------------------------------
+// Card Protocol helpers — publish card operations to vi:stream:{uid}
+// ---------------------------------------------------------------------------
+
+async function publishCardOp(op: CardOp): Promise<void> {
+  await publishStreamEvent(op);
+}
+
+async function createCard(
+  taskId: string,
+  cardId: string,
+  template: string,
+  data: Record<string, unknown> = {},
+  position: 'append' | 'prepend' = 'append',
+): Promise<void> {
+  await publishCardOp({
+    op: 'create_card',
+    taskId,
+    cardId,
+    template,
+    data,
+    position,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+async function streamToCard(
+  taskId: string,
+  cardId: string,
+  slot: string,
+  chunk: string,
+): Promise<void> {
+  await publishCardOp({
+    op: 'stream_to_card',
+    taskId,
+    cardId,
+    slot,
+    chunk,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+async function finalizeCard(taskId: string, cardId: string): Promise<void> {
+  await publishCardOp({
+    op: 'finalize_card',
+    taskId,
+    cardId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+async function htmlStreamOp(
+  taskId: string,
+  cardId: string,
+  chunk: string,
+  done = false,
+): Promise<void> {
+  await publishCardOp({
+    op: 'html_stream',
+    taskId,
+    cardId,
+    chunk,
+    done,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -130,25 +206,67 @@ const TOOL_DEFINITIONS: Anthropic.Tool[] = [
     },
   },
   {
-    name: 'publish_result',
+    name: 'publish_card',
     description:
-      'Publish a structured result to the frontend. Use type "html" for rich HTML content, "text" for plain text, "module" for structured UI modules.',
+      'Publish a card to the user\'s session canvas. Use a template from the registry (e.g. "nutrition-card", "shopping-list", "comparison-table") with structured JSON data matching the template\'s slot schema. For freeform HTML, use template "freeform-html".',
     input_schema: {
       type: 'object' as const,
       properties: {
-        type: {
-          type: 'string',
-          enum: ['html', 'text', 'module'],
-          description: 'Result type',
-        },
-        content: { type: 'string', description: 'Result content' },
-        module_type: {
+        template: {
           type: 'string',
           description:
-            'Module type (when type="module"): place_card, checklist, weather, comparison, recipe, steps_guide, info_card, image_gallery',
+            'Template ID from the registry (e.g. "nutrition-card", "hero-image", "checklist", "comparison-table", "freeform-html")',
+        },
+        data: {
+          type: 'object',
+          description:
+            'Card data matching the template\'s slot schema. Each key is a slot name.',
         },
       },
-      required: ['type', 'content'],
+      required: ['template', 'data'],
+    },
+  },
+  {
+    name: 'update_card',
+    description:
+      'Update an existing card\'s data. Only works on mutable cards. Use dot-notation paths for nested updates.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        card_id: {
+          type: 'string',
+          description: 'The cardId of the card to update',
+        },
+        updates: {
+          type: 'object',
+          description: 'Key-value pairs to update. Use dot-notation for nested paths (e.g. "items.2.checked": true)',
+        },
+      },
+      required: ['card_id', 'updates'],
+    },
+  },
+  {
+    name: 'append_to_card',
+    description:
+      'Append items to an array slot in an existing card.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        card_id: {
+          type: 'string',
+          description: 'The cardId of the card',
+        },
+        slot: {
+          type: 'string',
+          description: 'The array slot name to append to',
+        },
+        items: {
+          type: 'array',
+          description: 'Items to append to the array slot',
+          items: { type: 'object' },
+        },
+      },
+      required: ['card_id', 'slot', 'items'],
     },
   },
   {
@@ -286,17 +404,53 @@ async function executeTool(
         );
         return JSON.stringify(result);
       }
-      case 'publish_result': {
-        await publishResult(taskId, {
-          type: input.type as 'html' | 'text' | 'module',
-          content: input.content as string,
-          moduleType: input.module_type as string | undefined,
+      case 'publish_card': {
+        const template = input.template as string;
+        const data = (input.data as Record<string, unknown>) || {};
+        const cardId = genCardId();
+
+        if (template === 'freeform-html') {
+          // Freeform HTML: create card + stream HTML content
+          await createCard(taskId, cardId, 'freeform-html', {});
+          const htmlContent = (data.html as string) || (data.content as string) || '';
+          await htmlStreamOp(taskId, cardId, htmlContent, true);
+          await finalizeCard(taskId, cardId);
+        } else {
+          // Structured template card
+          await createCard(taskId, cardId, template, data);
+          await finalizeCard(taskId, cardId);
+        }
+
+        return JSON.stringify({ cardId, template, status: 'published' });
+      }
+      case 'update_card': {
+        const cardId = input.card_id as string;
+        const updates = input.updates as Record<string, unknown>;
+        await publishCardOp({
+          op: 'update_card',
+          taskId,
+          cardId,
+          updates,
+          timestamp: new Date().toISOString(),
         });
-        return `Result published (${input.type})`;
+        return JSON.stringify({ cardId, updated: Object.keys(updates) });
+      }
+      case 'append_to_card': {
+        const cardId = input.card_id as string;
+        const slot = input.slot as string;
+        const items = input.items as unknown[];
+        await publishCardOp({
+          op: 'append_to_card',
+          taskId,
+          cardId,
+          slot,
+          items,
+          timestamp: new Date().toISOString(),
+        });
+        return JSON.stringify({ cardId, slot, appended: items.length });
       }
       case 'bash': {
         const command = input.command as string;
-        // Block dangerous commands
         const dangerous = ['rm -rf /', 'mkfs', 'dd if=', ':(){', 'fork bomb'];
         if (dangerous.some((d) => command.includes(d))) {
           return 'Error: command rejected for safety';
@@ -358,7 +512,6 @@ async function executeTool(
         });
       }
       case 'web_search': {
-        // Stub — no search API configured
         return JSON.stringify({
           results: [],
           message: 'Web search not available (no search API configured)',
@@ -394,26 +547,9 @@ async function executeTool(
 // ---------------------------------------------------------------------------
 
 const HTML_INDICATORS = [
-  '<!doctype',
-  '<html',
-  '<head',
-  '<body',
-  '<div',
-  '<style',
-  '<table',
-  '<section',
-  '<article',
-  '<nav',
-  '<header',
-  '<footer',
-  '<main',
-  '<p class',
-  '<span class',
-  '<ul',
-  '<ol',
-  '<h1',
-  '<h2',
-  '<h3',
+  '<!doctype', '<html', '<head', '<body', '<div', '<style',
+  '<table', '<section', '<article', '<nav', '<header', '<footer',
+  '<main', '<p class', '<span class', '<ul', '<ol', '<h1', '<h2', '<h3',
 ];
 
 function detectHtml(text: string): boolean {
@@ -422,18 +558,17 @@ function detectHtml(text: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Main Executor — Agentic Loop with Streaming + Tools
+// Main Executor — Card Protocol Streaming with Agentic Loop
 // ---------------------------------------------------------------------------
 
 /**
- * Execute a skill using Claude SDK with tools and streaming.
+ * Execute a skill using Claude SDK with Card Template Protocol.
  *
- * Features:
- * - Agentic loop: Claude can call tools (file, memory, oauth, publish) and continue
- * - Streaming: Text chunks are published to vi:stream in real-time
- * - HTML auto-detection: First 300 chars buffered to detect HTML vs text
- * - Progress events: exec_progress emitted at key stages
- * - Media support: mediaUrls in request become image_url content blocks
+ * The executor now emits card operations instead of flat exec_* events:
+ * 1. Creates a thinking-process card at start (streams reasoning)
+ * 2. Text output streams to thinking card or creates freeform-html card
+ * 3. Tool calls (publish_card) create structured template cards
+ * 4. All cards are finalized on completion
  *
  * Returns the full generated text for persistence.
  */
@@ -450,9 +585,23 @@ export async function executeSkill(
 
   systemParts.push(skill.promptContent);
 
+  // Add template registry context so the AI knows available templates
+  systemParts.push(`\n---\n\nAvailable card templates for publish_card tool:
+PERCEIVE: image-analysis, text-extraction, nutrition-card, plant-animal-id, label-read, landmark-id, document-scan, barcode-scan, color-palette, handwriting-ocr, face-analysis, scene-description, object-detection
+THINK: thinking-process, comparison-table, pros-cons, decision-tree, timeline, summary, fact-check, translation, explanation, estimation, sentiment-analysis
+ACT: map-pins, shopping-list, recipe, nutrition-card, calendar-event, reminder, booking, price-comparison, step-guide, checklist, itinerary, weather-forecast, workout-plan, budget-tracker, file-download, link-preview, contact-card, code-snippet
+INTERACT: quiz, poll-vote, rating-review, swipe-cards, form-input, draw-canvas, conversation, sorting-game, memory-game, drag-arrange, before-after, ar-overlay
+PRESENT: hero-image, image-gallery, video-player, slideshow, document, infographic, chart-data, social-post, markdown-render, webpage-preview, story-card, 3d-model-viewer, music-player, pdf-viewer
+
+Use "freeform-html" template for content that no template covers. Prefer structured templates over freeform HTML.`);
+
   const system = systemParts.join('\n\n---\n\n');
   const model = skill.manifest.model || config.executorModel;
   const taskId = request.taskId;
+
+  // --- Card state for this execution ---
+  let thinkingCardId: string | null = null;
+  let contentCardId: string | null = null;
 
   // Publish exec_start
   await publishStreamEvent({
@@ -470,10 +619,16 @@ export async function executeSkill(
     message: 'Preparing context...',
   });
 
+  // Create thinking-process card at start
+  thinkingCardId = genCardId();
+  await createCard(taskId, thinkingCardId, 'thinking-process', {
+    title: 'Thinking...',
+    steps: [],
+  });
+
   // Build initial user message (with media if present)
   const userContent: Anthropic.ContentBlockParam[] = [];
 
-  // Add images from mediaUrls
   if (request.mediaUrls && request.mediaUrls.length > 0) {
     for (const url of request.mediaUrls) {
       userContent.push({
@@ -483,17 +638,16 @@ export async function executeSkill(
     }
   }
 
-  // Add text prompt
   userContent.push({ type: 'text', text: request.prompt });
 
-  // Determine which tools to offer based on skill requirements
+  // Determine which tools to offer
   const tools =
     skill.manifest.requirements?.tools &&
     skill.manifest.requirements.tools.length > 0
       ? TOOL_DEFINITIONS.filter((t) =>
           skill.manifest.requirements!.tools!.includes(t.name),
         )
-      : TOOL_DEFINITIONS; // default: all tools
+      : TOOL_DEFINITIONS;
 
   const messages: Anthropic.MessageParam[] = [
     { role: 'user', content: userContent },
@@ -504,14 +658,14 @@ export async function executeSkill(
   let detectionDone = false;
   let textBuffer = '';
   let turnCount = 0;
-  const MAX_TURNS = 10; // prevent infinite tool loops
+  const MAX_TURNS = 10;
 
   try {
     // --- Agentic Loop ---
     while (turnCount < MAX_TURNS) {
       turnCount++;
 
-      // Progress: Thinking (on first turn) or Executing tools (subsequent)
+      // Progress: Thinking or Executing tools
       if (turnCount === 1) {
         await publishStreamEvent({
           type: 'exec_progress',
@@ -520,6 +674,13 @@ export async function executeSkill(
           total: 4,
           message: 'Thinking...',
         });
+
+        // Stream a thinking step
+        await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+          label: 'Analyzing',
+          content: 'Processing your request...',
+          status: 'active',
+        }));
       } else {
         await publishStreamEvent({
           type: 'exec_progress',
@@ -528,6 +689,13 @@ export async function executeSkill(
           total: 4,
           message: `Executing tools (turn ${turnCount})...`,
         });
+
+        // Update thinking card with tool execution step
+        await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+          label: `Turn ${turnCount}`,
+          content: 'Executing tools...',
+          status: 'active',
+        }));
       }
 
       const stream = getClient().messages.stream({
@@ -538,7 +706,6 @@ export async function executeSkill(
         tools,
       });
 
-      // Collect text from this turn
       let turnText = '';
 
       stream.on('text', async (text) => {
@@ -551,44 +718,42 @@ export async function executeSkill(
           if (textBuffer.length >= 300) {
             detectionDone = true;
             htmlDetected = detectHtml(textBuffer);
-            // Flush the entire buffer as the detected type
-            const streamType = htmlDetected
-              ? 'exec_html_stream'
-              : 'exec_text_stream';
-            await publishStreamEvent({
-              type: streamType,
-              taskId,
-              chunk: textBuffer,
-            });
+
+            if (htmlDetected) {
+              // Create a freeform-html card for HTML content
+              contentCardId = genCardId();
+              await createCard(taskId, contentCardId, 'freeform-html', {});
+              await htmlStreamOp(taskId, contentCardId, textBuffer);
+            } else {
+              // Stream text to thinking card's conclusion slot
+              await streamToCard(taskId, thinkingCardId!, 'conclusion', textBuffer);
+            }
             textBuffer = '';
           }
         } else {
-          // Detection already done — stream immediately
-          const streamType = htmlDetected
-            ? 'exec_html_stream'
-            : 'exec_text_stream';
-          await publishStreamEvent({
-            type: streamType,
-            taskId,
-            chunk: text,
-          });
+          // Detection done — stream to appropriate card
+          if (htmlDetected && contentCardId) {
+            await htmlStreamOp(taskId, contentCardId, text);
+          } else {
+            await streamToCard(taskId, thinkingCardId!, 'conclusion', text);
+          }
         }
       });
 
       const finalMessage = await stream.finalMessage();
 
-      // If detection buffer wasn't flushed yet (short response), flush now
+      // Flush remaining detection buffer
       if (!detectionDone && textBuffer.length > 0) {
         detectionDone = true;
         htmlDetected = detectHtml(textBuffer);
-        const streamType = htmlDetected
-          ? 'exec_html_stream'
-          : 'exec_text_stream';
-        await publishStreamEvent({
-          type: streamType,
-          taskId,
-          chunk: textBuffer,
-        });
+
+        if (htmlDetected) {
+          contentCardId = genCardId();
+          await createCard(taskId, contentCardId, 'freeform-html', {});
+          await htmlStreamOp(taskId, contentCardId, textBuffer);
+        } else if (textBuffer.trim()) {
+          await streamToCard(taskId, thinkingCardId!, 'conclusion', textBuffer);
+        }
         textBuffer = '';
       }
 
@@ -597,11 +762,7 @@ export async function executeSkill(
         (c): c is Anthropic.ToolUseBlock => c.type === 'tool_use',
       );
 
-      if (
-        toolUseBlocks.length === 0 ||
-        finalMessage.stop_reason !== 'tool_use'
-      ) {
-        // No more tool calls — done
+      if (toolUseBlocks.length === 0 || finalMessage.stop_reason !== 'tool_use') {
         break;
       }
 
@@ -613,6 +774,7 @@ export async function executeSkill(
           `[skill-executor] tool call: ${toolUse.name}`,
           JSON.stringify(toolUse.input).slice(0, 200),
         );
+
         const result = await executeTool(
           toolUse.name,
           toolUse.input as Record<string, unknown>,
@@ -625,9 +787,27 @@ export async function executeSkill(
         });
       }
 
-      // Append assistant message and tool results to conversation
       messages.push({ role: 'assistant', content: finalMessage.content });
       messages.push({ role: 'user', content: toolResults });
+    }
+
+    // --- Finalization ---
+
+    // Finalize thinking card
+    if (thinkingCardId) {
+      // Mark thinking steps as done
+      await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
+        label: 'Complete',
+        content: 'Analysis finished.',
+        status: 'done',
+      }));
+      await finalizeCard(taskId, thinkingCardId);
+    }
+
+    // Finalize freeform HTML card if one was created
+    if (contentCardId) {
+      await htmlStreamOp(taskId, contentCardId, '', true);
+      await finalizeCard(taskId, contentCardId);
     }
 
     // Progress step 4: Done
@@ -637,17 +817,6 @@ export async function executeSkill(
       step: 4,
       total: 4,
       message: 'Complete',
-    });
-
-    // Publish stream done
-    const streamType = htmlDetected
-      ? 'exec_html_stream'
-      : 'exec_text_stream';
-    await publishStreamEvent({
-      type: streamType,
-      taskId,
-      chunk: '',
-      done: true,
     });
 
     // Publish completion
@@ -662,6 +831,14 @@ export async function executeSkill(
 
     return fullText;
   } catch (err) {
+    // Finalize any open cards before error
+    if (thinkingCardId) {
+      try { await finalizeCard(taskId, thinkingCardId); } catch (e) { console.warn('[skill-executor] finalize cleanup failed:', e); }
+    }
+    if (contentCardId) {
+      try { await finalizeCard(taskId, contentCardId); } catch (e) { console.warn('[skill-executor] finalize cleanup failed:', e); }
+    }
+
     const errorMsg = err instanceof Error ? err.message : String(err);
     await publishStreamEvent({
       type: 'exec_error',

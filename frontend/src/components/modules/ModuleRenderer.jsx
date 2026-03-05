@@ -18,8 +18,14 @@ const RecipeModule = lazy(() => import('./RecipeModule'));
 const StepsGuideModule = lazy(() => import('./StepsGuideModule'));
 const InfoCardModule = lazy(() => import('./InfoCardModule'));
 const ImageGalleryModule = lazy(() => import('./ImageGalleryModule'));
+const NutritionCardModule = lazy(() => import('./NutritionCardModule'));
+const ShoppingListModule = lazy(() => import('./ShoppingListModule'));
+const MapPinsModule = lazy(() => import('./MapPinsModule'));
+const QuizModule = lazy(() => import('./QuizModule'));
+const ConversationModule = lazy(() => import('./ConversationModule'));
 
 const MODULE_MAP = {
+  // Legacy module type names (snake_case)
   place_card: PlaceCardModule,
   checklist: ChecklistModule,
   weather: WeatherModule,
@@ -28,6 +34,21 @@ const MODULE_MAP = {
   steps_guide: StepsGuideModule,
   info_card: InfoCardModule,
   image_gallery: ImageGalleryModule,
+  nutrition_card: NutritionCardModule,
+  shopping_list: ShoppingListModule,
+  map_pins: MapPinsModule,
+  quiz: QuizModule,
+  conversation: ConversationModule,
+  // V5 Card Template Protocol names (kebab-case)
+  'map-pins': MapPinsModule,
+  'shopping-list': ShoppingListModule,
+  'nutrition-card': NutritionCardModule,
+  'comparison-table': ComparisonModule,
+  'thinking-process': StepsGuideModule,
+  'image-analysis': InfoCardModule,
+  'calendar-event': InfoCardModule,
+  'hero-image': InfoCardModule,
+  'image-gallery': ImageGalleryModule,
 };
 
 // Error boundary per module — prevents one broken module from crashing the view
@@ -92,7 +113,7 @@ export function extractModuleTitle(module_type, data) {
   if (data.name) return data.name;
   if (data.location) return data.location;
 
-  // Fallback: humanize the module_type
+  // Fallback: humanize the module_type (snake_case legacy + kebab-case V5)
   const names = {
     place_card: 'Place',
     checklist: 'Checklist',
@@ -102,6 +123,21 @@ export function extractModuleTitle(module_type, data) {
     steps_guide: 'Guide',
     info_card: 'Info',
     image_gallery: 'Gallery',
+    nutrition_card: 'Nutrition',
+    shopping_list: 'Shopping List',
+    map_pins: 'Locations',
+    quiz: 'Quiz',
+    conversation: 'Conversation',
+    'map-pins': 'Locations',
+    'shopping-list': 'Shopping List',
+    'nutrition-card': 'Nutrition',
+    'comparison-table': 'Comparison',
+    'thinking-process': 'Thinking',
+    'image-analysis': 'Analysis',
+    'calendar-event': 'Calendar',
+    'hero-image': 'Hero',
+    'image-gallery': 'Gallery',
+    'freeform-html': 'Content',
   };
   return names[module_type] || module_type;
 }

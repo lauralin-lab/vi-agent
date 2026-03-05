@@ -1,5 +1,5 @@
 /**
- * S3 sync module — uses API Server as proxy (no AWS SDK needed).
+ * Cloud sync module — uses API Server as proxy to GCS.
  * On startup: pull files from remote to local /workspace/.
  * After task completion: push changed files back.
  * Tracks sync state in /workspace/.cache/sync-state.json.
@@ -45,10 +45,10 @@ function apiHeaders(): Record<string, string> {
 }
 
 /**
- * Sync files from API Server (S3 proxy) to local workspace on startup.
+ * Sync files from API Server (GCS proxy) to local workspace on startup.
  */
-export async function syncFromS3(uid: string): Promise<void> {
-  console.log(`[s3-sync] syncing from remote for user ${uid}`);
+export async function syncFromCloud(uid: string): Promise<void> {
+  console.log(`[cloud-sync] syncing from remote for user ${uid}`);
 
   try {
     // List remote files
@@ -57,7 +57,7 @@ export async function syncFromS3(uid: string): Promise<void> {
       { headers: apiHeaders() },
     );
     if (!listRes.ok) {
-      console.warn(`[s3-sync] failed to list remote files: ${listRes.status}`);
+      console.warn(`[cloud-sync] failed to list remote files: ${listRes.status}`);
       return;
     }
 
@@ -91,24 +91,24 @@ export async function syncFromS3(uid: string): Promise<void> {
         state.files[entry.name] = { hash, ts: Date.now() };
         downloaded++;
       } catch (err) {
-        console.warn(`[s3-sync] failed to download ${entry.name}:`, err);
+        console.warn(`[cloud-sync] failed to download ${entry.name}:`, err);
       }
     }
 
     await saveSyncState(state);
-    console.log(`[s3-sync] downloaded ${downloaded} files`);
+    console.log(`[cloud-sync] downloaded ${downloaded} files`);
   } catch (err) {
-    console.error('[s3-sync] syncFromS3 failed:', err);
+    console.error('[cloud-sync] syncFromCloud failed:', err);
   }
 }
 
 /**
- * Sync changed local files back to API Server (S3 proxy) after task completion.
+ * Sync changed local files back to API Server (GCS proxy) after task completion.
  */
-export async function syncToS3(files: string[]): Promise<void> {
+export async function syncToCloud(files: string[]): Promise<void> {
   if (files.length === 0) return;
 
-  console.log(`[s3-sync] uploading ${files.length} files`);
+  console.log(`[cloud-sync] uploading ${files.length} files`);
   const state = await loadSyncState();
   let uploaded = 0;
 
@@ -134,22 +134,17 @@ export async function syncToS3(files: string[]): Promise<void> {
       );
 
       if (!res.ok) {
-        console.warn(`[s3-sync] failed to upload ${relativePath}: ${res.status}`);
+        console.warn(`[cloud-sync] failed to upload ${relativePath}: ${res.status}`);
         continue;
       }
 
       state.files[relativePath] = { hash, ts: Date.now() };
       uploaded++;
     } catch (err) {
-      console.warn(`[s3-sync] failed to upload ${relativePath}:`, err);
+      console.warn(`[cloud-sync] failed to upload ${relativePath}:`, err);
     }
   }
 
   await saveSyncState(state);
-  console.log(`[s3-sync] uploaded ${uploaded} files`);
-}
-
-export function isS3Enabled(): boolean {
-  // S3 sync is enabled when API server URL is configured (always true in prod)
-  return config.apiServerUrl.length > 0;
+  console.log(`[cloud-sync] uploaded ${uploaded} files`);
 }

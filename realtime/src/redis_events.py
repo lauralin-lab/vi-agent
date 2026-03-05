@@ -1,12 +1,11 @@
-"""V4 Redis Event Bus — Python type definitions.
+"""V5 Redis Event Bus — Python type definitions.
 
-SYNCHRONIZED COPY — canonical source: this file (realtime/src/redis_events.py)
-Last synced: 2026-03-04
+SYNCHRONIZED COPY — canonical source: api-server/app/schemas/redis_events.py
 Both api-server and realtime use identical copies because they run in
 separate Docker containers and cannot cross-import. Keep them in sync
-when modifying channel schemas. Mirror: api-server/app/schemas/redis_events.py
+when modifying channel schemas.
 
-Pydantic models for all V4 Redis channels. These mirror the TypeScript
+Pydantic models for the V5 Redis channels. These mirror the TypeScript
 definitions in nanoclaw/src/channels/types.ts and serve as the contract
 between Python services (api-server, realtime) and NanoClaw.
 
@@ -55,7 +54,7 @@ class MediaDimensions(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ContextSnapshot(BaseModel):
-    version: Literal[4] = 4
+    version: Literal[5] = 5
     ts: float = Field(default_factory=time.time)
     uid: str
     snapshot: str  # <=2000 chars compiled context
@@ -83,8 +82,90 @@ class ExecRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# vi:stream:{uid} — Execution stream events from NanoClaw
+# Card Template Protocol — Card Operations (vi:stream:{uid})  §5
 # ---------------------------------------------------------------------------
+
+class CreateCard(BaseModel):
+    op: Literal["create_card"] = "create_card"
+    taskId: str
+    cardId: str
+    template: str
+    data: Dict[str, Any] = {}
+    position: Optional[str] = "append"  # append | prepend | after:{cardId}
+    timestamp: Optional[str] = None
+
+
+class StreamToCard(BaseModel):
+    op: Literal["stream_to_card"] = "stream_to_card"
+    taskId: str
+    cardId: str
+    slot: str
+    chunk: str
+    timestamp: Optional[str] = None
+
+
+class UpdateCard(BaseModel):
+    op: Literal["update_card"] = "update_card"
+    taskId: str
+    cardId: str
+    updates: Dict[str, Any]
+    timestamp: Optional[str] = None
+
+
+class AppendToCard(BaseModel):
+    op: Literal["append_to_card"] = "append_to_card"
+    taskId: str
+    cardId: str
+    slot: str
+    items: List[Any]
+    timestamp: Optional[str] = None
+
+
+class ReplaceCard(BaseModel):
+    op: Literal["replace_card"] = "replace_card"
+    taskId: str
+    cardId: str
+    template: str
+    data: Dict[str, Any] = {}
+    timestamp: Optional[str] = None
+
+
+class FinalizeCard(BaseModel):
+    op: Literal["finalize_card"] = "finalize_card"
+    taskId: str
+    cardId: str
+    timestamp: Optional[str] = None
+
+
+class RemoveCard(BaseModel):
+    op: Literal["remove_card"] = "remove_card"
+    taskId: str
+    cardId: str
+    reason: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class HtmlStream(BaseModel):
+    op: Literal["html_stream"] = "html_stream"
+    taskId: str
+    cardId: str
+    chunk: str
+    done: Optional[bool] = None
+    timestamp: Optional[str] = None
+
+
+CardOp = Union[
+    CreateCard,
+    StreamToCard,
+    UpdateCard,
+    AppendToCard,
+    ReplaceCard,
+    FinalizeCard,
+    RemoveCard,
+    HtmlStream,
+]
+
+# --- Session-level events (task lifecycle) ---
 
 class ExecStart(BaseModel):
     type: Literal["exec_start"] = "exec_start"
@@ -100,35 +181,6 @@ class ExecProgress(BaseModel):
     message: str
 
 
-class ExecHtmlStream(BaseModel):
-    type: Literal["exec_html_stream"] = "exec_html_stream"
-    taskId: str
-    chunk: str
-    done: Optional[bool] = None
-
-
-class ExecTextStream(BaseModel):
-    type: Literal["exec_text_stream"] = "exec_text_stream"
-    taskId: str
-    chunk: str
-    done: Optional[bool] = None
-
-
-class ExecModule(BaseModel):
-    type: Literal["exec_module"] = "exec_module"
-    taskId: str
-    moduleType: str
-    data: Any
-
-
-class ExecIntermediate(BaseModel):
-    type: Literal["exec_intermediate"] = "exec_intermediate"
-    taskId: str
-    step: int
-    label: str
-    data: Any
-
-
 class ExecResult(BaseModel):
     type: Literal["exec_result"] = "exec_result"
     taskId: str
@@ -142,16 +194,32 @@ class ExecError(BaseModel):
     recoverable: bool
 
 
+# All events over vi:stream:{uid}
 StreamEvent = Union[
+    CreateCard,
+    StreamToCard,
+    UpdateCard,
+    AppendToCard,
+    ReplaceCard,
+    FinalizeCard,
+    RemoveCard,
+    HtmlStream,
     ExecStart,
     ExecProgress,
-    ExecHtmlStream,
-    ExecTextStream,
-    ExecModule,
-    ExecIntermediate,
     ExecResult,
     ExecError,
 ]
+
+
+
+# --- Card Actions (upstream: user → NanoClaw) ---
+
+class CardAction(BaseModel):
+    op: Literal["card_action"] = "card_action"
+    cardId: str
+    action: str
+    payload: Dict[str, Any] = {}
+    timestamp: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -271,3 +339,9 @@ def channel_frames(uid: str) -> str:
 
 def channel_events(uid: str) -> str:
     return f"vi:events:{uid}"
+
+def channel_queue() -> str:
+    return "vi:queue"
+
+def channel_cron(uid: str, job_id: str) -> str:
+    return f"vi:cron:{uid}:{job_id}"

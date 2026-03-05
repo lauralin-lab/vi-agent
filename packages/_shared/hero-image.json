@@ -1,0 +1,24 @@
+{
+  "$id": "hero-image",
+  "category": "present",
+  "renderer": "html",
+  "mutable": false,
+  "streamable": true,
+  "slots": {
+    "image_url": { "type": "string", "required": true },
+    "title": { "type": "string", "streamable": true },
+    "subtitle": { "type": "string" },
+    "description": { "type": "string", "streamable": true },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "action": { "type": "string" },
+          "icon": { "type": "string" }
+        }
+      }
+    }
+  }
+}

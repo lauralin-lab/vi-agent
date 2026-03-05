@@ -13,6 +13,7 @@ BRANCH="${2:-main}"
 COMMIT="$3"
 BUILD_MODE="${4:-build}"
 IMAGE_TAG="${5:-latest}"
+REPO_DIR="${REPO_DIR:-/home/$(whoami)/vi-agent-repos/$DEV_NAME}"
 
 if [ -z "$DEV_NAME" ]; then
     echo "ERROR: Developer name required"
@@ -71,6 +72,7 @@ POSTGRES_PORT=$((5432 + SLOT))
 REDIS_PORT=$((6379 + SLOT))
 
 echo "Ports: frontend=$FRONTEND_PORT, https=$FRONTEND_HTTPS_PORT, api=$API_PORT, nanoclaw=$NANOCLAW_PORT, postgres=$POSTGRES_PORT, redis=$REDIS_PORT"
+echo "Repo:  $REPO_DIR"
 
 # --- Create instance directory ---
 mkdir -p "$INSTANCE_DIR"
@@ -95,6 +97,7 @@ else
 fi
 
 # --- Generate docker-compose from template ---
+REPO_DIR_ESCAPED=$(echo "$REPO_DIR" | sed 's|/|\\/|g')
 sed -e "s/__DEV_NAME__/$DEV_NAME/g" \
     -e "s/__SLOT__/$SLOT/g" \
     -e "s/__FRONTEND_PORT__/$FRONTEND_PORT/g" \
@@ -105,6 +108,7 @@ sed -e "s/__DEV_NAME__/$DEV_NAME/g" \
     -e "s/__POSTGRES_PORT__/$POSTGRES_PORT/g" \
     -e "s/__REDIS_PORT__/$REDIS_PORT/g" \
     -e "s/__IMAGE_TAG__/$IMAGE_TAG/g" \
+    -e "s/__REPO_DIR__/$REPO_DIR_ESCAPED/g" \
     "$TEMPLATE_DIR/$TEMPLATE_FILE" > "$INSTANCE_DIR/docker-compose.yml"
 
 # --- Generate .env if it doesn't exist (preserve existing secrets on update) ---
@@ -141,7 +145,11 @@ if [ "$BUILD_MODE" = "image" ]; then
     docker compose pull
 fi
 echo "Starting services..."
-docker compose up -d
+if [ "$BUILD_MODE" = "image" ]; then
+    docker compose up -d
+else
+    docker compose up -d --build
+fi
 
 # --- Wait for health ---
 echo "Waiting for API server..."

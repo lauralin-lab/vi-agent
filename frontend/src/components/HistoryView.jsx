@@ -6,13 +6,11 @@ import { useImagePreloader } from '../hooks/useImagePreloader';
 import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
 import PromotionBlock from './PromotionBlock';
+import { IOS_SPRING } from '../constants';
 
 
 const POLL_INTERVAL = 10000;
 const POLL_INTERVAL_SSE_ACTIVE = 30000;
-
-// ── iOS spring config ──
-const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
 
 function extractPhotos(session) {
     const photos = [];
@@ -139,7 +137,7 @@ function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
 // ─── Main component ─────────────────────────────────────────────────────────
 export default function HistoryView({
     onBack, onOpenCamera, onSelectSession, onProfileTap, onClearSessionCache,
-    isAuthenticated, user, isHome, livekit, onNotification, memoryBadge,
+    isAuthenticated, user, isHome, livekit, onNotification,
     sseEvents = [], sseConnected = false,
 }) {
     const { play } = useSound();

@@ -1,0 +1,26 @@
+{
+  "$id": "conversation",
+  "category": "interact",
+  "renderer": "react",
+  "component": "ConversationModule",
+  "mutable": true,
+  "streamable": true,
+  "slots": {
+    "topic": { "type": "string" },
+    "messages": {
+      "type": "array",
+      "streamable": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "ai"] },
+          "content": { "type": "string" },
+          "timestamp": { "type": "string" }
+        }
+      }
+    },
+    "input_placeholder": { "type": "string", "default": "Type a message..." },
+    "resolved": { "type": "boolean", "default": false }
+  },
+  "mutable_slots": ["messages", "resolved"]
+}

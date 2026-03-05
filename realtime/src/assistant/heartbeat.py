@@ -35,10 +35,10 @@ class HeartbeatMixin:
                     logger.info("[heartbeat] Stopping due to user disconnect")
                     break
 
-                # Mark catch-up done if not yet done (V4 uses Redis context subscription)
+                # Mark catch-up done if not yet done (Redis context subscription)
                 if not self.catch_up_done and self.user_identity and self._agent_session:
                     self.catch_up_done = True
-                    logger.info("[heartbeat] Catch-up marked done (V4 Redis context)")
+                    logger.info("[heartbeat] Catch-up marked done (Redis context)")
 
                 await asyncio.sleep(10)
                 self._trim_conversation_history()

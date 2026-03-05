@@ -11,11 +11,13 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from typing import Literal
+
+from pydantic import BaseModel, TypeAdapter
 
 from ..deps import get_current_user_or_device, get_redis
 from ..models import User
-from ..schemas.redis_events import ExecRequest, StreamEvent, IntentionUpdate
+from ..schemas.redis_events import ExecRequest, StreamEvent, IntentionUpdate, CardAction
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +45,9 @@ async def user_events(
         pubsub = redis.pubsub()
         uid = user.vi_user_id
         channels = [
-            f"vi:events:{uid}",   # existing: memory_update, session_update
-            f"vi:stream:{uid}",   # V4: exec_* events from NanoClaw
-            f"vi:intent:{uid}",   # V4: intention_update from NanoClaw
+            f"vi:events:{uid}",   # memory_update, session_update
+            f"vi:stream:{uid}",   # V5 card ops + exec lifecycle from NanoClaw
+            f"vi:intent:{uid}",   # intention_update from NanoClaw
         ]
         await pubsub.subscribe(*channels)
         last_heartbeat = time.time()
@@ -76,14 +78,13 @@ async def user_events(
                         except Exception as ve:
                             logger.warning("SSE intent event validation failed: %s — data: %s", ve, data)
 
-                    # For vi:stream and vi:intent, the "type" field IS the event type
-                    event_type = data.get("type") or data.get("event_type", "update")
-                    payload = {
-                        k: v for k, v in data.items()
-                        if k not in ("event_type", "type")
-                    }
-                    payload["type"] = event_type
-                    yield f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+                    # Card ops have "op" field; lifecycle/legacy events have "type" field
+                    if "op" in data:
+                        event_type = data["op"]
+                    else:
+                        event_type = data.get("type", "update")
+
+                    yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
                 now = time.time()
                 if now - last_heartbeat >= 30:
@@ -107,7 +108,7 @@ async def user_events(
 
 
 # ---------------------------------------------------------------------------
-# V4: User-facing exec dispatch to NanoClaw
+# User-facing exec dispatch to NanoClaw
 # ---------------------------------------------------------------------------
 
 
@@ -117,7 +118,7 @@ class UserExecRequest(BaseModel):
     session_id: str | None = None
     skill_slug: str | None = None
     media_urls: list[str] | None = None
-    priority: str = "thorough"
+    priority: Literal["fast", "thorough"] = "thorough"
     params: dict | None = None
 
 
@@ -163,3 +164,41 @@ async def dispatch_exec_user(
         "taskId": task_id,
         "sessionId": session_id,
     }
+
+
+class CardActionRequest(BaseModel):
+    """Card action from frontend — user interacted with a living card."""
+    cardId: str
+    action: str
+    payload: dict = {}
+    timestamp: str | None = None
+
+
+@router.post("/card-action")
+async def send_card_action(
+    req: CardActionRequest,
+    user: User = Depends(get_current_user_or_device),
+    redis=Depends(get_redis),
+):
+    """Send a card action upstream to NanoClaw.
+
+    Used when users interact with living cards (check items, select options, etc.).
+    The action is published to vi:actions:{uid} as an XADD event.
+    """
+    if redis is None:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    uid = user.vi_user_id
+    action_event = CardAction(
+        cardId=req.cardId,
+        action=req.action,
+        payload=req.payload,
+        timestamp=req.timestamp,
+    )
+
+    channel = f"vi:actions:{uid}"
+    await redis.xadd(channel, {"data": action_event.model_dump_json()})
+
+    logger.info("[redis][api] Card action: card=%s action=%s uid=%s", req.cardId, req.action, uid)
+
+    return {"ok": True}

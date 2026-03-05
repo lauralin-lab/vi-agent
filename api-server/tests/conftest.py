@@ -5,8 +5,8 @@ import uuid as _uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import JSON, String as SAString
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, String as SAString, Text
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -39,6 +39,8 @@ def _patch_pg_types():
                     col.default.arg = lambda *_args: str(_uuid.uuid4())
             elif isinstance(col.type, JSONB):
                 col.type = JSON()
+            elif isinstance(col.type, PG_ARRAY):
+                col.type = JSON()  # Store arrays as JSON in SQLite
 
 
 # ---------------------------------------------------------------------------

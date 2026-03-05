@@ -98,10 +98,10 @@ function parseAgentXml(raw) {
  *
  * V4: NanoClaw results arrive via SSE (useNanoClawResults), not DataChannel.
  * This hook retains vi-agent DataChannel handlers (viewfinder_overlay,
- * action_suggestion, etc.) and all RPC methods.
+ * action_suggestion, etc.).
  *
- * V4: Task dispatch goes through REST API → Redis → NanoClaw.
- * Voice/chat messages still go through LiveKit RPC (sendMessage).
+ * V5: All task dispatch goes through REST API → Redis → NanoClaw.
+ * LiveKit is used only for voice/video streaming and DataChannel events.
  */
 export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   // VI agent protocol state
@@ -453,54 +453,19 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
     registerDataHandler(newRoom);
   }, [registerRpcMethods, registerDataHandler]);
 
-  // Send message to agent via RPC
-  const sendMessage = useCallback(async (text, images = []) => {
-    if (!roomRef.current) {
-      console.warn('[LiveKit] Cannot send message: no room');
-      return;
-    }
-    const identity = resolveAgentIdentity();
-    if (!identity) {
-      console.warn('[LiveKit] Cannot send message: no agent found in room');
-      return;
-    }
-    try {
-      const payload = JSON.stringify({ text, images });
-      await roomRef.current.localParticipant.performRpc({
-        destinationIdentity: identity,
-        method: 'rpcF2BSendMessage',
-        payload,
-      });
-    } catch (e) {
-      console.error('[LiveKit] Failed to send RPC message:', e);
-      try {
-        const data = JSON.stringify({ type: 'user_action', text });
-        await roomRef.current.localParticipant.publishData(
-          new TextEncoder().encode(data),
-          { topic: 'vi-user', reliable: true }
-        );
-      } catch (fallbackErr) {
-        console.error('[LiveKit] Fallback data channel also failed:', fallbackErr);
-      }
-    }
-  }, [roomRef, resolveAgentIdentity]);
-
-  // Send page context to agent
+  // Send page context to agent via DataChannel (best-effort, non-critical)
   const sendPageContext = useCallback(async (page) => {
     if (!roomRef.current) return;
-    const identity = resolveAgentIdentity();
-    if (!identity) return;
     try {
-      const payload = JSON.stringify({ action: 'page_context', page });
-      await roomRef.current.localParticipant.performRpc({
-        destinationIdentity: identity,
-        method: 'rpcF2BSendMessage',
-        payload,
-      });
+      const data = JSON.stringify({ type: 'page_context', page });
+      await roomRef.current.localParticipant.publishData(
+        new TextEncoder().encode(data),
+        { topic: 'vi-user', reliable: true }
+      );
     } catch (e) {
       console.warn('[LiveKit] Failed to send page context:', e);
     }
-  }, [roomRef, resolveAgentIdentity]);
+  }, [roomRef]);
 
   // Allow components to update chat text/images refs
   const setChatTextRef = useCallback((text) => {
@@ -564,7 +529,6 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
     greetingReceived,
 
     // Actions
-    sendMessage,
     sendPageContext,
     capturePhoto: capturePhotoInternal,
     dismissActionCard,

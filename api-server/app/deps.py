@@ -75,8 +75,6 @@ async def get_current_user_or_device(
     2. X-Internal-Token + vi_user_id query param (internal service calls)
     3. vi_user_id query param alone (device auth)
     """
-    import os
-
     # If JWT credentials are provided, validate them strictly
     if credentials and credentials.credentials:
         try:
@@ -86,10 +84,8 @@ async def get_current_user_or_device(
 
     # Internal service auth: X-Internal-Token + vi_user_id
     if x_internal_token and vi_user_id:
-        expected_token = os.getenv("INTERNAL_API_TOKEN", "")
-        if not expected_token:
-            expected_token = "vi-internal-dev-token"
-        if x_internal_token == expected_token:
+        from .routes.internal import INTERNAL_API_TOKEN
+        if x_internal_token == INTERNAL_API_TOKEN:
             result = await db.execute(
                 select(User).where(User.vi_user_id == vi_user_id)
             )

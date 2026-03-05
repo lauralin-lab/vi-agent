@@ -51,7 +51,7 @@ services:
 
   api-server:
     build:
-      context: /opt/vi-agent/repo/api-server
+      context: __REPO_DIR__/api-server
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -108,7 +108,7 @@ services:
 
   frontend:
     build:
-      context: /opt/vi-agent/repo/frontend
+      context: __REPO_DIR__/frontend
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=
@@ -137,7 +137,7 @@ services:
 
   nanoclaw:
     build:
-      context: /opt/vi-agent/repo/nanoclaw
+      context: __REPO_DIR__/nanoclaw
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -177,7 +177,7 @@ services:
 
   vi-realtime:
     build:
-      context: /opt/vi-agent/repo/realtime
+      context: __REPO_DIR__/realtime
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:

@@ -1,9 +1,10 @@
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { loadSkill } from '../skills/skill-loader.js';
 import { executeSkill } from '../skills/skill-executor.js';
-import { syncToS3 } from '../fs/s3-sync.js';
+import { syncToCloud } from '../fs/cloud-sync.js';
+import { readFileOrNull } from '../fs/user-fs.js';
 import { config } from '../config.js';
 import type { ExecRequest } from '../channels/types.js';
 
@@ -65,7 +66,7 @@ export async function executeTask(request: ExecRequest): Promise<void> {
 
     // Sync changed files back to remote storage
     const changedFiles = await collectChangedFiles(request.sessionId, request.taskId);
-    syncToS3(changedFiles).catch((err) => {
+    syncToCloud(changedFiles).catch((err) => {
       console.error('[task-executor] post-task sync failed:', err);
     });
 
@@ -105,14 +106,6 @@ async function persistResult(
     );
   } catch (err) {
     console.error(`[task-executor] failed to persist result:`, err);
-  }
-}
-
-async function readFileOrNull(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf-8');
-  } catch {
-    return null;
   }
 }
 

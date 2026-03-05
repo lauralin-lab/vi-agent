@@ -12,10 +12,10 @@ from pydantic import BaseModel
 
 from ..deps import get_current_user_or_device, get_redis
 from ..limiter import limiter
+from ..models import User
+from ..services.gcs_service import get_gcs_bucket, get_signing_kwargs
 
 logger = logging.getLogger(__name__)
-from ..models import User
-from ..services.gcs_service import GCS_BUCKET, get_gcs_bucket, get_signing_kwargs
 
 router = APIRouter()
 

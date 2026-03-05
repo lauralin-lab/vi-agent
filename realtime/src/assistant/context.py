@@ -1,5 +1,5 @@
 """
-ContextMixin — V4 Redis context subscription, event publishing, keyframe sampling.
+ContextMixin — Redis context subscription, event publishing, keyframe sampling.
 
 Subscribes to vi:ctx:{uid} for NanoClaw context snapshots + predicted intentions.
 Publishes user events to vi:actions:{uid} Redis Stream.
@@ -50,9 +50,9 @@ _UPLOAD_TIMEOUT_S = 10          # Timeout for presign + upload
 
 
 class ContextMixin:
-    """Mixin providing V4 Redis context subscription and event publishing."""
+    """Mixin providing Redis context subscription and event publishing."""
 
-    # ─── V4: Redis event publishing ───────────────────────────────
+    # ─── Redis event publishing ───────────────────────────────────
 
     async def _publish_user_event(self, event_type: str, data: dict):
         """Publish user event to Redis Stream vi:actions:{uid}."""
@@ -86,7 +86,7 @@ class ContextMixin:
         except Exception as e:
             logger.warning(f"[push_to_frontend] Failed to push to {topic}: {e}")
 
-    # ─── V4: Redis context subscription ───────────────────────────
+    # ─── Redis context subscription ─────────────────────────────
 
     async def _start_context_subscription(self):
         """Subscribe to NanoClaw context updates (vi:ctx:{uid}).
@@ -151,7 +151,7 @@ class ContextMixin:
             hints.append(f"- {title} ({confidence:.0%}): {desc}")
         return "\n".join(hints)
 
-    # ─── V4: Keyframe sampling ─────────────────────────────────────
+    # ─── Keyframe sampling ─────────────────────────────────────────
 
     async def _start_keyframe_sampler(self):
         """Periodically capture keyframes from video and publish to vi:frames:{uid}.

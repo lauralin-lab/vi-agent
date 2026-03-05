@@ -12,7 +12,7 @@ async def publish_event(redis, vi_user_id: str, event: dict) -> None:
     Args:
         redis: aioredis client (or None to skip publishing).
         vi_user_id: The user's external identifier.
-        event: Dict with 'event_type' key and arbitrary payload.
+        event: Dict with 'type' key and arbitrary payload.
     """
     if redis is None:
         return

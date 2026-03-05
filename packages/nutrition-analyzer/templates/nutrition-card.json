@@ -1,0 +1,50 @@
+{
+  "$id": "nutrition-card",
+  "category": "perceive",
+  "renderer": "react",
+  "component": "NutritionCardModule",
+  "mutable": false,
+  "streamable": true,
+  "slots": {
+    "title": {
+      "type": "string",
+      "default": "Nutrition Analysis",
+      "streamable": true
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "portion": { "type": "string" },
+          "calories": { "type": "number" },
+          "protein": { "type": "number" },
+          "carbs": { "type": "number" },
+          "fat": { "type": "number" },
+          "fiber": { "type": "number" }
+        }
+      },
+      "streamable": true
+    },
+    "totals": {
+      "type": "object",
+      "properties": {
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fat": { "type": "number" },
+        "fiber": { "type": "number" }
+      }
+    },
+    "health_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "recommendation": {
+      "type": "string",
+      "streamable": true
+    }
+  }
+}

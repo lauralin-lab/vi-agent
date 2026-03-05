@@ -12,7 +12,7 @@ from livekit.agents.utils.images import encode, EncodeOptions, ResizeOptions
 from livekit.plugins import cartesia, deepgram, openai, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from agent_common import VI_AGENT_NAME, Assistant, logger, run_agent, server
+from assistant import VI_AGENT_NAME, Assistant, logger, run_agent, server
 
 STT_MODEL = os.getenv("STT_MODEL", "nova-3")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")

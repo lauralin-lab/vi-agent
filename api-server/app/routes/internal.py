@@ -4,13 +4,12 @@ These endpoints are called by vi-realtime (within the Docker network)
 and should NOT be exposed to the public internet.
 """
 
-import json
 import logging
 import os
 import re
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
@@ -468,7 +467,7 @@ async def presign_get_urls(body: PresignGetRequest):
     return {"urls": result}
 
 
-# --- V4: Internal presigned PUT URL for keyframe/frame uploads ---
+# --- Internal presigned PUT URL for keyframe/frame uploads ---
 
 
 @router.get("/storage/presign-put")
@@ -511,7 +510,7 @@ async def presign_put_url(
     }
 
 
-# --- V4: Exec dispatch to NanoClaw via Redis ---
+# --- Exec dispatch to NanoClaw via Redis ---
 
 
 class ExecDispatchRequest(BaseModel):
@@ -521,7 +520,7 @@ class ExecDispatchRequest(BaseModel):
     session_id: str | None = None
     skill_slug: str | None = None
     media_urls: list[str] | None = None
-    priority: str = "thorough"  # "fast" or "thorough"
+    priority: Literal["fast", "thorough"] = "thorough"
     params: dict | None = None
 
 

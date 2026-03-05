@@ -1,0 +1,26 @@
+{
+  "$id": "image-analysis",
+  "category": "perceive",
+  "renderer": "html",
+  "mutable": false,
+  "streamable": true,
+  "slots": {
+    "photo_url": { "type": "string", "required": true },
+    "title": { "type": "string", "streamable": true },
+    "description": { "type": "string", "streamable": true },
+    "detected_objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "confidence": { "type": "number" }
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

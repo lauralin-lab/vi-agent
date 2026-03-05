@@ -5,10 +5,9 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
+import { IOS_SPRING } from '../constants';
 import SkillsView from './SkillsView';
 import ConnectionsView from './ConnectionsView';
-
-const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
 
 const PROFILE_TABS = [
   { key: 'skills', label: 'Skills' },

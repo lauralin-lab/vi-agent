@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import HistoryView from './components/HistoryView';
 import DeviceFrame from './components/DeviceFrame';
+import ActivePiP from './components/ActivePiP';
 
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
@@ -197,14 +198,20 @@ function App() {
   }, []); // Intentional: only on mount
 
   // --- Camera enable/disable based on view ---
+  // V5: Keep camera enabled during live-session for PiP
   useEffect(() => {
     if (!livekit.setCameraEnabled) return;
-    if (viewState === 'camera') {
+    if (viewState === 'camera' || viewState === 'live-session') {
       livekit.setCameraEnabled(true);
     } else {
       livekit.setCameraEnabled(false);
     }
   }, [viewState, livekit.setCameraEnabled]);
+
+  // V5: Return to full camera from PiP
+  const handleReturnToCamera = useCallback(() => {
+    setViewState('camera');
+  }, []);
 
   // D.1: Send page context to agent when view changes
   useEffect(() => {
@@ -395,6 +402,16 @@ function App() {
               />
             )}
           </AnimatePresence>
+
+          {/* V5: Camera PiP overlay during session view */}
+          {viewState === 'live-session' && (
+            <ActivePiP
+              localVideoTrack={livekit.localVideoTrack}
+              onReturnToCamera={handleReturnToCamera}
+              onCapture={handleAddPhotoToSession}
+              visible={true}
+            />
+          )}
 
           {/* Global toast notifications */}
           <NotificationManager toasts={toasts} onDismiss={dismissToast} />

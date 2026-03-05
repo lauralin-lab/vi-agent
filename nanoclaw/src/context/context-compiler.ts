@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getRedis } from '../redis-client.js';
 import { channels, type ContextSnapshot, type ActivitySummary } from '../channels/types.js';
+import { readFileOrNull } from '../fs/user-fs.js';
 import { getLatestFrame } from '../channels/frames-consumer.js';
 import { predictIntentions, updateSceneHash } from './intention-predictor.js';
 import { consumeRecentActions, pollActions } from '../channels/actions-consumer.js';
@@ -108,9 +109,9 @@ async function compileAndPublish(): Promise<void> {
     ? await predictIntentions(snapshot, frame?.frameUrl, manifests)
     : await predictIntentions(null, frame?.frameUrl, manifests);
 
-  // 8. Publish context snapshot
+  // 9. Predict intentions + publish context snapshot
   const ctx: ContextSnapshot = {
-    version: 4,
+    version: 5,
     ts: Date.now(),
     uid,
     snapshot,
@@ -123,7 +124,7 @@ async function compileAndPublish(): Promise<void> {
 
   await redis.publish(channels.ctx(uid), JSON.stringify(ctx));
 
-  // 9. Publish intentions separately
+  // 10. Publish intentions channel
   if (intentions.length > 0) {
     await redis.publish(
       channels.intent(uid),
@@ -165,14 +166,6 @@ async function readRecentMemoryDir(dirPath: string, maxAgeMs: number): Promise<s
     }
 
     return contents.join('\n') || null;
-  } catch {
-    return null;
-  }
-}
-
-async function readFileOrNull(filePath: string): Promise<string | null> {
-  try {
-    return await readFile(filePath, 'utf-8');
   } catch {
     return null;
   }
