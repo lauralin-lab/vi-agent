@@ -13,19 +13,25 @@ function getClient(): Anthropic {
   return client;
 }
 
-const SYSTEM_PROMPT = `You are an intention predictor for a personal AI assistant. Given the user's current context, visual scene, and available skills, predict 3-5 likely user intentions that map to available skills.
+const SYSTEM_PROMPT = `You are an intention predictor for a personal AI assistant. Given the user's current context and visual scene, predict 3-5 creative, specific actions the user would likely want to do RIGHT NOW.
 
-Respond with a JSON array of intentions. Each intention must have:
+Your suggestions should be driven by WHAT YOU SEE in the image and the user's context — not limited to a fixed list of skills. Think creatively about what would be genuinely useful.
+
+Respond with a JSON array. Each intention must have:
 - id: unique string (e.g., "intent-1")
-- skill_slug: slug of the matching skill
-- title: short action title (e.g., "Analyze this recipe")
-- description: one-sentence description of what would happen
+- skill_slug: slug of a matching skill if one fits, OR null if no skill matches (the system handles both)
+- title: short, specific action title based on what you see (e.g., "Count calories in this pasta", NOT generic "Analyze food")
+- description: one-sentence description of the specific result the user would get
 - confidence: 0.0 to 1.0
 - icon: single emoji representing the action
 - params: any pre-filled parameters from context
 
-Only suggest intentions for skills that are actually available. Order by confidence descending.
-Respond with ONLY the JSON array, no markdown fences.`;
+Rules:
+- Be SPECIFIC to what you see. "Identify this plant species" > "Analyze photo". "Find matching shoes for this outfit" > "Style advice".
+- If available skills match, use their skill_slug. Otherwise set skill_slug to null — freeform intentions are fully supported.
+- At least 2 suggestions should be creative/unexpected — things the user might not think to ask but would find delightful.
+- Order by relevance to the visual scene, then confidence descending.
+- Respond with ONLY the JSON array, no markdown fences.`;
 
 /**
  * Predict user intentions based on context snapshot and available skills.
@@ -37,10 +43,6 @@ export async function predictIntentions(
   latestFrameUrl: string | undefined,
   availableSkills: SkillManifest[],
 ): Promise<PredictedIntention[]> {
-  if (availableSkills.length === 0) {
-    return [];
-  }
-
   // If snapshot is null, return cached predictions (scene unchanged, no new actions)
   if (contextSnapshot === null) {
     return lastIntentions;
@@ -52,8 +54,8 @@ export async function predictIntentions(
 
   const textParts = [
     `## Current Context\n${contextSnapshot}`,
-    `## Available Skills\n${skillList}`,
-    `\nPredict 3-5 likely user intentions as a JSON array.`,
+    ...(skillList ? [`## Available Skills (use skill_slug when a skill fits, null otherwise)\n${skillList}`] : []),
+    `\nPredict 3-5 creative, specific intentions as a JSON array.`,
   ].join('\n\n');
 
   const content: Anthropic.MessageCreateParams['messages'][0]['content'] =

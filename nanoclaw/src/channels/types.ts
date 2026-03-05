@@ -379,7 +379,7 @@ export interface IntentionUpdate {
 
 export interface PredictedIntention {
   id: string;
-  skill_slug: string;
+  skill_slug?: string | null;
   title: string;
   description: string;
   confidence: number;
