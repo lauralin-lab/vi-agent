@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "2.7.0"
+version: "2.7.3"
 ---
 
 # /team — Init + Dashboard (Teamwork v2)
@@ -56,15 +56,17 @@ AFTER MERGE:
   /team-ship review     AI code review on current PR
   /team-ship sync       Rebase branch on latest base branch
 
-VERSION LIFECYCLE:
-  /team-release         Close milestone → git tag → GitHub Release → next version
+RC LIFECYCLE:
+  /team-rc              Prepare: cut rc branch from develop → staging
+  /team-rc promote      Promote: squash merge rc → main, tag, GitHub Release
+  /team-rc help         Full guide
 
 LIFECYCLE:
   /team-issue → Issue → /team-claim → Contract + branch
                      → /team-drive → implement + test + commit
                      → /team-ship  → PR (Closes #N)
                      → /team-ship done → Issue closed, back to base branch
-  All missions done? → /team-release → tag + release + next milestone
+  Ready to release? → /team-rc → staging verify → /team-rc promote
 
 CONFIG:
   .teamwork/config.yml  (or .teamspace/config.yml)
@@ -280,8 +282,8 @@ After confirming membership, verify that the config has the fields needed by oth
 | `project.lint_command` | git hooks | warn "No lint command" |
 | `conventions.branch_pattern` | team-claim | `"mission/{issue}-{slug}-{user}"` |
 | `conventions.base_branch` | team-claim, team-ship, team-drive | `"main"` |
-| `conventions.release_branch` | team-release | `base_branch` value |
-| `deploy.staging_workflow` | team-release | `""` (skip staging check) |
+| `conventions.production_branch` | team-rc, protect-check | `"main"` |
+| `deploy.staging_workflow` | team-rc | `""` (skip staging check) |
 | `label_prefix` or `github.label_prefix` | all skills, post-merge Action | `status:`, `priority:` |
 
 If critical fields are missing (no `project:` section at all, no `conventions.branch_pattern`), output a warning:
@@ -427,8 +429,8 @@ Preserve all existing content. Only update `skill_version` and append missing to
 
 ```bash
 # Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 2.7.0/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 2.7.0/" $TEAMWORK_DIR/config.yml
+sed -i '' "s/^skill_version:.*/skill_version: 2.7.3/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 2.7.3/" $TEAMWORK_DIR/config.yml
 ```
 
 **Step 2 — Detect which top-level sections are missing:**
@@ -457,9 +459,9 @@ project:
 
 ```yaml
 conventions:
-  branch_pattern: "mission/{issue}-{slug}-{user}"
-  base_branch: main
-  # release_branch: main  # Set different from base_branch for dual-branch model (e.g. "main" when base_branch is "develop")
+  branch_pattern: "{type}/{task-id}-{slug}"
+  base_branch: develop
+  production_branch: main
   commit_format: "type(scope): description | Mission: #{issue}"
 ```
 
@@ -497,7 +499,7 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 1
-skill_version: 2.7.0
+skill_version: 2.7.3
 
 team:
   - github: {GH_USER}
@@ -511,12 +513,12 @@ project:
   build_command: "{BUILD_CMD}"
 
 conventions:
-  branch_pattern: "mission/{issue}-{slug}-{user}"
-  base_branch: main
-  # release_branch: main  # Set different from base_branch for dual-branch model
+  branch_pattern: "{type}/{task-id}-{slug}"
+  base_branch: develop
+  production_branch: main
   commit_format: "type(scope): description | Mission: #{issue}"
 
-# Optional: Deployment pipeline (required for staging gate in /team-release)
+# Optional: Deployment pipeline (required for staging gate in /team-rc)
 # deploy:
 #   staging_workflow: "deploy-staging.yml"  # GitHub Actions workflow name
 
@@ -536,10 +538,10 @@ quality:
 #   enabled: true
 #   path_pattern: "../{repo}-wt-{slug}"
 
-# Optional: Version tracking (required for /team-release)
+# Optional: Version tracking (required for /team-rc)
 # versions:
 #   current: "V1.0"
-#   spec_path: ".claude/drive/v1.0-definition/spec.md"  # optional: enables AI audit in /team-release
+#   spec_path: ".claude/drive/v1.0-definition/spec.md"  # optional: enables AI audit in /team-rc
 #   lifecycle: [dev, qa, released]
 ```
 
@@ -852,7 +854,7 @@ jobs:
                   const total = issue.data.milestone.closed_issues + issue.data.milestone.open_issues;
                   await github.rest.issues.createComment({
                     ...context.repo, issue_number: num,
-                    body: `🎉 Milestone **${issue.data.milestone.title}** is now 100% complete (${total} issues). Ready for \`/team-release\`.`
+                    body: `🎉 Milestone **${issue.data.milestone.title}** is now 100% complete (${total} issues). Ready for \`/team-rc\`.`
                   });
                 }
               }
@@ -957,6 +959,7 @@ gh api "repos/$REPO" --method PATCH \
   --field allow_squash_merge=true \
   --field allow_merge_commit=false \
   --field allow_rebase_merge=false \
+  --field allow_auto_merge=true \
   --field squash_merge_commit_title=PR_TITLE \
   --field squash_merge_commit_message=PR_BODY
 ```
@@ -967,15 +970,37 @@ gh api "repos/$REPO" --method PATCH \
 
 If API fails (permissions) → warn but continue. These can be set manually in GitHub Settings → General.
 
+### 5b2: Ensure develop branch exists
+
+If `base_branch` is not the current default branch (i.e., config says `develop` but repo only has `main`), create it:
+
+```bash
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "develop" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-develop}"
+
+# Check if base branch exists on remote
+if ! git ls-remote --heads origin "$BASE_BRANCH" | grep -q "$BASE_BRANCH"; then
+  # Create develop from current main
+  git checkout -b "$BASE_BRANCH"
+  git push -u origin "$BASE_BRANCH"
+  echo "Created $BASE_BRANCH branch from $(git branch --show-current)"
+fi
+
+# Set develop as GitHub default branch (so PRs target it by default)
+gh api "repos/$REPO" --method PATCH --field default_branch="$BASE_BRANCH"
+```
+
+If the branch already exists, skip. If API fails, warn but continue.
+
 ### 5c: Branch protection (if enabled)
 
 Read config flags to build the protection rule dynamically:
 
 ```bash
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-main}"
-RELEASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.release_branch "" 2>/dev/null)
-RELEASE_BRANCH="${RELEASE_BRANCH:-$BASE_BRANCH}"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "develop" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-develop}"
+PROD_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.production_branch "main" 2>/dev/null)
+PROD_BRANCH="${PROD_BRANCH:-main}"
 
 # Read quality flags — protection rule adapts to team's config
 CI_ENABLED=$(bash ~/.claude/commands/scripts/tw-config.sh quality.ci "false" 2>/dev/null)
@@ -1014,11 +1039,11 @@ gh api "repos/$REPO/branches/$BASE_BRANCH/protection" \
 EOF
 ```
 
-**Dual-branch mode** — if `RELEASE_BRANCH != BASE_BRANCH`, also protect release branch:
+Also protect production branch (main):
 
 ```bash
-if [ "$RELEASE_BRANCH" != "$BASE_BRANCH" ]; then
-  gh api "repos/$REPO/branches/$RELEASE_BRANCH/protection" \
+if [ "$PROD_BRANCH" != "$BASE_BRANCH" ]; then
+  gh api "repos/$REPO/branches/$PROD_BRANCH/protection" \
     --method PUT \
     --input - <<EOF
 {

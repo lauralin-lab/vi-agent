@@ -179,7 +179,8 @@ conventions:
   board_ownership: "每人只修改自己 Owner 的行，减少 merge conflict"
   drive_marks: "通过 /drive 执行的任务在 Drive? 列标记 ✅"
   branch_pattern: "{type}/{task-id}-{slug}"
-  base_branch: main
+  base_branch: develop
+  production_branch: main
   commit_format: "type(scope): description | Mission: #{issue}"
 
 # Appended by /team init — monorepo project detection
