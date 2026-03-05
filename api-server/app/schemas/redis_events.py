@@ -79,6 +79,7 @@ class ExecRequest(BaseModel):
     mediaUrls: List[str] = []
     params: Optional[Dict[str, Any]] = None
     ts: float = Field(default_factory=time.time)
+    userId: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

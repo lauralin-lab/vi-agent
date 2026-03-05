@@ -5,8 +5,7 @@
 ### 1. Mission Contract (原子任务)
 A single task represented as a **GitHub Issue** (label: `mission`).
 Each Mission Contract has clear scope, success criteria, and is independently mergeable.
-Leader creates and assigns MCs via `/create-mc`. Member views assigned MCs via `/get-mc`,
-executes end-to-end, submits via `/complete-mc`, leader reviews via `/review-mc`.
+Create via `/team-issue`, claim via `/team-claim`, drive via `/team-drive`, ship via `/team-ship`.
 
 **Source of Truth: GitHub Issues** (label: `mission`)
 
@@ -31,7 +30,7 @@ main             (生产稳定，严格保护，只接受 RC promote)
   |
 pre-launch       (下一版本集成，也要稳定，PR 合入目标)
   ^
-  | /review-mc approve (squash merge)
+  | /team-ship → PR (squash merge)
   |
 mission/{N}-slug (特性开发，从 pre-launch 切出)
 ```
@@ -47,25 +46,25 @@ mission/{N}-slug (特性开发，从 pre-launch 切出)
 ## How It Works
 
 ```
-Leader creates MC via /create-mc
+/team-issue "fix camera permission" @member
      │
      ▼
-Member receives assignment → /get-mc shows details + branch
+Member /team-claim #N → Contract + branch created
      │
      ▼
-Checkout branch → drive end-to-end implementation
+/team-drive → implement + test + commit loop
      │
      ▼
-Rebase on latest pre-launch → resolve ALL conflicts
+/team-ship → rebase + push + PR (Closes #N)
      │
      ▼
-/complete-mc → PR (Closes #N) → notify leader
+/team-ship review → AI code review (optional)
      │
      ▼
-Leader /review-mc → approve + merge → Issue auto-closed
+Merge PR → Issue auto-closed → /team-ship done (cleanup)
      │
      ▼
-Member checks /get-mc for next assignment → repeat
+/team → check dashboard for next assignment → repeat
 ```
 
 ### Start Working
@@ -74,19 +73,14 @@ Member checks /get-mc for next assignment → repeat
 # 1. 加入团队（首次）
 /team
 
-# 2. 查看分配的任务
-/get-mc
+# 2. 领取任务 → 生成 Contract + 分支
+/team-claim #N
 
-# 3. 执行（用 drive 模式）
-/drive
+# 3. 执行（sub-tasks → test → commit 循环）
+/team-drive
 
-# 4. 提交完成
-/complete-mc
-```
-
-或直接用 Agent 模式：
-```bash
-claude --agent feature-lead
+# 4. 提交 PR
+/team-ship
 ```
 
 ### Leader Workflow
@@ -96,13 +90,16 @@ claude --agent feature-lead
 /create-milestone
 
 # 创建并分配任务
-/create-mc fix camera permission @xxLe
+/team-issue fix camera permission @xxLe
 
 # 查看团队状态
 /team
 
-# 审核提交的任务
-/review-mc
+# AI code review
+/team-ship review
+
+# 发布到 main
+/team-rc promote
 ```
 
 ### Team Member Setup
@@ -123,12 +120,13 @@ claude --agent feature-lead
 | `.github/ISSUE_TEMPLATE/mission-contract.yml` | Issue template for creating MCs |
 | `.claude/agents/feature-lead.md` | The Role agent — `claude --agent feature-lead` |
 | `.claude/agents/code-reviewer.md` | Auto PR reviewer |
-| `.claude/commands/create-mc.md` | Leader: create + assign MC |
-| `.claude/commands/get-mc.md` | Member: view assigned MCs |
-| `.claude/commands/complete-mc.md` | Member: submit completed MC |
-| `.claude/commands/review-mc.md` | Leader: review + approve/reject |
-| `.claude/commands/create-milestone.md` | Leader: create milestone with batch MCs |
 | `.claude/commands/team.md` | Onboard + dashboard |
+| `.claude/commands/team-issue.md` | Create MC from natural language |
+| `.claude/commands/team-claim.md` | Claim Issue → Contract + branch |
+| `.claude/commands/team-drive.md` | Execute mission (sub-tasks → test → commit) |
+| `.claude/commands/team-ship.md` | Push + PR + review + cleanup |
+| `.claude/commands/team-rc.md` | RC lifecycle: staging → production |
+| `.claude/commands/create-milestone.md` | Leader: create milestone with batch MCs |
 | `.claude/commands/scripts/tw-*.sh` | Shared helper scripts (config, git, label, notify, etc.) |
 
 ## Skill 版本检查（主动执行）

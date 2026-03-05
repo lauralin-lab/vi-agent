@@ -49,6 +49,8 @@ export interface ExecRequest {
   mediaUrls?: string[];
   params?: Record<string, unknown>;
   ts: number;
+  /** User identity — flows through the message so NanoClaw doesn't need a fixed USER_ID. */
+  userId?: string;
 }
 
 // ---------------------------------------------------------------------------

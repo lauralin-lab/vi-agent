@@ -549,6 +549,7 @@ async def dispatch_exec(
         skillSlug=req.skill_slug,
         mediaUrls=req.media_urls or [],
         params=req.params,
+        userId=req.vi_user_id,
     )
 
     channel = f"vi:exec:{req.vi_user_id}"

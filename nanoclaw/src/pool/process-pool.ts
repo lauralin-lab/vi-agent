@@ -1,6 +1,8 @@
 import { dequeueTask } from './queue-router.js';
 import { executeTask } from '../executor/task-executor.js';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
+import { requestContext } from '../channels/request-context.js';
+import { config } from '../config.js';
 
 // ---------------------------------------------------------------------------
 // Process Pool — competing consumer workers for vi:queue
@@ -111,13 +113,14 @@ async function runWorker(workerId: number): Promise<void> {
         continue;
       }
 
-      // Execute the task
+      // Execute the task inside request context so stream-publisher routes correctly
+      const userId = task.userId ?? config.userId;
       activeTasks++;
       try {
         console.log(
-          `[process-pool] worker-${workerId} executing task ${task.taskId} (session=${task.sessionId})`,
+          `[process-pool] worker-${workerId} executing task ${task.taskId} for user ${userId} (session=${task.sessionId})`,
         );
-        await executeTask(task);
+        await requestContext.run({ userId }, () => executeTask(task));
         console.log(
           `[process-pool] worker-${workerId} completed task ${task.taskId}`,
         );
@@ -129,12 +132,14 @@ async function runWorker(workerId: number): Promise<void> {
 
         // Publish error event so the client knows the task failed
         try {
-          await publishStreamEvent({
-            type: 'exec_error',
-            taskId: task.taskId,
-            error: err instanceof Error ? err.message : String(err),
-            recoverable: false,
-          });
+          await requestContext.run({ userId }, () =>
+            publishStreamEvent({
+              type: 'exec_error',
+              taskId: task.taskId,
+              error: err instanceof Error ? err.message : String(err),
+              recoverable: false,
+            }),
+          );
         } catch (publishErr) {
           console.error(
             `[process-pool] worker-${workerId} failed to publish error:`,
