@@ -9,18 +9,11 @@ from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import settings
 from app.limiter import limiter
 from app.models import Base
 
 # Disable rate limiting for tests
 limiter.enabled = False
-
-# Provide fake LiveKit credentials so AccessToken() doesn't raise in CI
-if not settings.LIVEKIT_API_KEY:
-    settings.LIVEKIT_API_KEY = "fake-api-key-for-tests"
-if not settings.LIVEKIT_API_SECRET:
-    settings.LIVEKIT_API_SECRET = "fake-api-secret-for-tests-must-be-256-bits!!"
 
 # ---------------------------------------------------------------------------
 # SQLite compatibility: patch PG column types
