@@ -15,6 +15,8 @@
 #   bash tw-git.sh worktree-add BRANCH PATH            # Create worktree
 #   bash tw-git.sh worktree-remove PATH                # Remove worktree safely
 #   bash tw-git.sh log-since [BASE]                     # Show commits + diff stat since base
+#   bash tw-git.sh cut-release VERSION                  # Cut rc/VERSION from base branch
+#   bash tw-git.sh cherry-pick COMMIT                   # Cherry-pick commit to base branch
 #
 # EXIT CODES:
 #   0 — success
@@ -36,11 +38,10 @@ _base_branch() {
   echo "${b:-main}"
 }
 
-_release_branch() {
-  local base r
-  base=$(_base_branch)
-  r=$(bash "$TW_CONFIG" conventions.release_branch "" 2>/dev/null)
-  echo "${r:-$base}"
+_production_branch() {
+  local p
+  p=$(bash "$TW_CONFIG" conventions.production_branch "main" 2>/dev/null)
+  echo "${p:-main}"
 }
 
 _branch_pattern() {
@@ -108,17 +109,23 @@ cmd_current() {
 }
 
 cmd_protect_check() {
-  local current base release
+  local current base prod
   current=$(git branch --show-current)
   if [ -z "$current" ]; then
     echo "OK: detached HEAD"
     return 0
   fi
   base=$(_base_branch)
-  release=$(_release_branch)
+  prod=$(_production_branch)
 
-  if [ "$current" = "$base" ] || [ "$current" = "$release" ]; then
+  # Block: base branch (develop), production branch (main), rc/* branches
+  if [ "$current" = "$base" ] || [ "$current" = "$prod" ]; then
     echo "SAFETY: On protected branch '$current'" >&2
+    exit 3
+  fi
+  # RC branches should only receive hotfix PRs, not direct commits
+  if [[ "$current" == rc/* ]]; then
+    echo "SAFETY: On RC branch '$current' — branch from it for hotfixes, don't commit directly" >&2
     exit 3
   fi
   echo "OK: on '$current'"
@@ -281,6 +288,58 @@ cmd_log_since() {
   git diff "${base}...HEAD" --stat 2>/dev/null || echo "(no changes)"
 }
 
+cmd_cut_release() {
+  local version="${1:-}"
+  if [ -z "$version" ]; then
+    echo "ERROR: cut-release requires VERSION" >&2
+    exit 1
+  fi
+
+  local base rc_branch
+  base=$(_base_branch)
+  rc_branch="rc/$version"
+
+  git checkout "$base" 2>/dev/null || {
+    echo "ERROR: Could not checkout $base" >&2
+    exit 2
+  }
+  git pull origin "$base" 2>/dev/null || {
+    echo "WARNING: Could not pull $base, working with local copy" >&2
+  }
+  git checkout -b "$rc_branch" || {
+    echo "ERROR: Could not create branch $rc_branch" >&2
+    exit 2
+  }
+  git push -u origin "$rc_branch" || {
+    echo "ERROR: Could not push $rc_branch" >&2
+    exit 2
+  }
+  echo "$rc_branch"
+}
+
+cmd_cherry_pick() {
+  local commit="${1:-}"
+  if [ -z "$commit" ]; then
+    echo "ERROR: cherry-pick requires COMMIT hash" >&2
+    exit 1
+  fi
+
+  local base
+  base=$(_base_branch)
+
+  git checkout "$base" 2>/dev/null || {
+    echo "ERROR: Could not checkout $base" >&2
+    exit 2
+  }
+  git pull origin "$base" 2>/dev/null || true
+  if git cherry-pick "$commit"; then
+    echo "Cherry-picked $commit to $base"
+  else
+    echo "Cherry-pick failed. Resolve conflicts, then: git cherry-pick --continue" >&2
+    exit 2
+  fi
+}
+
 # --- Main ---
 SUBCOMMAND="${1:-}"
 shift || true
@@ -299,5 +358,7 @@ case "$SUBCOMMAND" in
   worktree-add)     cmd_worktree_add "$@" ;;
   worktree-remove)  cmd_worktree_remove "$@" ;;
   log-since)        cmd_log_since "$@" ;;
+  cut-release)      cmd_cut_release "$@" ;;
+  cherry-pick)      cmd_cherry_pick "$@" ;;
   *)                usage ;;
 esac
