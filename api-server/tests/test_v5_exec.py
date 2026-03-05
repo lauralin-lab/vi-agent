@@ -20,7 +20,7 @@ async def test_exec_dispatch_requires_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_exec_dispatch_with_user(client: AsyncClient, registered_user: dict):
     """POST /api/users/exec dispatches task and returns taskId."""
-    vi_user_id = registered_user["user"]["vi_user_id"]
+    vi_user_id = registered_user["vi_user_id"]
 
     # Mock Redis so we don't need a real connection
     mock_redis = AsyncMock()
@@ -51,7 +51,7 @@ async def test_exec_dispatch_with_user(client: AsyncClient, registered_user: dic
 @pytest.mark.asyncio
 async def test_exec_dispatch_with_media_urls(client: AsyncClient, registered_user: dict):
     """POST /api/users/exec passes media_urls to the exec message."""
-    vi_user_id = registered_user["user"]["vi_user_id"]
+    vi_user_id = registered_user["vi_user_id"]
 
     mock_redis = AsyncMock()
     published_messages = []
@@ -92,7 +92,7 @@ async def test_exec_dispatch_with_media_urls(client: AsyncClient, registered_use
 @pytest.mark.asyncio
 async def test_exec_dispatch_redis_unavailable(client: AsyncClient, registered_user: dict):
     """POST /api/users/exec returns 503 when Redis is unavailable."""
-    vi_user_id = registered_user["user"]["vi_user_id"]
+    vi_user_id = registered_user["vi_user_id"]
 
     from app.deps import get_redis
     from app.main import app
