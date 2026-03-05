@@ -1,4 +1,5 @@
 schema_version: 3
+skill_version: 3.0.0
 
 team:
   name: "VI Agent"
@@ -75,7 +76,7 @@ project:
 
 conventions:
   base_branch: pre-launch
-  production_branch: product
+  production_branch: main
   branch_pattern: "mission/{issue}-{slug}"
   commit_format: "type(scope): description | Mission: #{issue}"
 

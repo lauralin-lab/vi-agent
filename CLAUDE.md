@@ -17,15 +17,15 @@ A person paired with Claude Code forms a Role. Each Role:
 - Drives each one to completion and submits for review
 - The human watches, the agent drives
 
-### 3. Product (product 分支)
-The product is what's on `product` branch — the most stable, strictly protected version.
+### 3. Production (main 分支)
+The product is what's on `main` branch — the most stable, strictly protected version.
 Development happens on `pre-launch` — the next version integration branch.
-**The ultimate metric is: how many Mission Contracts have been merged to pre-launch, then released to product.**
+**The ultimate metric is: how many Mission Contracts have been merged to pre-launch, then released to main.**
 
 ### Branch Model (三层分支)
 
 ```
-product          (生产稳定，严格保护，只接受 RC promote)
+main             (生产稳定，严格保护，只接受 RC promote)
   ^
   | /team-rc promote (RC 验证通过后)
   |
@@ -36,11 +36,11 @@ pre-launch       (下一版本集成，也要稳定，PR 合入目标)
 mission/{N}-slug (特性开发，从 pre-launch 切出)
 ```
 
-- **`product`**: 生产环境最稳定的版本，严格保护，不接受直接 push 或 PR
+- **`main`**: 生产环境最稳定的版本，严格保护，不接受直接 push 或 PR
 - **`pre-launch`**: 下一个版本的所有代码，也要保持稳定。所有 MC 的 PR 都合入这里
 - **`mission/*`**: 从 `pre-launch` 切出的特性分支，完成后通过 PR 合回 `pre-launch`
 - **Milestone 完成的标志**: 所有 MC 合入 `pre-launch`
-- **发布流程**: `pre-launch` → RC 分支 → 验证 → promote 到 `product`
+- **发布流程**: `pre-launch` → RC 分支 → 验证 → promote 到 `main`
 
 ---
 
@@ -150,7 +150,7 @@ claude --agent feature-lead
 
 - Commit: `type(scope): description`
 - Branch: `mission/{issue}-{slug}`
-- PR target: always `pre-launch` (development); release to `product` via `/team-rc`
+- PR target: always `pre-launch` (development); release to `main` via `/team-rc`
 - Rebase before PR: resolve conflicts BEFORE creating PR
 - No secrets, no absolute paths in committed code
 

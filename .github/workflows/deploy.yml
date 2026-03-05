@@ -1,13 +1,7 @@
 name: Deploy
 
 on:
-  # Auto-deploy to staging when CI passes on main
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
-
-  # Manual deploy to any environment
+  # Manual deploy only — staging deploys rc/* branches, prod deploys tags
   workflow_dispatch:
     inputs:
       environment:
@@ -18,9 +12,8 @@ on:
           - prod
         default: staging
       ref:
-        description: "Git ref to deploy (branch/tag/SHA). Leave empty for HEAD."
-        required: false
-        default: ""
+        description: "Git ref to deploy (rc/* branch for staging, V*.*.* tag for prod)"
+        required: true
 
 env:
   DOCKER_ORG: collov
@@ -32,10 +25,6 @@ jobs:
   # ---------------------------------------------------------------------------
   prepare:
     runs-on: ubuntu-latest
-    # Skip if CI workflow failed (workflow_run trigger)
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     outputs:
       environment: ${{ steps.env.outputs.environment }}
       ref: ${{ steps.env.outputs.ref }}
@@ -44,24 +33,16 @@ jobs:
       - name: Determine deploy parameters
         id: env
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ENV="${{ inputs.environment }}"
-            REF="${{ inputs.ref }}"
-            if [ -z "$REF" ]; then
-              REF="${{ github.sha }}"
-            fi
-          else
-            # workflow_run from CI on main → auto-deploy to staging
-            ENV="staging"
-            REF="${{ github.event.workflow_run.head_sha }}"
-          fi
+          ENV="${{ inputs.environment }}"
+          REF="${{ inputs.ref }}"
 
           # Image tag: use ref directly if it's a named ref (tag/branch),
           # or shorten to 7 chars if it looks like a SHA
           if echo "$REF" | grep -qE '^[0-9a-f]{40}$'; then
             TAG_SUFFIX=$(echo "$REF" | head -c 7)
           else
-            TAG_SUFFIX="$REF"
+            # Sanitize branch name for Docker tag (rc/V0.1.0 → rc-V0.1.0)
+            TAG_SUFFIX=$(echo "$REF" | sed 's|/|-|g')
           fi
           IMAGE_TAG="${ENV}-${TAG_SUFFIX}"
 
