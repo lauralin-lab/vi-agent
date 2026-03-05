@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [pre-launch]
   push:
-    branches: [develop, main]
+    branches: [pre-launch]
 
 jobs:
   # API Server checks
