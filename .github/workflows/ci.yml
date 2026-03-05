@@ -63,11 +63,12 @@ jobs:
           JWT_SECRET: test-secret-key
           JWT_ALGORITHM: HS256
         run: |
-          timeout 120 python -m pytest tests/ -v --tb=short --timeout=30 -x || exit_code=$?
-          if [ "${exit_code:-0}" -eq 124 ]; then
-            echo "::error::Tests timed out after 120 seconds"
-            exit 1
+          timeout 120 python -m pytest tests/test_smoke.py -v --tb=long --timeout=30 -x 2>&1 || exit_code=$?
+          echo "--- smoke test exit code: ${exit_code:-0} ---"
+          if [ "${exit_code:-0}" -ne 0 ]; then
+            echo "::warning::Smoke test failed or timed out"
           fi
+          timeout 120 python -m pytest tests/ -v --tb=short --timeout=30 -x || exit_code=$?
           exit ${exit_code:-0}
 
   # NanoClaw checks (V4 — replaces gateway)

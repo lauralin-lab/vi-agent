@@ -71,14 +71,25 @@ async def db_session():
 # ---------------------------------------------------------------------------
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession):
-    """Provide an HTTPX AsyncClient bound to the FastAPI app with test DB."""
+    """Provide an HTTPX AsyncClient bound to the FastAPI app with test DB.
+
+    We create a fresh FastAPI app WITHOUT the production lifespan to avoid
+    background tasks (event aggregator, stale session cleanup) that would
+    keep the event loop alive and hang pytest.
+    """
     from app.deps import get_db
     from app.main import app
+
+    # Disable lifespan for tests — background tasks cause hangs
+    app.router.lifespan_context = None
 
     async def _override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
+
+    # Provide a mock redis on app.state so routes that check it don't crash
+    app.state.redis = None
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
