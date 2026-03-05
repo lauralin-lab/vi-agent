@@ -64,16 +64,18 @@ jobs:
           JWT_ALGORITHM: HS256
           LIVEKIT_API_KEY: test-livekit-key
           LIVEKIT_API_SECRET: test-livekit-secret-must-be-256-bits!!
+        shell: bash
         run: |
-          timeout 60 python -m pytest tests/test_smoke.py -v --tb=long --timeout=30 -x 2>&1; smoke_exit=$?
+          set +e
+          timeout 60 python -m pytest tests/test_smoke.py -v --tb=long --timeout=30 -x
+          smoke_exit=$?
           echo "--- smoke test exit code: $smoke_exit ---"
-          # exit 124 = timeout killed the process (pytest hangs after all tests pass)
-          # Accept 0 (clean exit) or 124 (timeout after success) as passing
           if [ "$smoke_exit" -ne 0 ] && [ "$smoke_exit" -ne 124 ]; then
             echo "::error::Smoke tests failed (exit $smoke_exit)"
             exit $smoke_exit
           fi
-          timeout 60 python -m pytest tests/ -v --tb=short --timeout=30 -x 2>&1; test_exit=$?
+          timeout 60 python -m pytest tests/ -v --tb=short --timeout=30 -x
+          test_exit=$?
           if [ "$test_exit" -ne 0 ] && [ "$test_exit" -ne 124 ]; then
             echo "::error::Tests failed (exit $test_exit)"
             exit $test_exit
