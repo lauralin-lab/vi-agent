@@ -104,25 +104,26 @@ git tag "$TAG" && git push --tags
 ### 3. 服务器拉代码 + 构建全部镜像
 
 ```bash
-SSH="ssh -A -i ~/.ssh/id_rsa -o ServerAliveInterval=30 xxl@34.172.9.61"
+# 定义 SSH 函数（兼容 zsh/bash）
+ssh_xxl() { ssh -A -i ~/.ssh/id_rsa -o ServerAliveInterval=30 xxl@34.172.9.61 "$@"; }
 
 # 首次：clone（已有则跳过）
-$SSH "test -d ~/vi-agent-repos/xxl/.git || git clone git@github.com:flair-home-stylist/vi_agent.git ~/vi-agent-repos/xxl"
+ssh_xxl "test -d ~/vi-agent-repos/xxl/.git || git clone git@github.com:flair-home-stylist/vi_agent.git ~/vi-agent-repos/xxl"
 
 # 拉代码，checkout 到 tag
-$SSH "cd ~/vi-agent-repos/xxl && git fetch --all --tags && git checkout tags/$TAG"
+ssh_xxl "cd ~/vi-agent-repos/xxl && git fetch --all --tags && git checkout tags/$TAG"
 
 # 构建 4 个服务
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-api-server:$TAG ./api-server"
-$SSH "cd ~/vi-agent-repos/xxl && docker build --build-arg VITE_API_URL= --build-arg VITE_LIVEKIT_URL= -t collov/vi-agent-frontend:$TAG ./frontend"
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-nanoclaw:$TAG ./nanoclaw"
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-realtime:$TAG ./realtime"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-api-server:$TAG ./api-server"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build --build-arg VITE_API_URL= --build-arg VITE_LIVEKIT_URL= -t collov/vi-agent-frontend:$TAG ./frontend"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-nanoclaw:$TAG ./nanoclaw"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-realtime:$TAG ./realtime"
 ```
 
 ### 4. 更新 compose 镜像 tag
 
 ```bash
-$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i \
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo sed -i \
   's|collov/vi-agent-api-server:[^ ]*|collov/vi-agent-api-server:$TAG|g; \
    s|collov/vi-agent-frontend:[^ ]*|collov/vi-agent-frontend:$TAG|g; \
    s|collov/vi-agent-nanoclaw:[^ ]*|collov/vi-agent-nanoclaw:$TAG|g; \
@@ -134,7 +135,7 @@ $SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i \
 每次更新 docker-compose.yml 后，realtime 的 memory 会被重置为 512M，必须改回 1536M：
 
 ```bash
-$SSH "cd /opt/vi-agent/instances/xxl && sudo python3 -c \"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo python3 -c \"
 import re
 f='/opt/vi-agent/instances/xxl/docker-compose.yml'
 c=open(f).read()
@@ -149,13 +150,13 @@ print('realtime memory → 1536M')
 ### 6. 启动
 
 ```bash
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose down --remove-orphans && sudo docker compose up -d"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose down --remove-orphans && sudo docker compose up -d"
 ```
 
 ### 7. 验证
 
 ```bash
-$SSH "sudo bash /opt/vi-agent/templates/test-instance.sh 34.172.9.61 3600 3601 3602 3610"
+ssh_xxl "sudo bash /opt/vi-agent/templates/test-instance.sh 34.172.9.61 3600 3601 3602 3610"
 ```
 
 期望：16/16 passed。
@@ -192,12 +193,12 @@ git diff --stat dev-20260303-c819af0..HEAD -- frontend/ api-server/ nanoclaw/ re
 git push
 
 # 1. 变量
-SSH="ssh -A -i ~/.ssh/id_rsa -o ServerAliveInterval=30 xxl@34.172.9.61"
+ssh_xxl() { ssh -A -i ~/.ssh/id_rsa -o ServerAliveInterval=30 xxl@34.172.9.61 "$@"; }
 TAG="dev-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
 git tag "$TAG" && git push --tags
 
 # 2. 服务器拉代码
-$SSH "cd ~/vi-agent-repos/xxl && git fetch --all --tags && git checkout tags/$TAG"
+ssh_xxl "cd ~/vi-agent-repos/xxl && git fetch --all --tags && git checkout tags/$TAG"
 ```
 
 然后根据改动的服务，只执行对应的一段：
@@ -205,33 +206,33 @@ $SSH "cd ~/vi-agent-repos/xxl && git fetch --all --tags && git checkout tags/$TA
 #### 只改了 frontend
 
 ```bash
-$SSH "cd ~/vi-agent-repos/xxl && docker build --build-arg VITE_API_URL= --build-arg VITE_LIVEKIT_URL= -t collov/vi-agent-frontend:$TAG ./frontend"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-frontend:[^ ]*|collov/vi-agent-frontend:$TAG|g' docker-compose.yml"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps frontend"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build --build-arg VITE_API_URL= --build-arg VITE_LIVEKIT_URL= -t collov/vi-agent-frontend:$TAG ./frontend"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-frontend:[^ ]*|collov/vi-agent-frontend:$TAG|g' docker-compose.yml"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps frontend"
 ```
 
 #### 只改了 api-server
 
 ```bash
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-api-server:$TAG ./api-server"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-api-server:[^ ]*|collov/vi-agent-api-server:$TAG|g' docker-compose.yml"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps api-server"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-api-server:$TAG ./api-server"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-api-server:[^ ]*|collov/vi-agent-api-server:$TAG|g' docker-compose.yml"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps api-server"
 ```
 
 #### 只改了 nanoclaw
 
 ```bash
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-nanoclaw:$TAG ./nanoclaw"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-nanoclaw:[^ ]*|collov/vi-agent-nanoclaw:$TAG|g' docker-compose.yml"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps nanoclaw"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-nanoclaw:$TAG ./nanoclaw"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-nanoclaw:[^ ]*|collov/vi-agent-nanoclaw:$TAG|g' docker-compose.yml"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps nanoclaw"
 ```
 
 #### 只改了 realtime
 
 ```bash
-$SSH "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-realtime:$TAG ./realtime"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-realtime:[^ ]*|collov/vi-agent-realtime:$TAG|g' docker-compose.yml"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps vi-realtime"
+ssh_xxl "cd ~/vi-agent-repos/xxl && docker build -t collov/vi-agent-realtime:$TAG ./realtime"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo sed -i 's|collov/vi-agent-realtime:[^ ]*|collov/vi-agent-realtime:$TAG|g' docker-compose.yml"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps vi-realtime"
 ```
 
 > **`--no-deps`** 表示只重启该服务，不连带重启依赖的 postgres/redis 等。
@@ -243,16 +244,16 @@ $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose up -d --no-deps vi-r
 代码没变，只是服务挂了或需要刷新配置。
 
 ```bash
-SSH="ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61"
+ssh_xxl() { ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61 "$@"; }
 
 # 重启所有服务
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose restart"
 
 # 只重启某个服务
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart nanoclaw"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart vi-realtime"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart api-server"
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart frontend"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose restart nanoclaw"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose restart vi-realtime"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose restart api-server"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose restart frontend"
 ```
 
 ---
@@ -260,36 +261,36 @@ $SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose restart frontend"
 ## 日常运维命令
 
 ```bash
-SSH="ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61"
+ssh_xxl() { ssh -A -i ~/.ssh/id_rsa xxl@34.172.9.61 "$@"; }
 
 # 查看所有容器状态
-$SSH "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep xxl"
+ssh_xxl "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep xxl"
 
 # 查看内存/CPU
-$SSH "docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.CPUPerc}}' | grep xxl"
+ssh_xxl "docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.CPUPerc}}' | grep xxl"
 
 # 查看日志（所有）
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=50"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=50"
 
 # 查看某个服务日志
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 vi-realtime"
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 nanoclaw"
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 api-server"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 vi-realtime"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 nanoclaw"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && docker compose logs --tail=100 api-server"
 
 # 实时跟踪日志
-$SSH "cd /opt/vi-agent/instances/xxl && docker compose logs -f nanoclaw"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && docker compose logs -f nanoclaw"
 
 # 停止所有
-$SSH "cd /opt/vi-agent/instances/xxl && sudo docker compose down"
+ssh_xxl "cd /opt/vi-agent/instances/xxl && sudo docker compose down"
 
 # 查看当前用的镜像 tag
-$SSH "grep 'image:.*collov' /opt/vi-agent/instances/xxl/docker-compose.yml"
+ssh_xxl "grep 'image:.*collov' /opt/vi-agent/instances/xxl/docker-compose.yml"
 
 # 查看服务器上已有的镜像
-$SSH "docker images | grep dev- | head -20"
+ssh_xxl "docker images | grep dev- | head -20"
 
 # 清理旧镜像（释放磁盘）
-$SSH "docker image prune -f"
+ssh_xxl "docker image prune -f"
 ```
 
 ---

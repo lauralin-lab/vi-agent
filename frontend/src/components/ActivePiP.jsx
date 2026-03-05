@@ -1,31 +1,50 @@
 /**
  * ActivePiP — Picture-in-Picture camera overlay for Session view.
  *
- * Renders the local camera video track in a draggable, resizable overlay
- * that sits above the Session Canvas. Supports three states:
- *   - collapsed: small thumbnail (120×160) in a corner
- *   - expanded: larger preview (240×320) with shutter button
- *   - hidden: not visible (e.g., during non-session views)
+ * Draggable camera thumbnail that snaps to 6 anchor points:
+ *   top-left, top-right, middle-left, middle-right, bottom-left, bottom-right
  *
- * Interactions:
- *   - Tap collapsed → expanded
- *   - Double-tap expanded → return to full camera view
- *   - Tap outside expanded → collapse
- *   - Drag → snap to nearest corner
+ * Uses absolute pixel coordinates + spring animation for buttery smooth snapping.
+ * Double-tap to return to full camera view.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Camera } from 'lucide-react';
-import { PIP_SIZE, PIP_EXPANDED_SIZE, PIP_MARGIN, PIP_SPRING } from '../constants';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { motion, useAnimationControls } from 'framer-motion';
+import { PIP_SIZE, PIP_MARGIN } from '../constants';
 
-// Corner positions for snap
-const CORNERS = {
-  'top-right': { top: PIP_MARGIN, right: PIP_MARGIN },
-  'top-left': { top: PIP_MARGIN, left: PIP_MARGIN },
-  'bottom-right': { bottom: PIP_MARGIN, right: PIP_MARGIN },
-  'bottom-left': { bottom: PIP_MARGIN, left: PIP_MARGIN },
-};
+const SNAP_SPRING = { type: 'spring', stiffness: 400, damping: 32, mass: 0.8 };
+
+function getSnapPoints(containerW, containerH, pipW, pipH, margin) {
+  const left = margin;
+  const right = containerW - pipW - margin;
+  const midY = (containerH - pipH) / 2;
+  const top = margin;
+  const bottom = containerH - pipH - margin;
+
+  return [
+    { id: 'top-left',     x: left,  y: top },
+    { id: 'top-right',    x: right, y: top },
+    { id: 'mid-left',     x: left,  y: midY },
+    { id: 'mid-right',    x: right, y: midY },
+    { id: 'bottom-left',  x: left,  y: bottom },
+    { id: 'bottom-right', x: right, y: bottom },
+  ];
+}
+
+function findNearest(points, px, py) {
+  let best = points[0];
+  let bestDist = Infinity;
+  for (const p of points) {
+    const dx = p.x - px;
+    const dy = p.y - py;
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = p;
+    }
+  }
+  return best;
+}
 
 export default function ActivePiP({
   localVideoTrack,
@@ -33,18 +52,52 @@ export default function ActivePiP({
   onCapture,
   visible = true,
 }) {
-  const [pipState, setPipState] = useState('collapsed'); // collapsed | expanded
-  const [corner, setCorner] = useState('top-right');
   const videoRef = useRef(null);
-  const containerRef = useRef(null);
+  const wrapperRef = useRef(null);
   const lastTapRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const controls = useAnimationControls();
+  const [parentSize, setParentSize] = useState({ w: 0, h: 0 });
+  const currentSnapRef = useRef(null);
 
-  // Attach video track to the video element
+  // Observe parent size for responsive snap points
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const parent = wrapper.parentElement;
+    if (!parent) return;
+
+    const measure = () => {
+      const { width, height } = parent.getBoundingClientRect();
+      setParentSize({ w: width, h: height });
+    };
+    measure();
+
+    const ro = new ResizeObserver(measure);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, []);
+
+  const snapPoints = useMemo(
+    () => parentSize.w > 0
+      ? getSnapPoints(parentSize.w, parentSize.h, PIP_SIZE.width, PIP_SIZE.height, PIP_MARGIN)
+      : [],
+    [parentSize.w, parentSize.h],
+  );
+
+  // Set initial position once snap points are available
+  useEffect(() => {
+    if (snapPoints.length === 0) return;
+    const initial = snapPoints.find(p => p.id === 'top-right') || snapPoints[0];
+    currentSnapRef.current = initial;
+    controls.set({ x: initial.x, y: initial.y });
+  }, [snapPoints, controls]);
+
+  // Attach video track
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl || !localVideoTrack) return;
 
-    // LiveKit track — attach returns the media element
     const mediaTrack = localVideoTrack.mediaStreamTrack || localVideoTrack;
     if (mediaTrack instanceof MediaStreamTrack) {
       const stream = new MediaStream([mediaTrack]);
@@ -62,137 +115,70 @@ export default function ActivePiP({
     };
   }, [localVideoTrack]);
 
-  // Click outside to collapse
-  useEffect(() => {
-    if (pipState !== 'expanded') return;
-    const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setPipState('collapsed');
-      }
-    };
-    // Delay to prevent the expansion tap from immediately collapsing
-    const timer = setTimeout(() => {
-      document.addEventListener('pointerdown', handler);
-    }, 100);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('pointerdown', handler);
-    };
-  }, [pipState]);
-
   const handleTap = useCallback(() => {
+    if (isDraggingRef.current) return;
     const now = Date.now();
     const isDoubleTap = now - lastTapRef.current < 300;
     lastTapRef.current = now;
-
-    if (isDoubleTap && pipState === 'expanded') {
-      // Double-tap in expanded → return to full camera
+    if (isDoubleTap) {
       onReturnToCamera?.();
-      return;
     }
+  }, [onReturnToCamera]);
 
-    if (pipState === 'collapsed') {
-      setPipState('expanded');
-    }
-  }, [pipState, onReturnToCamera]);
+  const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+  }, []);
 
   const handleDragEnd = useCallback((event, info) => {
-    // Snap to nearest corner based on drag position
-    const el = containerRef.current;
-    if (!el) return;
-    const parent = el.parentElement;
+    setTimeout(() => { isDraggingRef.current = false; }, 50);
+    if (snapPoints.length === 0) return;
+
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const parent = wrapper.parentElement;
     if (!parent) return;
 
-    const rect = parent.getBoundingClientRect();
-    const centerX = info.point.x - rect.left;
-    const centerY = info.point.y - rect.top;
-    const midX = rect.width / 2;
-    const midY = rect.height / 2;
+    // Current element position = parent offset + drag point relative to element center
+    const parentRect = parent.getBoundingClientRect();
+    const elCenterX = info.point.x - parentRect.left - PIP_SIZE.width / 2;
+    const elCenterY = info.point.y - parentRect.top - PIP_SIZE.height / 2;
 
-    const newCorner =
-      centerY < midY
-        ? centerX < midX ? 'top-left' : 'top-right'
-        : centerX < midX ? 'bottom-left' : 'bottom-right';
-
-    setCorner(newCorner);
-  }, []);
+    const nearest = findNearest(snapPoints, elCenterX, elCenterY);
+    currentSnapRef.current = nearest;
+    controls.start({ x: nearest.x, y: nearest.y, transition: SNAP_SPRING });
+  }, [snapPoints, controls]);
 
   if (!visible || !localVideoTrack) return null;
 
-  const isExpanded = pipState === 'expanded';
-  const size = isExpanded ? PIP_EXPANDED_SIZE : PIP_SIZE;
-  const pos = CORNERS[corner];
-
-  // Build position style
-  const positionStyle = {
-    ...pos,
-    position: 'absolute',
-  };
-
   return (
-    <AnimatePresence>
-      <motion.div
-        ref={containerRef}
-        layout
-        drag
-        dragMomentum={false}
-        dragElastic={0.1}
-        onDragEnd={handleDragEnd}
-        onTap={handleTap}
-        style={positionStyle}
-        animate={{
-          width: size.width,
-          height: size.height,
-        }}
-        transition={PIP_SPRING}
-        className="z-[100] cursor-grab active:cursor-grabbing touch-none"
-      >
-        {/* Video container */}
-        <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20 bg-black">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-            style={{ transform: 'scaleX(-1)' }}
-          />
-
-          {/* Expanded overlay: shutter button */}
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 flex items-end justify-center pb-4"
-              >
-                {/* Capture button */}
-                {onCapture && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCapture();
-                    }}
-                    className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg active:scale-90 transition-transform"
-                  >
-                    <Camera size={24} className="text-black" />
-                  </button>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Double-tap hint in expanded mode */}
-          {isExpanded && (
-            <div className="absolute top-2 left-0 right-0 flex justify-center">
-              <span className="text-[10px] text-white/50 bg-black/40 px-2 py-0.5 rounded-full">
-                Double-tap to return
-              </span>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      ref={wrapperRef}
+      drag
+      dragMomentum={false}
+      dragElastic={0.08}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onTap={handleTap}
+      animate={controls}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: PIP_SIZE.width,
+        height: PIP_SIZE.height,
+      }}
+      className="z-[100] cursor-grab active:cursor-grabbing touch-none"
+    >
+      <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-lg">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-cover"
+          style={{ transform: 'scaleX(-1)' }}
+        />
+      </div>
+    </motion.div>
   );
 }
