@@ -11,6 +11,7 @@ jobs:
   api-server:
     name: API Server (Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     services:
       postgres:
         image: postgres:16-alpine
@@ -62,7 +63,12 @@ jobs:
           JWT_SECRET: test-secret-key
           JWT_ALGORITHM: HS256
         run: |
-          python -m pytest tests/ -v --tb=short --timeout=30
+          timeout 120 python -m pytest tests/ -v --tb=short --timeout=30 -x || exit_code=$?
+          if [ "${exit_code:-0}" -eq 124 ]; then
+            echo "::error::Tests timed out after 120 seconds"
+            exit 1
+          fi
+          exit ${exit_code:-0}
 
   # NanoClaw checks (V4 — replaces gateway)
   nanoclaw:
