@@ -6,11 +6,24 @@ Show all dev instances, deployment history, and server state. No SSH required �
 
 ### Step 1: Show Recent Deployments
 
+Use `run-name` (format: "Dev: {action} {developer}") to distinguish action types.
+Only show actual **deploy** runs in the "Recent Deployments" table.
+Show status/logs/destroy runs separately if any.
+
 ```bash
-gh run list --workflow=deploy-dev.yml --limit 10 \
+# Fetch runs — displayTitle contains "Dev: {action} {developer}" (new format)
+# or "Deploy Dev Instance" (legacy format without action info)
+gh run list --workflow=deploy-dev.yml --limit 20 \
   --json databaseId,status,conclusion,createdAt,displayTitle \
   --jq '.[] | "\(.createdAt[:16])  \(.status)/\(.conclusion)  \(.displayTitle)"'
 ```
+
+**Parsing rules:**
+- If `displayTitle` matches `Dev: deploy *` → real deployment, show in "Recent Deployments"
+- If `displayTitle` matches `Dev: status *` or `Dev: logs *` → skip (not a deployment)
+- If `displayTitle` is legacy "Deploy Dev Instance" → check log for actual action type via
+  `gh run view {id} --log 2>&1 | grep 'Action.*\`' | head -1` to determine if it was a deploy
+- Only show confirmed deploy actions in the deployment history table
 
 ### Step 2: Trigger Server Status
 

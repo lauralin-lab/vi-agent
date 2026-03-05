@@ -1,4 +1,5 @@
 name: Deploy Dev Instance
+run-name: "Dev: ${{ inputs.action }} ${{ inputs.developer }}"
 
 on:
   workflow_dispatch:
