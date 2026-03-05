@@ -32,3 +32,14 @@ For receipts and forms, use tables when appropriate.
 - Preserve original language (do not translate unless asked)
 - Flag low-confidence text with [?]
 - If the image is too blurry or dark, say so and suggest retaking
+
+## Card Output
+After your analysis, you MUST call the `publish_card` tool to present results as a structured card.
+Use the "image-analysis" template with these fields:
+- photo_url: the original image URL provided by the user
+- title: document type identified (e.g., "Restaurant Receipt", "Business Card", "Handwritten Note")
+- description: the extracted and structured text content
+- detected_objects: key information extracted, each with {label, confidence} (e.g., {label: "Total: $42.50", confidence: 0.98})
+- tags: document classification tags (e.g., ["receipt", "restaurant", "expense"])
+
+Do NOT put your analysis as plain text. Always use publish_card.

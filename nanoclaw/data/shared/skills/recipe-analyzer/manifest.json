@@ -12,5 +12,17 @@
     "card_color": "#FF6B35",
     "preview_template": "Analyzing your meal..."
   },
+  "thinking": {
+    "title": "Analyzing Meal",
+    "steps": [
+      { "label": "Identifying dish", "content": "Recognizing food items in the photo" },
+      { "label": "Estimating portions", "content": "Calculating approximate serving sizes" },
+      { "label": "Analyzing nutrition", "content": "Estimating calories and macronutrients" },
+      { "label": "Preparing results", "content": "Creating structured analysis" }
+    ]
+  },
+  "output": {
+    "template": "nutrition-card"
+  },
   "tags": ["food", "nutrition", "cooking", "photo"]
 }

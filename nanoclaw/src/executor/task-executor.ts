@@ -1,6 +1,5 @@
 import { writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { loadSkill } from '../skills/skill-loader.js';
 import { executeSkill } from '../skills/skill-executor.js';
 import { syncToCloud } from '../fs/cloud-sync.js';
@@ -27,38 +26,33 @@ export async function executeTask(request: ExecRequest): Promise<void> {
 
     let result: string;
 
-    // Load skill if specified
-    if (request.skillSlug) {
-      const skill = await loadSkill(request.skillSlug);
-      if (!skill) {
-        await publishStreamEvent({
-          type: 'exec_error',
-          taskId: request.taskId,
-          error: `Skill not found: ${request.skillSlug}`,
-          recoverable: false,
-        });
-        return;
+    // Load skill — explicit slug → auto-route for photos → generic fallback
+    let skillSlug = request.skillSlug;
+
+    // Auto-route: no skill specified + photo attached → try style-advisor as default photo skill
+    if (!skillSlug && request.mediaUrls?.length) {
+      const prompt = (request.prompt || '').toLowerCase();
+      if (/food|meal|eat|dish|cook|recipe|calori|nutri/i.test(prompt)) {
+        skillSlug = 'recipe-analyzer';
+      } else if (/document|receipt|scan|ocr|text|card|form|letter/i.test(prompt)) {
+        skillSlug = 'document-scanner';
+      } else {
+        skillSlug = 'style-advisor'; // default photo skill
       }
+      console.log(`[task-executor] auto-routed photo to skill: ${skillSlug}`);
+    }
 
-      result = await executeSkill(request, skill, persona);
+    if (skillSlug) {
+      const skill = await loadSkill(skillSlug);
+      if (skill) {
+        result = await executeSkill(request, skill, persona);
+      } else {
+        // Skill not found — fall through to generic with photo-aware config
+        console.warn(`[task-executor] skill not found: ${skillSlug}, using generic`);
+        result = await executeSkill(request, buildGenericSkill(request), persona);
+      }
     } else {
-      // No skill — execute as generic prompt via skill executor with a default wrapper
-      const genericSkill = {
-        manifest: {
-          name: 'Generic Assistant',
-          slug: '_generic',
-          icon: '🤖',
-          description: 'General-purpose assistant',
-          category: 'general',
-          version: '1.0.0',
-        },
-        promptContent:
-          'You are a helpful AI assistant. Answer the user\'s request clearly and concisely.',
-        resolvedPath: '',
-        isUserSkill: false,
-      };
-
-      result = await executeSkill(request, genericSkill, persona);
+      result = await executeSkill(request, buildGenericSkill(request), persona);
     }
 
     // Persist result to /workspace/sessions/
@@ -126,4 +120,34 @@ async function collectChangedFiles(sessionId: string, taskId: string): Promise<s
     }
   }
   return files;
+}
+
+/** Build a generic skill with photo-aware thinking/output config */
+function buildGenericSkill(request: ExecRequest) {
+  const hasMedia = !!request.mediaUrls?.length;
+  return {
+    manifest: {
+      name: 'Generic Assistant',
+      slug: '_generic',
+      icon: '🤖',
+      description: 'General-purpose assistant',
+      category: 'general' as const,
+      version: '1.0.0',
+      ...(hasMedia && {
+        thinking: {
+          title: 'Analyzing Photo',
+          steps: [
+            { label: 'Processing image', content: 'Examining the photo' },
+            { label: 'Generating analysis', content: 'Preparing results' },
+          ],
+        },
+        output: { template: 'image-analysis' },
+      }),
+    },
+    promptContent: hasMedia
+      ? 'You are a helpful AI assistant with vision capabilities. Analyze the user\'s photo and provide detailed, structured observations.'
+      : 'You are a helpful AI assistant. Answer the user\'s request clearly and concisely.',
+    resolvedPath: '',
+    isUserSkill: false,
+  };
 }

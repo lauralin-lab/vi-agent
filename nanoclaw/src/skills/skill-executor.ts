@@ -595,6 +595,17 @@ PRESENT: hero-image, image-gallery, video-player, slideshow, document, infograph
 
 Use "freeform-html" template for content that no template covers. Prefer structured templates over freeform HTML.`);
 
+  // Add output instructions if skill specifies a preferred result template
+  if (skill.manifest.output?.template) {
+    const photoHint = request.mediaUrls?.length
+      ? `\nInclude photo_url: "${request.mediaUrls[0]}" in the card data.`
+      : '';
+    systemParts.push(`\n---\n\n## Result Card Output
+After completing your analysis, you MUST call the publish_card tool to present your findings as a structured card.
+Use the "${skill.manifest.output.template}" template.${photoHint}
+This is critical — present results as a structured card, not plain text in your response.`);
+  }
+
   const system = systemParts.join('\n\n---\n\n');
   const model = skill.manifest.model || config.executorModel;
   const taskId = request.taskId;
@@ -602,6 +613,14 @@ Use "freeform-html" template for content that no template covers. Prefer structu
   // --- Card state for this execution ---
   let thinkingCardId: string | null = null;
   let contentCardId: string | null = null;
+  let resultCardPublished = false;
+
+  // --- Manifest-driven thinking config ---
+  const thinkingTitle = skill.manifest.thinking?.title
+    || skill.manifest.ui?.preview_template
+    || 'Thinking...';
+  const predefinedSteps = skill.manifest.thinking?.steps || [];
+  let stepIndex = 0;
 
   // Publish exec_start
   await publishStreamEvent({
@@ -619,10 +638,10 @@ Use "freeform-html" template for content that no template covers. Prefer structu
     message: 'Preparing context...',
   });
 
-  // Create thinking-process card at start
+  // Create thinking-process card at start (dynamic title from manifest)
   thinkingCardId = genCardId();
   await createCard(taskId, thinkingCardId, 'thinking-process', {
-    title: 'Thinking...',
+    title: thinkingTitle,
     steps: [],
   });
 
@@ -665,37 +684,37 @@ Use "freeform-html" template for content that no template covers. Prefer structu
     while (turnCount < MAX_TURNS) {
       turnCount++;
 
-      // Progress: Thinking or Executing tools
-      if (turnCount === 1) {
+      // Progress: advance to next manifest-defined step (or generic fallback)
+      {
+        const progressStep = turnCount === 1 ? 2 : 3;
+        const progressMsg = stepIndex < predefinedSteps.length
+          ? predefinedSteps[stepIndex].label
+          : turnCount === 1 ? 'Analyzing...' : `Processing (step ${turnCount})...`;
+
         await publishStreamEvent({
           type: 'exec_progress',
           taskId,
-          step: 2,
+          step: progressStep,
           total: 4,
-          message: 'Thinking...',
+          message: progressMsg,
         });
 
-        // Stream a thinking step
-        await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
-          label: 'Analyzing',
-          content: 'Processing your request...',
-          status: 'active',
-        }));
-      } else {
-        await publishStreamEvent({
-          type: 'exec_progress',
-          taskId,
-          step: 3,
-          total: 4,
-          message: `Executing tools (turn ${turnCount})...`,
-        });
-
-        // Update thinking card with tool execution step
-        await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
-          label: `Turn ${turnCount}`,
-          content: 'Executing tools...',
-          status: 'active',
-        }));
+        // Emit thinking step from manifest or generic fallback
+        if (stepIndex < predefinedSteps.length) {
+          const step = predefinedSteps[stepIndex];
+          await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+            label: step.label,
+            content: step.content || '',
+            status: 'active',
+          }));
+          stepIndex++;
+        } else {
+          await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+            label: turnCount === 1 ? 'Analyzing' : `Processing (step ${turnCount})`,
+            content: '',
+            status: 'active',
+          }));
+        }
       }
 
       const stream = getClient().messages.stream({
@@ -775,6 +794,11 @@ Use "freeform-html" template for content that no template covers. Prefer structu
           JSON.stringify(toolUse.input).slice(0, 200),
         );
 
+        // Track if Claude publishes a result card
+        if (toolUse.name === 'publish_card') {
+          resultCardPublished = true;
+        }
+
         const result = await executeTool(
           toolUse.name,
           toolUse.input as Record<string, unknown>,
@@ -793,9 +817,20 @@ Use "freeform-html" template for content that no template covers. Prefer structu
 
     // --- Finalization ---
 
-    // Finalize thinking card
+    // Finalize thinking card — mark remaining pre-defined steps as done
     if (thinkingCardId) {
-      // Mark thinking steps as done
+      // Emit any remaining pre-defined steps as "done"
+      while (stepIndex < predefinedSteps.length) {
+        const step = predefinedSteps[stepIndex];
+        await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
+          label: step.label,
+          content: step.content || '',
+          status: 'done',
+        }));
+        stepIndex++;
+      }
+
+      // Final completion step
       await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
         label: 'Complete',
         content: 'Analysis finished.',
@@ -808,6 +843,29 @@ Use "freeform-html" template for content that no template covers. Prefer structu
     if (contentCardId) {
       await htmlStreamOp(taskId, contentCardId, '', true);
       await finalizeCard(taskId, contentCardId);
+    }
+
+    // Auto-publish fallback: only for skills with explicit output config where Claude didn't call publish_card
+    if (!resultCardPublished && skill.manifest.output && skill.manifest.output.auto_publish !== false && fullText.trim()) {
+      const fallbackTemplate = request.mediaUrls?.length
+        ? 'image-analysis'
+        : 'hero-image';
+      const fallbackCardId = genCardId();
+      const fallbackData: Record<string, unknown> = request.mediaUrls?.length
+        ? {
+            photo_url: request.mediaUrls[0],
+            title: thinkingTitle !== 'Thinking...' ? thinkingTitle : 'Analysis Result',
+            description: fullText.slice(0, 2000),
+            detected_objects: [],
+            tags: [],
+          }
+        : {
+            title: thinkingTitle !== 'Thinking...' ? thinkingTitle : 'Result',
+            description: fullText.slice(0, 2000),
+          };
+
+      await createCard(taskId, fallbackCardId, fallbackTemplate, fallbackData);
+      await finalizeCard(taskId, fallbackCardId);
     }
 
     // Progress step 4: Done

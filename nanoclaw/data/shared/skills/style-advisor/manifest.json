@@ -12,5 +12,16 @@
     "card_color": "#9B59B6",
     "preview_template": "Analyzing your style..."
   },
+  "thinking": {
+    "title": "Analyzing Style",
+    "steps": [
+      { "label": "Identifying items", "content": "Recognizing clothing and accessories" },
+      { "label": "Assessing style", "content": "Evaluating colors, patterns, and fit" },
+      { "label": "Preparing advice", "content": "Generating personalized recommendations" }
+    ]
+  },
+  "output": {
+    "template": "image-analysis"
+  },
   "tags": ["fashion", "style", "outfit", "photo"]
 }

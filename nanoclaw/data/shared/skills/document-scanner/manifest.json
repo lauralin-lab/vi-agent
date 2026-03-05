@@ -12,5 +12,16 @@
     "card_color": "#4A90D9",
     "preview_template": "Scanning document..."
   },
+  "thinking": {
+    "title": "Scanning Document",
+    "steps": [
+      { "label": "Detecting text", "content": "Identifying text regions in the image" },
+      { "label": "Extracting content", "content": "Reading and transcribing text" },
+      { "label": "Structuring output", "content": "Organizing extracted information" }
+    ]
+  },
+  "output": {
+    "template": "image-analysis"
+  },
   "tags": ["ocr", "document", "text", "productivity"]
 }

@@ -436,6 +436,16 @@ export interface SkillManifest {
   };
   tags?: string[];
   model?: string;
+  /** Thinking card configuration — dynamic title + business-semantic steps */
+  thinking?: {
+    title?: string;
+    steps?: { label: string; content?: string }[];
+  };
+  /** Output card configuration — preferred template + auto-publish behavior */
+  output?: {
+    template?: string;
+    auto_publish?: boolean;
+  };
 }
 
 // ---------------------------------------------------------------------------
