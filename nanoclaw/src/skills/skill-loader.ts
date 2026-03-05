@@ -19,6 +19,11 @@ export async function loadSkill(slug: string): Promise<LoadedSkill | null> {
   const sharedSkill = await tryLoadFromPath(sharedPath, slug, false);
   if (sharedSkill) return sharedSkill;
 
+  // Fall back to experience packages (V5)
+  const packagePath = join(config.packagesDir, slug);
+  const packageSkill = await tryLoadFromPath(packagePath, slug, false);
+  if (packageSkill) return packageSkill;
+
   console.warn(`[skill-loader] skill not found: ${slug}`);
   return null;
 }
@@ -36,6 +41,9 @@ export async function getAllManifests(): Promise<SkillManifest[]> {
 
   // Shared skills
   await collectManifests(config.sharedSkillsDir, manifests, seen);
+
+  // Experience packages (V5)
+  await collectManifests(config.packagesDir, manifests, seen);
 
   return manifests;
 }
@@ -109,11 +117,14 @@ async function collectManifests(
   try {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory() || seen.has(entry.name)) continue;
+      if (!entry.isDirectory() || entry.name.startsWith('_') || seen.has(entry.name)) continue;
       try {
         const raw = await readFile(join(dir, entry.name, 'manifest.json'), 'utf-8');
         const manifest: SkillManifest = JSON.parse(raw);
-        seen.add(manifest.slug);
+        const key = manifest.slug || (manifest as unknown as Record<string, unknown>).id as string || entry.name;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!manifest.slug) manifest.slug = key;
         out.push(manifest);
       } catch {
         // skip dirs without valid manifest

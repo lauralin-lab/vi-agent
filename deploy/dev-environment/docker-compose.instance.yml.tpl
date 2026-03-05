@@ -113,6 +113,7 @@ services:
       args:
         - VITE_API_URL=
         - VITE_LIVEKIT_URL=
+        - VITE_DEFAULT_USER_ID=${NANOCLAW_USER_ID:-dev-user}
     restart: unless-stopped
     ports:
       - "__FRONTEND_PORT__:80"
@@ -152,6 +153,7 @@ services:
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
     volumes:
       - nanoclaw_workspace:/workspace
+      - __REPO_DIR__/packages:/packages:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -180,6 +182,8 @@ services:
       context: __REPO_DIR__/realtime
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
       - LIVEKIT_URL=${LIVEKIT_URL}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
@@ -193,8 +197,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2g
     logging:
       driver: json-file
       options:

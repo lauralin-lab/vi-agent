@@ -26,6 +26,7 @@ export const config = {
   // Filesystem paths
   userDataDir: optional('USER_DATA_DIR', '/workspace'),
   sharedSkillsDir: optional('SHARED_SKILLS_DIR', '/skills'),
+  packagesDir: optional('PACKAGES_DIR', '/packages'),
 
   // API Server (for token lookups, etc.)
   apiServerUrl: optional('API_SERVER_URL', 'http://localhost:8000'),

@@ -11,12 +11,20 @@ class ApiClient {
   constructor() {
     this.baseUrl = API_URL;
     this.token = sessionStorage.getItem('vi-token');
-    this._viUserId = localStorage.getItem('vi-user-id');
-    // Derive viUserId from deviceId if not yet set (matches backend formula)
-    if (!this._viUserId && !this.token) {
-      const deviceId = this.getDeviceId();
-      this._viUserId = `vi-${deviceId.slice(0, 16)}`;
-      localStorage.setItem('vi-user-id', this._viUserId);
+    // Single-tenant override: if VITE_DEFAULT_USER_ID is set, always use it
+    // so the frontend publishes to the same Redis channels NanoClaw listens on.
+    const defaultUserId = import.meta.env.VITE_DEFAULT_USER_ID;
+    if (defaultUserId) {
+      this._viUserId = defaultUserId;
+      localStorage.setItem('vi-user-id', defaultUserId);
+    } else {
+      this._viUserId = localStorage.getItem('vi-user-id');
+      // Derive viUserId from deviceId if not yet set (matches backend formula)
+      if (!this._viUserId && !this.token) {
+        const deviceId = this.getDeviceId();
+        this._viUserId = `vi-${deviceId.slice(0, 16)}`;
+        localStorage.setItem('vi-user-id', this._viUserId);
+      }
     }
   }
 

@@ -91,6 +91,8 @@ services:
       context: ./realtime
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
       LIVEKIT_URL: ${LIVEKIT_URL}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
@@ -138,6 +140,7 @@ services:
     volumes:
       - ./data/dev/user:/workspace
       - ./nanoclaw/data/shared/skills:/skills:ro
+      - ./packages:/packages:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -164,6 +167,7 @@ services:
       args:
         VITE_API_URL: ""
         VITE_LIVEKIT_URL: ${LIVEKIT_URL}
+        VITE_DEFAULT_USER_ID: ${NANOCLAW_USER_ID:-dev-user}
     restart: unless-stopped
     ports:
       - "80:80"

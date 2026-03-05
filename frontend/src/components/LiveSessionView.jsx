@@ -218,6 +218,17 @@ function HtmlBlock({ block, onAction, isActive, streamingChunks, isPlaceholder }
       </div>
     );
   }
+  // Empty content on a done block — show fallback instead of blank iframe
+  if (!block.content && block.status === 'done') {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 rounded-xl"
+        style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.04)' }}>
+        <p className="font-light" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.3)' }}>
+          Content unavailable
+        </p>
+      </div>
+    );
+  }
   if (isActive && streamingChunks) {
     return <ActiveHtmlBlock block={block} onAction={onAction} streamingChunks={streamingChunks} />;
   }
@@ -1128,7 +1139,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     blocks.filter(b => b.type === 'bubble'),
     [blocks]
   );
-  const hasCanvasContent = canvasBlocks.some(b => b.type === 'module' || b.status !== 'loading' || (b.content && !b.content.includes('animation:spin')));
+  const hasCanvasContent = canvasBlocks.some(b => b.type === 'module' || (b.content && b.content.trim() && !b.content.includes('animation:spin')) || (b.status !== 'loading' && b.status !== 'done'));
 
   // Auto-scroll on new canvas blocks
   useEffect(() => {
