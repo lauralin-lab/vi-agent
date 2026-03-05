@@ -57,7 +57,7 @@ jobs:
       - name: Run tests
         working-directory: api-server
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vi_db_test
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/vi_db_test
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret-key
           JWT_ALGORITHM: HS256
