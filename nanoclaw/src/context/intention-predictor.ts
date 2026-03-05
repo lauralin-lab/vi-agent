@@ -48,14 +48,13 @@ export async function predictIntentions(
     return lastIntentions;
   }
 
-  const skillList = availableSkills
-    .map((s) => `- ${s.slug}: ${s.name} — ${s.description} (category: ${s.category})`)
-    .join('\n');
+  const skillNote = availableSkills.length
+    ? `\n(Note: these specialized skills exist: ${availableSkills.map((s) => s.slug).join(', ')}. Use their slug when relevant, otherwise set skill_slug to null.)`
+    : '';
 
   const textParts = [
     `## Current Context\n${contextSnapshot}`,
-    ...(skillList ? [`## Available Skills (use skill_slug when a skill fits, null otherwise)\n${skillList}`] : []),
-    `\nPredict 3-5 creative, specific intentions as a JSON array.`,
+    `\nPredict 3-5 creative, specific intentions as a JSON array. Focus on what you SEE, not on pre-built skills.${skillNote}`,
   ].join('\n\n');
 
   const content: Anthropic.MessageCreateParams['messages'][0]['content'] =
