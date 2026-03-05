@@ -26,14 +26,21 @@ function renderHighlightedText(text, isMicOn) {
 
 // ── Agent Status State Machine ──
 // 7 states: offline, weak_connection, connecting, listening, thinking, viewing, waiting
+// SVG icon for observation/viewing states (matches V2 design)
+const ObservationIcon = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle' }}>
+        <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
+    </svg>
+);
+
 const AGENT_STATUS_CONFIG = {
-    offline: { emoji: '', label: 'Offline', dotColor: 'bg-red-400/80', textColor: 'text-red-400/80', glowColor: 'rgba(248,113,113,0.3)' },
-    weak_connection: { emoji: '', label: 'Weak Signal', dotColor: 'bg-yellow-400/80', textColor: 'text-yellow-400/80', glowColor: 'rgba(250,204,21,0.3)' },
-    connecting: { emoji: '', label: 'Connecting', dotColor: 'bg-blue-400/80', textColor: 'text-blue-400/80', glowColor: 'rgba(96,165,250,0.3)', pulse: true },
-    listening: { emoji: '🎧', label: 'Listening', dotColor: 'bg-white/70', textColor: 'text-white/70', glowColor: 'rgba(255,255,255,0.2)' },
-    thinking: { emoji: '🧠', label: 'Thinking', dotColor: 'bg-cyan-400/80', textColor: 'text-cyan-400/80', glowColor: 'rgba(34,211,238,0.3)', pulse: true },
-    viewing: { emoji: '👁️', label: 'Viewing', dotColor: 'bg-cyan-400/80', textColor: 'text-cyan-400/80', glowColor: 'rgba(34,211,238,0.3)' },
-    waiting: { emoji: '✨', label: 'Ready', dotColor: 'bg-green-400/80', textColor: 'text-green-400/80', glowColor: 'rgba(74,222,128,0.3)' },
+    offline: { label: 'Offline', dotColor: 'bg-red-400/80', textColor: 'text-red-400/80', glowColor: 'rgba(248,113,113,0.3)' },
+    weak_connection: { label: 'Weak Signal', dotColor: 'bg-yellow-400/80', textColor: 'text-yellow-400/80', glowColor: 'rgba(250,204,21,0.3)' },
+    connecting: { label: 'Connecting', dotColor: 'bg-blue-400/80', textColor: 'text-blue-400/80', glowColor: 'rgba(96,165,250,0.3)', pulse: true },
+    listening: { label: 'Listening', icon: true, textColor: 'text-white/70', glowColor: 'rgba(255,255,255,0.2)' },
+    thinking: { label: 'Thinking', dotColor: 'bg-cyan-400/80', textColor: 'text-cyan-400/80', glowColor: 'rgba(34,211,238,0.3)', pulse: true },
+    viewing: { label: 'AI Observation', icon: true, textColor: 'text-white/50', glowColor: 'rgba(34,211,238,0.3)' },
+    waiting: { label: 'Ready', dotColor: 'bg-green-400/80', textColor: 'text-green-400/80', glowColor: 'rgba(74,222,128,0.3)' },
 };
 
 export function computeAgentStatus({ agentIdentity, greetingReceived, userSpeaking, agentGenerating, cameraActive, connectionQuality }) {
@@ -98,25 +105,49 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
 
     return (
         <motion.div
-            initial={{ y: 30, opacity: 0 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{
-                y: isVisible ? 0 : 30,
+                y: isVisible ? 0 : 10,
                 opacity: isVisible ? 1 : 0,
             }}
             transition={{ type: 'spring', stiffness: 400, damping: 30, delay: 0.1 }}
-            className="relative w-auto max-w-[90%] z-50"
+            className="relative w-full z-50"
         >
+            {/* Layered frosted glass — outer glow + inner glass */}
             <div
-                className="rounded-2xl px-4 py-3 text-center"
+                className="relative rounded-2xl overflow-hidden"
                 style={{
-                    background: 'rgba(0,0,0,0.48)',
-                    backdropFilter: 'blur(28px)',
-                    border: '1px solid rgba(255,255,255,0.10)',
-                    boxShadow: '0 4px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 0 0.5px rgba(255,255,255,0.06)',
                 }}
             >
-                {/* Status label */}
-                <div className="flex items-center justify-center gap-1.5 mb-1.5">
+                {/* Background blur layer */}
+                <div
+                    className="absolute inset-0 rounded-2xl"
+                    style={{
+                        backdropFilter: 'blur(24px) saturate(180%)',
+                        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+                        background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
+                    }}
+                />
+                {/* Inner frosted overlay for depth */}
+                <div
+                    className="absolute inset-0 rounded-2xl"
+                    style={{
+                        background: 'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.55) 100%)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                    }}
+                />
+                {/* Top highlight edge — liquid glass feel */}
+                <div
+                    className="absolute top-0 left-[10%] right-[10%] h-px"
+                    style={{
+                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)',
+                    }}
+                />
+                {/* Content */}
+                <div className="relative px-4 py-3">
+                {/* Status label — left aligned, V2 observation style */}
+                <div className="flex items-center gap-1.5 mb-1">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={status}
@@ -124,21 +155,18 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.8 }}
                             transition={{ duration: 0.2 }}
-                            className="flex items-center gap-1.5"
+                            className="flex items-center gap-1"
                         >
-                            {statusConfig.emoji ? (
-                                <span
-                                    className={statusConfig.pulse ? 'animate-pulse' : ''}
-                                    style={{ animationDuration: '2.5s', fontSize: '13px' }}
-                                >
-                                    {statusConfig.emoji}
+                            {statusConfig.icon ? (
+                                <span className={`${statusConfig.textColor} ${statusConfig.pulse ? 'animate-pulse' : ''}`}>
+                                    <ObservationIcon />
                                 </span>
                             ) : (
                                 <div className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotColor} ${statusConfig.pulse ? 'animate-pulse' : ''}`} />
                             )}
                             <span
-                                className={`${statusConfig.textColor} font-mono font-semibold tracking-[0.14em] uppercase`}
-                                style={{ fontSize: '9px', filter: `drop-shadow(0 0 4px ${statusConfig.glowColor})` }}
+                                className={`${statusConfig.textColor} font-mono font-semibold tracking-[0.06em] uppercase`}
+                                style={{ fontSize: '11px' }}
                             >
                                 {statusConfig.label}
                             </span>
@@ -146,16 +174,17 @@ function Card({ isVisible, text, isMicOn = false, agentStatus = null, hasAgent =
                     </AnimatePresence>
                 </div>
 
-                {/* Streaming text */}
+                {/* Streaming text — left aligned */}
                 <p
-                    className="text-white/90 font-medium leading-relaxed line-clamp-3"
+                    className="text-white/90 font-medium leading-relaxed line-clamp-4"
                     style={{ fontSize, textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}
                 >
                     {renderHighlightedText(displayedText, isMicOn)}
                     {isStreaming && (
-                        <span className="inline-block w-[2px] h-[1em] bg-white/70 animate-pulse ml-0.5 align-middle" />
+                        <span className="inline-block w-[2px] h-[1em] bg-white/50 animate-pulse ml-0.5 align-middle" style={{ opacity: 0.5 }} />
                     )}
                 </p>
+                </div>
             </div>
         </motion.div>
     );

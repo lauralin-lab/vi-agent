@@ -89,6 +89,7 @@ body {
   .below-top-signal {
     top: calc(3.5rem + 48px) !important;
   }
+
 }
 
 /* ═══ Hasselblad-inspired subtle texture overlay ═══ */
