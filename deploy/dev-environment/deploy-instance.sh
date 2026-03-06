@@ -243,6 +243,14 @@ EOF
   cd "$INSTANCE_DIR"
   docker compose down --remove-orphans 2>/dev/null || true
 
+  # --- Docker Hub login (avoid rate limit) ---
+  if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+    echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>/dev/null
+    echo "Docker Hub authenticated."
+  else
+    echo "WARNING: No Docker Hub credentials — pull may hit rate limit."
+  fi
+
   # --- Pull and start ---
   echo "Pulling images..."
   docker compose pull
