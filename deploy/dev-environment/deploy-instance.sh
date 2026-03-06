@@ -57,6 +57,7 @@ calc_ports() {
   FRONTEND_HTTPS_PORT=$((FRONTEND_PORT + 10))
   API_PORT=$((3000 + slot * 100 + 1))
   NANOCLAW_PORT=$((3000 + slot * 100 + 2))
+  NANOCLAW_HTTPS_PORT=$((NANOCLAW_PORT + 10))
   REALTIME_PORT=$((3000 + slot * 100 + 3))
   POSTGRES_PORT=$((5432 + slot))
   REDIS_PORT=$((6379 + slot))
@@ -230,6 +231,7 @@ EOF
       -e "s/__FRONTEND_HTTPS_PORT__/$FRONTEND_HTTPS_PORT/g" \
       -e "s/__API_PORT__/$API_PORT/g" \
       -e "s/__NANOCLAW_PORT__/$NANOCLAW_PORT/g" \
+      -e "s/__NANOCLAW_HTTPS_PORT__/$NANOCLAW_HTTPS_PORT/g" \
       -e "s/__REALTIME_PORT__/$REALTIME_PORT/g" \
       -e "s/__POSTGRES_PORT__/$POSTGRES_PORT/g" \
       -e "s/__REDIS_PORT__/$REDIS_PORT/g" \

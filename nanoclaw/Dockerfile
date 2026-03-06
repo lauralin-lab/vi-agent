@@ -16,5 +16,5 @@ COPY --from=builder /app/dist ./dist
 COPY data/shared/skills/ /skills/
 COPY public/ ./public/
 
-EXPOSE 3100
+EXPOSE 3100 3101
 CMD ["node", "dist/index.js"]

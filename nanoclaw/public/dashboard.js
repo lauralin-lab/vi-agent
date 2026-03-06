@@ -16,6 +16,9 @@
       if (target === 'health') fetchHealth();
       if (target === 'skills') fetchSkills();
       if (target === 'tasks') { fetchTemplates(); fetchSessions(); }
+      if (target === 'sessions') fetchSessionHistory();
+      if (target === 'memory') { loadAllMemoryLayers(); connectContextSSE(); }
+      if (target === 'chat' && !chatSSE) connectChatSSE();
     });
   });
 
@@ -29,20 +32,526 @@
     return (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's';
   }
 
-  function badgeClass(status) {
-    if (status === 'ok' || status === 'live' || status === 'ready') return 'badge-green';
-    if (status === 'error' || status === 'dead') return 'badge-red';
-    if (status === 'warn' || status === 'busy') return 'badge-yellow';
-    return 'badge-blue';
-  }
-
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
   }
 
-  // ── Health Page ──
+  function formatTime(ts) {
+    return new Date(ts).toLocaleTimeString();
+  }
+
+  function formatDateTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  }
+
+  function formatDuration(ms) {
+    if (ms < 1000) return ms + 'ms';
+    return (ms / 1000).toFixed(1) + 's';
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // CHAT
+  // ══════════════════════════════════════════════════════════════
+
+  let chatSSE = null;
+  let chatTaskId = null;
+  let selectedSkill = null;
+  let skillsList = [];
+
+  // Load skills for picker
+  async function loadSkillsForPicker() {
+    try {
+      const res = await fetch('/api/dashboard/skills');
+      const data = await res.json();
+      skillsList = data.skills || [];
+    } catch { skillsList = []; }
+  }
+
+  loadSkillsForPicker();
+
+  function connectChatSSE() {
+    if (chatSSE) chatSSE.close();
+    chatSSE = new EventSource('/api/dashboard/sse');
+    chatSSE.onopen = () => {
+      document.querySelector('.sidebar-footer').innerHTML = '<span class="status-dot live"></span> Connected';
+    };
+    chatSSE.onmessage = (evt) => {
+      let parsed;
+      try { parsed = JSON.parse(evt.data); } catch { return; }
+      handleChatEvent(parsed);
+    };
+    chatSSE.onerror = () => {
+      document.querySelector('.sidebar-footer').innerHTML = '<span class="status-dot off"></span> Disconnected';
+    };
+  }
+
+  function handleChatEvent(data) {
+    if (!chatTaskId) return;
+    // Only handle events for our current task
+    if (data.taskId && data.taskId !== chatTaskId) return;
+
+    if (data.type === 'exec_start') {
+      appendAssistantThinking();
+    } else if (data.type === 'exec_progress') {
+      updateAssistantThinking(data.message);
+    } else if (data.type === 'exec_result') {
+      finalizeAssistantMessage(data.summary);
+    } else if (data.type === 'exec_error') {
+      finalizeAssistantError(data.error);
+    } else if (data.op === 'html_stream' || data.op === 'stream_to_card') {
+      appendToAssistantStream(data.chunk || '');
+    } else if (data.op === 'create_card') {
+      appendAssistantCard(data);
+    } else if (data.op === 'finalize_card') {
+      // Card done, no action needed
+    }
+  }
+
+  function appendUserMessage(text, skill) {
+    const msgs = $('chat-messages');
+    const empty = msgs.querySelector('.chat-empty');
+    if (empty) empty.remove();
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg user';
+    div.innerHTML =
+      '<div class="chat-bubble">' + escapeHtml(text) + '</div>' +
+      '<div class="chat-msg-meta">' +
+      (skill ? '<span class="badge badge-purple" style="margin-right:6px">@' + escapeHtml(skill) + '</span>' : '') +
+      formatTime(Date.now()) +
+      '</div>';
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  let currentAssistantDiv = null;
+  let assistantStreamText = '';
+
+  function appendAssistantThinking() {
+    const msgs = $('chat-messages');
+    currentAssistantDiv = document.createElement('div');
+    currentAssistantDiv.className = 'chat-msg assistant';
+    currentAssistantDiv.innerHTML =
+      '<div class="chat-bubble"><span class="assistant-thinking">Thinking...</span></div>' +
+      '<div class="chat-msg-meta">' + formatTime(Date.now()) + '</div>';
+    msgs.appendChild(currentAssistantDiv);
+    msgs.scrollTop = msgs.scrollHeight;
+    assistantStreamText = '';
+  }
+
+  function updateAssistantThinking(message) {
+    if (!currentAssistantDiv) return;
+    const thinking = currentAssistantDiv.querySelector('.assistant-thinking');
+    if (thinking) thinking.textContent = message;
+  }
+
+  function appendToAssistantStream(chunk) {
+    if (!currentAssistantDiv) {
+      appendAssistantThinking();
+    }
+    assistantStreamText += chunk;
+    const bubble = currentAssistantDiv.querySelector('.chat-bubble');
+    bubble.innerHTML = escapeHtml(assistantStreamText);
+  }
+
+  function appendAssistantCard(cardOp) {
+    if (!currentAssistantDiv) appendAssistantThinking();
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'chat-card-result';
+    cardDiv.textContent = JSON.stringify(cardOp.data || {}, null, 2);
+    currentAssistantDiv.appendChild(cardDiv);
+    const msgs = $('chat-messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function finalizeAssistantMessage(summary) {
+    if (!currentAssistantDiv) return;
+    const bubble = currentAssistantDiv.querySelector('.chat-bubble');
+    if (assistantStreamText) {
+      bubble.innerHTML = escapeHtml(assistantStreamText);
+    } else if (summary) {
+      bubble.innerHTML = escapeHtml(summary);
+    }
+    currentAssistantDiv = null;
+    chatTaskId = null;
+  }
+
+  function finalizeAssistantError(error) {
+    if (!currentAssistantDiv) appendAssistantThinking();
+    const bubble = currentAssistantDiv.querySelector('.chat-bubble');
+    bubble.innerHTML = '<span style="color:var(--red)">Error: ' + escapeHtml(error) + '</span>';
+    currentAssistantDiv = null;
+    chatTaskId = null;
+  }
+
+  async function sendChat() {
+    const input = $('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    appendUserMessage(text, selectedSkill ? selectedSkill.slug : null);
+
+    try {
+      const body = { prompt: text };
+      if (selectedSkill) body.skillSlug = selectedSkill.slug;
+
+      const res = await fetch('/api/dashboard/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      chatTaskId = data.taskId;
+
+      // Clear skill selection after sending
+      selectedSkill = null;
+      $('chat-skill-tag').style.display = 'none';
+    } catch (err) {
+      finalizeAssistantError(err.message);
+    }
+  }
+
+  $('chat-send').addEventListener('click', sendChat);
+  $('chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
+  });
+
+  // Skill picker logic
+  $('chat-input').addEventListener('input', (e) => {
+    const val = e.target.value;
+    const atIdx = val.lastIndexOf('@');
+    if (atIdx >= 0 && atIdx === val.length - 1 || (atIdx >= 0 && !val.slice(atIdx).includes(' '))) {
+      const query = val.slice(atIdx + 1).toLowerCase();
+      showSkillPicker(query);
+    } else {
+      hideSkillPicker();
+    }
+  });
+
+  function showSkillPicker(query) {
+    const picker = $('skill-picker');
+    const list = $('skill-picker-list');
+    const filtered = skillsList.filter(s =>
+      !query || s.name.toLowerCase().includes(query) || s.slug.toLowerCase().includes(query)
+    );
+    if (filtered.length === 0) {
+      hideSkillPicker();
+      return;
+    }
+    list.innerHTML = filtered.map(s =>
+      '<div class="skill-picker-item" data-slug="' + escapeHtml(s.slug) + '">' +
+      '<span class="skill-icon">' + (s.icon || '') + '</span>' +
+      '<div class="skill-info">' +
+      '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
+      '<div class="skill-desc">' + escapeHtml(s.description || '') + '</div>' +
+      '</div></div>'
+    ).join('');
+    picker.style.display = 'block';
+
+    list.querySelectorAll('.skill-picker-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const slug = item.dataset.slug;
+        const skill = skillsList.find(s => s.slug === slug);
+        if (skill) {
+          selectedSkill = skill;
+          $('chat-skill-name').textContent = '@' + skill.name;
+          $('chat-skill-tag').style.display = 'inline-flex';
+          // Remove @ from input
+          const input = $('chat-input');
+          const atIdx = input.value.lastIndexOf('@');
+          if (atIdx >= 0) input.value = input.value.slice(0, atIdx);
+          input.focus();
+        }
+        hideSkillPicker();
+      });
+    });
+  }
+
+  function hideSkillPicker() {
+    $('skill-picker').style.display = 'none';
+  }
+
+  $('chat-skill-remove').addEventListener('click', () => {
+    selectedSkill = null;
+    $('chat-skill-tag').style.display = 'none';
+  });
+
+  // Auto-connect chat SSE on load
+  connectChatSSE();
+
+  // ══════════════════════════════════════════════════════════════
+  // MULTI-CHANNEL MONITOR
+  // ══════════════════════════════════════════════════════════════
+
+  let channelSSE = null;
+
+  const CHANNEL_COLORS = {
+    ctx: 'ch-tag-ctx',
+    exec: 'ch-tag-exec',
+    stream: 'ch-tag-stream',
+    intent: 'ch-tag-intent',
+    actions: 'ch-tag-actions',
+    summary: 'ch-tag-summary',
+    frames: 'ch-tag-frames',
+    media: 'ch-tag-media',
+    events: 'ch-tag-events',
+  };
+
+  function getActiveFilters() {
+    const filters = new Set();
+    document.querySelectorAll('#channel-filters input:checked').forEach(cb => {
+      filters.add(cb.value);
+    });
+    return filters;
+  }
+
+  function connectChannelSSE() {
+    if (channelSSE) channelSSE.close();
+    const uid = $('ch-uid').value.trim();
+    const url = '/api/dashboard/sse/all' + (uid ? '?uid=' + encodeURIComponent(uid) : '');
+    channelSSE = new EventSource(url);
+    $('ch-status').textContent = 'Connecting...';
+    $('ch-connect').textContent = 'Reconnect';
+
+    channelSSE.onopen = () => {
+      $('ch-status').textContent = 'Connected';
+    };
+
+    channelSSE.onmessage = (evt) => {
+      let parsed;
+      try { parsed = JSON.parse(evt.data); } catch { return; }
+      const channel = parsed.channel || 'unknown';
+      const filters = getActiveFilters();
+      if (!filters.has(channel)) return;
+      appendChannelEntry(channel, parsed.ts, parsed.data);
+    };
+
+    channelSSE.onerror = () => {
+      $('ch-status').textContent = 'Disconnected';
+    };
+  }
+
+  function appendChannelEntry(channel, ts, data) {
+    const log = $('ch-log');
+    const entry = document.createElement('div');
+    entry.className = 'sse-entry';
+
+    const time = document.createElement('span');
+    time.className = 'sse-time';
+    time.textContent = formatTime(ts || Date.now());
+
+    const tag = document.createElement('span');
+    tag.className = 'ch-tag ' + (CHANNEL_COLORS[channel] || '');
+    tag.textContent = channel;
+
+    const body = document.createElement('span');
+    body.className = 'sse-data';
+    body.textContent = typeof data === 'string' ? data : JSON.stringify(data);
+
+    entry.appendChild(time);
+    entry.appendChild(tag);
+    entry.appendChild(body);
+    log.appendChild(entry);
+
+    if (log.scrollHeight - log.scrollTop - log.clientHeight < 100) {
+      log.scrollTop = log.scrollHeight;
+    }
+    while (log.children.length > 1000) {
+      log.removeChild(log.firstChild);
+    }
+  }
+
+  $('ch-connect').addEventListener('click', connectChannelSSE);
+  $('ch-clear').addEventListener('click', () => { $('ch-log').innerHTML = ''; });
+
+  // ══════════════════════════════════════════════════════════════
+  // SESSION HISTORY
+  // ══════════════════════════════════════════════════════════════
+
+  async function fetchSessionHistory() {
+    try {
+      const res = await fetch('/api/dashboard/sessions/history');
+      const data = await res.json();
+      renderTimeline(data.sessions || []);
+    } catch (err) {
+      $('sessions-timeline').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  function renderTimeline(sessions) {
+    const container = $('sessions-timeline');
+    $('sessions-count').textContent = sessions.length + ' tasks';
+
+    if (sessions.length === 0) {
+      container.innerHTML = '<div class="loading">No session history yet</div>';
+      return;
+    }
+
+    container.innerHTML = sessions.map(s => {
+      const prompt = (s.prompt || '').slice(0, 80);
+      const result = (s.result || '').slice(0, 500);
+      return '<div class="timeline-item">' +
+        '<div class="timeline-header" onclick="this.parentElement.classList.toggle(\'expanded\')">' +
+        '<span class="timeline-time">' + escapeHtml(formatDateTime(s.ts)) + '</span>' +
+        '<span class="timeline-skill"><span class="badge badge-blue">' + escapeHtml(s.skillSlug || '_generic') + '</span></span>' +
+        '<span class="timeline-prompt">' + escapeHtml(prompt) + '</span>' +
+        '<span class="timeline-duration">' + formatDuration(s.durationMs || 0) + '</span>' +
+        '</div>' +
+        '<div class="timeline-detail">' +
+        '<div class="timeline-detail-label">Prompt</div>' +
+        '<div class="json-view" style="max-height:100px">' + escapeHtml(s.prompt || '') + '</div>' +
+        '<div class="timeline-detail-label">Result</div>' +
+        '<div class="json-view" style="max-height:200px">' + escapeHtml(result) + '</div>' +
+        '<div class="timeline-detail-label">Metadata</div>' +
+        '<div class="json-view" style="max-height:100px">' +
+        escapeHtml(JSON.stringify({ taskId: s.taskId, sessionId: s.sessionId, durationMs: s.durationMs }, null, 2)) +
+        '</div>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  $('sessions-refresh').addEventListener('click', fetchSessionHistory);
+
+  // ══════════════════════════════════════════════════════════════
+  // MEMORY MANAGER
+  // ══════════════════════════════════════════════════════════════
+
+  let currentMemFile = null; // { layer, filename }
+  let contextSSE = null;
+
+  async function loadAllMemoryLayers() {
+    for (const layer of ['identity', 'semantic', 'episodic']) {
+      await loadMemoryLayer(layer);
+    }
+  }
+
+  async function loadMemoryLayer(layer) {
+    try {
+      const res = await fetch('/api/dashboard/memory/' + layer);
+      const data = await res.json();
+      renderMemoryFileList(layer, data.files || []);
+    } catch {
+      $('mem-files-' + layer).innerHTML = '<div style="padding:8px 12px;color:var(--text-dim);font-size:11px">No files</div>';
+    }
+  }
+
+  function renderMemoryFileList(layer, files) {
+    const container = $('mem-files-' + layer);
+    if (files.length === 0) {
+      container.innerHTML = '<div style="padding:8px 12px;color:var(--text-dim);font-size:11px">No files</div>';
+      return;
+    }
+    container.innerHTML = files.map(f => {
+      const isActive = currentMemFile && currentMemFile.layer === layer && currentMemFile.filename === f.name;
+      return '<div class="memory-file-item' + (isActive ? ' active' : '') + '" data-layer="' + layer + '" data-file="' + escapeHtml(f.name) + '">' +
+        '<span>' + escapeHtml(f.name) + '</span>' +
+        '<span class="memory-file-size">' + f.size + 'b</span>' +
+        '</div>';
+    }).join('');
+
+    container.querySelectorAll('.memory-file-item').forEach(item => {
+      item.addEventListener('click', () => {
+        openMemoryFile(item.dataset.layer, item.dataset.file);
+      });
+    });
+  }
+
+  async function openMemoryFile(layer, filename) {
+    currentMemFile = { layer, filename };
+    // Highlight active
+    document.querySelectorAll('.memory-file-item').forEach(el => el.classList.remove('active'));
+    const active = document.querySelector('.memory-file-item[data-layer="' + layer + '"][data-file="' + filename + '"]');
+    if (active) active.classList.add('active');
+
+    $('mem-editor-title').textContent = layer + '/' + filename;
+    $('mem-editor-actions').style.display = 'flex';
+
+    try {
+      const res = await fetch('/api/dashboard/memory/' + layer + '/' + encodeURIComponent(filename));
+      const data = await res.json();
+      $('mem-editor-content').value = data.content || '';
+    } catch {
+      $('mem-editor-content').value = '(failed to load)';
+    }
+  }
+
+  $('mem-save').addEventListener('click', async () => {
+    if (!currentMemFile) return;
+    const content = $('mem-editor-content').value;
+    try {
+      await fetch('/api/dashboard/memory/' + currentMemFile.layer + '/' + encodeURIComponent(currentMemFile.filename), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      loadMemoryLayer(currentMemFile.layer);
+    } catch (err) {
+      alert('Save failed: ' + err.message);
+    }
+  });
+
+  $('mem-delete').addEventListener('click', async () => {
+    if (!currentMemFile) return;
+    if (!confirm('Delete ' + currentMemFile.layer + '/' + currentMemFile.filename + '?')) return;
+    try {
+      await fetch('/api/dashboard/memory/' + currentMemFile.layer + '/' + encodeURIComponent(currentMemFile.filename), {
+        method: 'DELETE',
+      });
+      currentMemFile = null;
+      $('mem-editor-title').textContent = 'Select a file to view';
+      $('mem-editor-actions').style.display = 'none';
+      $('mem-editor-content').value = '';
+      loadAllMemoryLayers();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  });
+
+  // Create file buttons
+  document.querySelectorAll('[data-action="create"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const layer = btn.dataset.layer;
+      const filename = prompt('New file name (must end with .md):', 'new-note.md');
+      if (!filename || !filename.endsWith('.md')) return;
+      try {
+        await fetch('/api/dashboard/memory/' + layer + '/' + encodeURIComponent(filename), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: '# ' + filename.replace('.md', '') + '\n\n' }),
+        });
+        await loadMemoryLayer(layer);
+        openMemoryFile(layer, filename);
+      } catch (err) {
+        alert('Create failed: ' + err.message);
+      }
+    });
+  });
+
+  // Context snapshot SSE
+  function connectContextSSE() {
+    if (contextSSE) contextSSE.close();
+    contextSSE = new EventSource('/api/dashboard/context');
+    contextSSE.onmessage = (evt) => {
+      let parsed;
+      try { parsed = JSON.parse(evt.data); } catch { return; }
+      if (parsed.snapshot) {
+        $('mem-context-body').textContent = parsed.snapshot;
+        $('mem-version').textContent = 'v' + (parsed.memory_version || '?');
+      }
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // HEALTH (existing)
+  // ══════════════════════════════════════════════════════════════
+
   async function fetchHealth() {
     try {
       const res = await fetch('/api/dashboard/health');
@@ -89,7 +598,10 @@
       '</tbody></table>';
   }
 
-  // ── Skills Page ──
+  // ══════════════════════════════════════════════════════════════
+  // SKILLS (existing)
+  // ══════════════════════════════════════════════════════════════
+
   async function fetchSkills() {
     try {
       const res = await fetch('/api/dashboard/skills');
@@ -120,45 +632,31 @@
       '</tbody></table>';
   }
 
-  // ── SSE Monitor ──
+  // ══════════════════════════════════════════════════════════════
+  // SSE MONITOR (existing)
+  // ══════════════════════════════════════════════════════════════
+
   let evtSource = null;
-  let sseCount = 0;
 
   $('sse-connect').addEventListener('click', connectSSE);
-  $('sse-clear').addEventListener('click', () => {
-    $('sse-log').innerHTML = '';
-    sseCount = 0;
-  });
+  $('sse-clear').addEventListener('click', () => { $('sse-log').innerHTML = ''; });
 
   function connectSSE() {
-    if (evtSource) {
-      evtSource.close();
-      evtSource = null;
-    }
+    if (evtSource) { evtSource.close(); evtSource = null; }
     const uid = $('sse-uid').value.trim();
     const url = '/api/dashboard/sse' + (uid ? '?uid=' + encodeURIComponent(uid) : '');
     evtSource = new EventSource(url);
     $('sse-status').textContent = 'Connecting...';
     $('sse-connect').textContent = 'Reconnect';
 
-    evtSource.onopen = () => {
-      $('sse-status').textContent = 'Connected';
-      document.querySelector('.sidebar-footer').innerHTML = '<span class="status-dot live"></span> SSE Connected';
-    };
-
+    evtSource.onopen = () => { $('sse-status').textContent = 'Connected'; };
     evtSource.onmessage = (evt) => {
-      sseCount++;
       let parsed;
       try { parsed = JSON.parse(evt.data); } catch { parsed = evt.data; }
       appendSSEEntry(parsed);
-      // Feed card preview
       if (parsed && parsed.op) handleCardOp(parsed);
     };
-
-    evtSource.onerror = () => {
-      $('sse-status').textContent = 'Disconnected';
-      document.querySelector('.sidebar-footer').innerHTML = '<span class="status-dot off"></span> Disconnected';
-    };
+    evtSource.onerror = () => { $('sse-status').textContent = 'Disconnected'; };
   }
 
   function appendSSEEntry(data) {
@@ -187,18 +685,18 @@
     entry.appendChild(body);
     log.appendChild(entry);
 
-    // Auto-scroll if near bottom
     if (log.scrollHeight - log.scrollTop - log.clientHeight < 100) {
       log.scrollTop = log.scrollHeight;
     }
-
-    // Keep max 500 entries
     while (log.children.length > 500) {
       log.removeChild(log.firstChild);
     }
   }
 
-  // ── Card Preview ──
+  // ══════════════════════════════════════════════════════════════
+  // CARD PREVIEW (existing)
+  // ══════════════════════════════════════════════════════════════
+
   const cardState = {};
   const cardEvents = [];
 
@@ -254,7 +752,7 @@
     const canvas = $('card-canvas');
     const ids = Object.keys(cardState);
     if (ids.length === 0) {
-      canvas.innerHTML = '<div class="loading">No cards — connect SSE and trigger a skill</div>';
+      canvas.innerHTML = '<div class="loading">No cards</div>';
       return;
     }
     canvas.innerHTML = ids.map(id => {
@@ -277,7 +775,10 @@
     ).join('\n');
   }
 
-  // ── Task Inspector / Templates ──
+  // ══════════════════════════════════════════════════════════════
+  // TASK INSPECTOR (existing)
+  // ══════════════════════════════════════════════════════════════
+
   async function fetchTemplates() {
     try {
       const res = await fetch('/api/dashboard/templates');
@@ -330,10 +831,7 @@
     ).join('');
   }
 
-  // ── Auto-refresh health on load ──
-  fetchHealth();
-
-  // Refresh health every 10s when visible
+  // ── Auto-refresh health every 10s ──
   setInterval(() => {
     if (document.querySelector('#page-health.active')) fetchHealth();
   }, 10000);

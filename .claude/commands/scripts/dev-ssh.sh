@@ -50,6 +50,7 @@ calc_ports() {
   FRONTEND_HTTPS_PORT=$((BASE_PORT + 10))
   API_PORT=$((BASE_PORT + 1))
   NANOCLAW_PORT=$((BASE_PORT + 2))
+  NANOCLAW_HTTPS_PORT=$((NANOCLAW_PORT + 10))
 }
 
 # ── SSH helper ──────────────────────────────────────────────────────────────

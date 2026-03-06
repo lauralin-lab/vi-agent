@@ -10,10 +10,22 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>NanoClaw</h1>
-      <div class="subtitle">Debug Dashboard</div>
+      <div class="subtitle">Control Center</div>
     </div>
     <nav class="nav-links">
-      <a class="nav-link active" data-page="health">
+      <a class="nav-link active" data-page="chat">
+        <span class="icon">&#9993;</span> Chat
+      </a>
+      <a class="nav-link" data-page="channels">
+        <span class="icon">&#9733;</span> Channels
+      </a>
+      <a class="nav-link" data-page="sessions">
+        <span class="icon">&#9201;</span> Sessions
+      </a>
+      <a class="nav-link" data-page="memory">
+        <span class="icon">&#9671;</span> Memory
+      </a>
+      <a class="nav-link" data-page="health">
         <span class="icon">&#9829;</span> Health
       </a>
       <a class="nav-link" data-page="skills">
@@ -35,8 +47,129 @@
   </aside>
 
   <main class="main">
+    <!-- Chat Page -->
+    <section class="page active" id="page-chat">
+      <div class="page-header">
+        <h2>Chat</h2>
+        <p>Send prompts to NanoClaw and see responses in real-time</p>
+      </div>
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-empty">Send a message to start a conversation with NanoClaw</div>
+        </div>
+        <div class="chat-input-area">
+          <div class="skill-picker" id="skill-picker" style="display:none">
+            <div class="skill-picker-header">Select a skill</div>
+            <div class="skill-picker-list" id="skill-picker-list"></div>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Type a message... Use @ to mention a skill" autocomplete="off">
+            <button class="btn btn-primary" id="chat-send">Send</button>
+          </div>
+          <div class="chat-skill-tag" id="chat-skill-tag" style="display:none">
+            <span id="chat-skill-name"></span>
+            <button class="chat-skill-remove" id="chat-skill-remove">&times;</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Channel Monitor Page -->
+    <section class="page" id="page-channels">
+      <div class="page-header">
+        <h2>Channel Monitor</h2>
+        <p>All Redis channels for this user in real-time</p>
+      </div>
+      <div class="controls">
+        <label style="font-size:13px;color:var(--text-dim)">User ID:</label>
+        <input type="text" id="ch-uid" placeholder="default: from config" style="width:160px">
+        <button class="btn btn-primary" id="ch-connect">Connect</button>
+        <button class="btn" id="ch-clear">Clear</button>
+        <span id="ch-status" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      <div class="channel-filters" id="channel-filters">
+        <label class="ch-filter"><input type="checkbox" value="ctx" checked><span class="ch-dot ch-ctx"></span>ctx</label>
+        <label class="ch-filter"><input type="checkbox" value="exec" checked><span class="ch-dot ch-exec"></span>exec</label>
+        <label class="ch-filter"><input type="checkbox" value="stream" checked><span class="ch-dot ch-stream"></span>stream</label>
+        <label class="ch-filter"><input type="checkbox" value="intent" checked><span class="ch-dot ch-intent"></span>intent</label>
+        <label class="ch-filter"><input type="checkbox" value="actions" checked><span class="ch-dot ch-actions"></span>actions</label>
+        <label class="ch-filter"><input type="checkbox" value="summary" checked><span class="ch-dot ch-summary"></span>summary</label>
+        <label class="ch-filter"><input type="checkbox" value="frames" checked><span class="ch-dot ch-frames"></span>frames</label>
+        <label class="ch-filter"><input type="checkbox" value="media" checked><span class="ch-dot ch-media"></span>media</label>
+        <label class="ch-filter"><input type="checkbox" value="events" checked><span class="ch-dot ch-events"></span>events</label>
+      </div>
+      <div class="sse-log" id="ch-log"></div>
+    </section>
+
+    <!-- Session History Page -->
+    <section class="page" id="page-sessions">
+      <div class="page-header">
+        <h2>Session History</h2>
+        <p>Timeline of all task executions</p>
+      </div>
+      <div class="controls">
+        <button class="btn btn-primary" id="sessions-refresh">Refresh</button>
+        <span id="sessions-count" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      <div class="timeline" id="sessions-timeline">
+        <div class="loading">Loading...</div>
+      </div>
+    </section>
+
+    <!-- Memory Manager Page -->
+    <section class="page" id="page-memory">
+      <div class="page-header">
+        <h2>Memory Manager</h2>
+        <p>Browse and edit the 3-layer memory system</p>
+      </div>
+      <div class="memory-layout">
+        <div class="memory-sidebar">
+          <div class="memory-layer" data-layer="identity">
+            <div class="memory-layer-header">
+              <span>Identity</span>
+              <button class="btn-sm" data-action="create" data-layer="identity">+</button>
+            </div>
+            <div class="memory-file-list" id="mem-files-identity"></div>
+          </div>
+          <div class="memory-layer" data-layer="semantic">
+            <div class="memory-layer-header">
+              <span>Semantic</span>
+              <button class="btn-sm" data-action="create" data-layer="semantic">+</button>
+            </div>
+            <div class="memory-file-list" id="mem-files-semantic"></div>
+          </div>
+          <div class="memory-layer" data-layer="episodic">
+            <div class="memory-layer-header">
+              <span>Episodic</span>
+              <button class="btn-sm" data-action="create" data-layer="episodic">+</button>
+            </div>
+            <div class="memory-file-list" id="mem-files-episodic"></div>
+          </div>
+        </div>
+        <div class="memory-editor">
+          <div class="memory-editor-header" id="mem-editor-header">
+            <span id="mem-editor-title">Select a file to view</span>
+            <div id="mem-editor-actions" style="display:none">
+              <button class="btn btn-primary btn-sm" id="mem-save">Save</button>
+              <button class="btn btn-sm mem-delete" id="mem-delete">Delete</button>
+            </div>
+          </div>
+          <textarea id="mem-editor-content" class="memory-textarea" placeholder="Select a file from the left panel..."></textarea>
+        </div>
+        <div class="memory-context">
+          <div class="memory-context-header">
+            <span>Context Snapshot</span>
+            <span class="badge badge-blue" id="mem-version">v0</span>
+          </div>
+          <div class="memory-context-body" id="mem-context-body">
+            <div class="loading">Waiting for context update...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Health Page -->
-    <section class="page active" id="page-health">
+    <section class="page" id="page-health">
       <div class="page-header">
         <h2>Health</h2>
         <p>System status and resource overview</p>

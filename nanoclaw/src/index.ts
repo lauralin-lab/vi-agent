@@ -1,4 +1,6 @@
 import express from 'express';
+import { createServer as createHttpsServer } from 'node:https';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { connectRedis, disconnectRedis } from './redis-client.js';
@@ -61,9 +63,7 @@ async function startSingleUser(): Promise<void> {
     });
   });
   mountDashboard(app);
-  app.listen(config.healthPort, () => {
-    console.log(`[nanoclaw] health endpoint on :${config.healthPort}`);
-  });
+  listenWithHttps(app);
 
   console.log('[nanoclaw] single-user mode ready');
 }
@@ -104,9 +104,7 @@ async function startPoolMode(): Promise<void> {
     }
   });
   mountDashboard(app);
-  app.listen(config.healthPort, () => {
-    console.log(`[nanoclaw] health endpoint on :${config.healthPort}`);
-  });
+  listenWithHttps(app);
 
   console.log('[nanoclaw] pool mode ready');
 }
@@ -124,6 +122,42 @@ function mountDashboard(app: express.Express): void {
   app.use(createDashboardRouter());
   app.use(express.static(publicDir));
   console.log('[nanoclaw] dashboard enabled at /');
+}
+
+// ---------------------------------------------------------------------------
+// HTTPS + HTTP listener
+// ---------------------------------------------------------------------------
+
+function listenWithHttps(app: express.Express): void {
+  // Always start HTTP
+  app.listen(config.healthPort, () => {
+    console.log(`[nanoclaw] HTTP on :${config.healthPort}`);
+  });
+
+  // Start HTTPS if SSL certs are available
+  const sslDir = process.env.SSL_DIR || '/etc/nginx/ssl';
+  const certPath = join(sslDir, 'cert.pem');
+  const keyPath = join(sslDir, 'key.pem');
+
+  if (existsSync(certPath) && existsSync(keyPath)) {
+    try {
+      const httpsServer = createHttpsServer(
+        {
+          cert: readFileSync(certPath),
+          key: readFileSync(keyPath),
+        },
+        app,
+      );
+      const httpsPort = config.healthPort + 1; // 3101 inside container
+      httpsServer.listen(httpsPort, () => {
+        console.log(`[nanoclaw] HTTPS on :${httpsPort}`);
+      });
+    } catch (err) {
+      console.warn('[nanoclaw] Failed to start HTTPS:', err);
+    }
+  } else {
+    console.log('[nanoclaw] No SSL certs found, HTTPS disabled');
+  }
 }
 
 // ---------------------------------------------------------------------------

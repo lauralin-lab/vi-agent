@@ -136,6 +136,7 @@ services:
     restart: unless-stopped
     ports:
       - "__NANOCLAW_PORT__:3100"
+      - "__NANOCLAW_HTTPS_PORT__:3101"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -145,8 +146,10 @@ services:
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
       - DASHBOARD=true
+      - SSL_DIR=/etc/nginx/ssl
     volumes:
       - nanoclaw_workspace:/workspace
+      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       redis:
         condition: service_healthy
