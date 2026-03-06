@@ -1,4 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  auth,
+  googleProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  signOut,
+} from '../services/firebase';
 import { api } from '../services/api';
 
 export function useAuth() {
@@ -6,62 +13,69 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Check for existing session on mount
   useEffect(() => {
-    const token = api.getToken();
-    if (token) {
-      api.getMe()
-        .then(userData => {
-          setUser(userData);
-          setLoading(false);
-        })
-        .catch(() => {
-          api.setToken(null);
-          setLoading(false);
-        });
-    } else {
-      // Defer to avoid synchronous setState in effect body
-      queueMicrotask(() => setLoading(false));
-    }
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser && firebaseUser.isAnonymous) {
+        await signOut(auth);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      if (firebaseUser) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const response = await fetch(`${api.baseUrl}/api/auth/firebase`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'id-token': idToken,
+              'package-name': api.packageName,
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setUser({
+              ...data,
+              firebaseUser,
+            });
+            api.setViUserId(data.vi_user_id);
+
+            reportWebDevice().catch(() => {});
+          } else {
+            console.error('API auth sync failed:', response.status);
+            setError('Failed to sync with server');
+          }
+        } catch (e) {
+          console.error('Failed to sync with API server:', e);
+          setError(e.message);
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const signup = useCallback(async (email, password, displayName) => {
+  const loginWithGoogle = useCallback(async () => {
     setError(null);
     try {
-      const data = await api.signup(email, password, displayName);
-      setUser({
-        user_id: data.user_id,
-        vi_user_id: data.vi_user_id,
-        email: data.email,
-        display_name: data.display_name,
-      });
-      return data;
-    } catch (err) {
-      setError(err.message);
-      throw err;
+      await signInWithPopup(auth, googleProvider);
+    } catch (e) {
+      setError(e.message);
     }
   }, []);
 
-  const login = useCallback(async (email, password) => {
-    setError(null);
+  const logout = useCallback(async () => {
     try {
-      const data = await api.login(email, password);
-      setUser({
-        user_id: data.user_id,
-        vi_user_id: data.vi_user_id,
-        email: data.email,
-        display_name: data.display_name,
-      });
-      return data;
-    } catch (err) {
-      setError(err.message);
-      throw err;
+      await signOut(auth);
+    } catch (e) {
+      console.error('Sign out failed:', e);
     }
-  }, []);
-
-  const logout = useCallback(() => {
-    api.logout();
     setUser(null);
+    api.setViUserId(null);
   }, []);
 
   return {
@@ -69,8 +83,19 @@ export function useAuth() {
     loading,
     error,
     isAuthenticated: !!user,
-    signup,
-    login,
+    loginWithGoogle,
     logout,
   };
+}
+
+async function reportWebDevice() {
+  const deviceId = api.getDeviceId();
+  await api.reportDevice({
+    device_id: deviceId,
+    device_token: null,
+    store: 'web',
+    version: import.meta.env.VITE_APP_VERSION || '1.0.0',
+    timezone: new Date().getTimezoneOffset() * -1,
+    user_agent: navigator.userAgent,
+  });
 }

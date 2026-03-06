@@ -4,13 +4,12 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
-from passlib.hash import bcrypt
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..deps import get_current_user, get_db
+from ..deps import get_db, get_firebase_user
 from ..models import User
 
 from ..limiter import limiter
@@ -62,7 +61,7 @@ async def _dispatch_agent(room_name: str) -> None:
 @limiter.limit("10/minute")
 async def get_livekit_token(
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     room_name = f"vi-room-{user.vi_user_id}"
@@ -122,7 +121,6 @@ async def get_anonymous_livekit_token(
     if not user:
         user = User(
             email=f"{device_id}@anonymous.vi",
-            password_hash=bcrypt.hash("!anonymous-no-login-" + str(uuid.uuid4())),
             vi_user_id=vi_user_id,
             display_name="Anonymous",
             is_active=True,

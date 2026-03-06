@@ -24,7 +24,6 @@ def _make_user(vi_user_id: str = "vi-test0000000001") -> User:
     u = User()
     u.id = str(uuid.uuid4())
     u.email = f"{vi_user_id}@test.com"
-    u.password_hash = "fakehash"
     u.vi_user_id = vi_user_id
     return u
 

@@ -1,17 +1,16 @@
 import { getRedis } from '../redis-client.js';
 import { channels, type ActionEvent } from './types.js';
-import { config } from '../config.js';
 
-/** In-memory buffer of recent actions for the context compiler */
-let recentActions: ActionEvent[] = [];
+/** In-memory buffer of recent actions per user */
+const recentActionsMap = new Map<string, ActionEvent[]>();
 
-/** Track last-read stream ID to avoid processing duplicates */
-let lastReadId = '0-0';
+/** Track last-read stream ID per user */
+const lastReadIds = new Map<string, string>();
 
-/** Get recent actions and clear buffer */
-export function consumeRecentActions(): ActionEvent[] {
-  const actions = recentActions;
-  recentActions = [];
+/** Get recent actions for a user and clear buffer */
+export function consumeRecentActions(userId: string): ActionEvent[] {
+  const actions = recentActionsMap.get(userId) || [];
+  recentActionsMap.delete(userId);
   return actions;
 }
 
@@ -20,9 +19,10 @@ export function consumeRecentActions(): ActionEvent[] {
  * Called periodically by the context compiler loop.
  * Uses lastReadId to only read entries not yet processed.
  */
-export async function pollActions(): Promise<ActionEvent[]> {
+export async function pollActions(userId: string): Promise<ActionEvent[]> {
   const redis = getRedis();
-  const streamKey = channels.actions(config.userId);
+  const streamKey = channels.actions(userId);
+  const lastReadId = lastReadIds.get(userId) || '0-0';
 
   try {
     // Read up to 50 new entries since lastReadId
@@ -43,15 +43,15 @@ export async function pollActions(): Promise<ActionEvent[]> {
           }
         }
       }
-      lastReadId = id;
+      lastReadIds.set(userId, id);
     }
 
     if (actions.length > 0) {
       for (const a of actions) {
-        console.log(`[redis][nanoclaw] Action received: ${a.type}: ${String(a.data?.text || a.data?.page || '').substring(0, 80)}`);
+        console.log(`[redis][nanoclaw] Action received: user=${userId}, ${a.type}: ${String(a.data?.text || a.data?.page || '').substring(0, 80)}`);
       }
     }
-    recentActions = actions;
+    recentActionsMap.set(userId, actions);
     return actions;
   } catch (err) {
     console.error('[redis][nanoclaw] Failed to poll actions:', err);

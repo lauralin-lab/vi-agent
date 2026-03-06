@@ -114,7 +114,7 @@ services:
       args:
         - VITE_API_URL=
         - VITE_LIVEKIT_URL=
-        - VITE_DEFAULT_USER_ID=${NANOCLAW_USER_ID:-dev-user}
+        # VITE_DEFAULT_USER_ID removed — userId comes from Firebase auth
     restart: unless-stopped
     ports:
       - "__FRONTEND_PORT__:80"
@@ -149,7 +149,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - API_SERVER_URL=http://api-server:8000
-      - USER_ID=${NANOCLAW_USER_ID:-dev-user}
+      # USER_ID no longer needed — NanoClaw discovers active users dynamically
       - USER_DATA_DIR=/workspace
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}

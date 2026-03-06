@@ -7,23 +7,24 @@ import { getLatestFrame } from '../channels/frames-consumer.js';
 import { predictIntentions, updateSceneHash } from './intention-predictor.js';
 import { consumeRecentActions, pollActions } from '../channels/actions-consumer.js';
 import { getAllManifests } from '../skills/skill-loader.js';
+import { getActiveUserIds } from '../channels/active-users.js';
 import { config } from '../config.js';
 
-let memoryVersion = 0;
+const memoryVersions = new Map<string, number>();
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Start the 30-second context compilation loop.
  * Reads user memory, activity summary, latest frame, and compiles
- * a <=2000 char context snapshot for all consumers.
+ * a <=2000 char context snapshot for all active users.
  */
 export async function startContextCompiler(): Promise<void> {
   console.log(`[redis][nanoclaw] starting (interval: ${config.contextIntervalMs}ms)`);
 
   const tick = async () => {
     try {
-      await compileAndPublish();
+      await compileForActiveUsers();
     } catch (err) {
       console.error('[redis][nanoclaw] tick error:', err);
     }
@@ -34,9 +35,24 @@ export async function startContextCompiler(): Promise<void> {
   setInterval(tick, config.contextIntervalMs);
 }
 
-async function compileAndPublish(): Promise<void> {
+async function compileForActiveUsers(): Promise<void> {
+  // Get all active users; fall back to config.userId if none tracked yet
+  let userIds = getActiveUserIds();
+  if (userIds.length === 0) {
+    userIds = [config.userId];
+  }
+
+  for (const uid of userIds) {
+    try {
+      await compileAndPublish(uid);
+    } catch (err) {
+      console.error(`[redis][nanoclaw] compile error for user ${uid}:`, err);
+    }
+  }
+}
+
+async function compileAndPublish(uid: string): Promise<void> {
   const redis = getRedis();
-  const uid = config.userId;
 
   // 1. Read identity memory (all files)
   const identity = await readMemoryDir(join(config.userDataDir, 'memory', 'identity'));
@@ -54,8 +70,8 @@ async function compileAndPublish(): Promise<void> {
   const summaryRaw = await redis.get(channels.summary(uid));
   const summary: ActivitySummary | null = summaryRaw ? JSON.parse(summaryRaw) : null;
 
-  // 5. Get latest keyframe
-  const frame = getLatestFrame();
+  // 5. Get latest keyframe for this user
+  const frame = getLatestFrame(uid);
 
   // 6. Read active session
   const session = await readFileOrNull(join(config.userDataDir, 'sessions', 'active', 'current.json'));
@@ -96,12 +112,13 @@ async function compileAndPublish(): Promise<void> {
   parts.push('[Hints]\nAsk about what the user sees, suggest relevant skills, offer proactive help based on context.');
 
   const snapshot = truncate(parts.join('\n\n'), 2000);
-  memoryVersion++;
+  const version = (memoryVersions.get(uid) ?? 0) + 1;
+  memoryVersions.set(uid, version);
 
   // 8. Poll actions from Redis Stream, then consume
-  await pollActions();
+  await pollActions(uid);
   const sceneChanged = frame ? updateSceneHash(frame.sceneHash) : false;
-  const recentActions = consumeRecentActions();
+  const recentActions = consumeRecentActions(uid);
   const hasNewActivity = sceneChanged || recentActions.length > 0;
   const manifests = await getAllManifests();
   // Pass null for snapshot to signal "reuse cached" when no new activity
@@ -116,7 +133,7 @@ async function compileAndPublish(): Promise<void> {
     uid,
     snapshot,
     char_count: snapshot.length,
-    memory_version: memoryVersion,
+    memory_version: version,
     session_active: summary?.session_active ?? false,
     latest_frame_url: frame?.frameUrl,
     predicted_intentions: intentions,
@@ -132,7 +149,7 @@ async function compileAndPublish(): Promise<void> {
     );
   }
 
-  console.log(`[redis][nanoclaw] Context published (${snapshot.length} chars, ${intentions.length} intentions)`);
+  console.log(`[redis][nanoclaw] Context published for ${uid} (${snapshot.length} chars, ${intentions.length} intentions)`);
 }
 
 async function readMemoryDir(dirPath: string): Promise<string | null> {

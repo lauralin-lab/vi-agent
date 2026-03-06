@@ -34,16 +34,89 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
+
+    # Firebase Identity (replaces email/password)
+    firebase_uid = Column(String(128), unique=True, nullable=True, index=True)
+    package_name = Column(String(128), nullable=True, index=True)
+    sign_in_provider = Column(String(50))
+    firebase_info = Column(JSONB, default=dict)
+
+    # VI Agent Identity
     vi_user_id = Column(String(64), unique=True, nullable=False, index=True)
+
+    # Profile
     display_name = Column(String(100))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    last_login = Column(DateTime)
+    email = Column(String(255), unique=True, nullable=True, index=True)
+    photo_url = Column(String(500))
+    phone_number = Column(String(20))
+    language = Column(String(10), default="en")
+
+    # App Info
+    app_version = Column(String(20))
+
+    # Status
     is_active = Column(Boolean, default=True)
+    role = Column(String(20), default="user")
+
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, onupdate=lambda: datetime.now(timezone.utc))
+    last_login = Column(DateTime)
 
     sessions = relationship("Session", back_populates="user")
     memories = relationship("AgentMemory", back_populates="user")
+    devices = relationship("Device", back_populates="user")
+
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Device Identity
+    device_id = Column(String(128), nullable=False)
+    package_name = Column(String(128), nullable=False)
+
+    # Push Token
+    device_token = Column(String(512))
+
+    # Hardware IDs
+    gaid = Column(String(128))
+    idfa = Column(String(128))
+    idfv = Column(String(128))
+    adjust_id = Column(String(128))
+    app_instance_id = Column(String(128))
+    appsflyer_id = Column(String(128))
+
+    # App & Environment
+    version = Column(String(20))
+    store = Column(String(20))
+    timezone = Column(Integer)
+    ip = Column(String(45))
+    user_agent = Column(String(500))
+
+    # Status
+    token_valid = Column(Boolean, default=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    user = relationship("User", back_populates="devices")
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "package_name", name="uq_device_package"),
+    )
 
 
 class Session(Base):

@@ -40,8 +40,12 @@ async function startSingleUser(): Promise<void> {
   // 1. Connect to Redis
   await connectRedis();
 
-  // 2. Sync user files from remote storage
-  await syncFromCloud(config.userId);
+  // 2. Sync user files from remote storage (skip if no real userId configured)
+  if (process.env.USER_ID) {
+    await syncFromCloud(config.userId);
+  } else {
+    console.log('[nanoclaw] no USER_ID configured — skipping startup sync (will sync per-task)');
+  }
 
   // 3. Start channel subscriptions
   await startExecHandler();

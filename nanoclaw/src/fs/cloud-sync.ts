@@ -11,9 +11,9 @@ import { join, dirname } from 'node:path';
 import { config } from '../config.js';
 
 /** Build API URL with vi_user_id query param for internal auth */
-function apiUrl(path: string): string {
+function apiUrl(path: string, userId: string): string {
   const sep = path.includes('?') ? '&' : '?';
-  return `${config.apiServerUrl}${path}${sep}vi_user_id=${encodeURIComponent(config.userId)}`;
+  return `${config.apiServerUrl}${path}${sep}vi_user_id=${encodeURIComponent(userId)}`;
 }
 
 interface SyncState {
@@ -53,7 +53,7 @@ export async function syncFromCloud(uid: string): Promise<void> {
   try {
     // List remote files
     const listRes = await fetch(
-      apiUrl('/api/fs/?prefix='),
+      apiUrl('/api/fs/?prefix=', uid),
       { headers: apiHeaders() },
     );
     if (!listRes.ok) {
@@ -73,7 +73,7 @@ export async function syncFromCloud(uid: string): Promise<void> {
 
       try {
         const fileRes = await fetch(
-          apiUrl(`/api/fs/${entry.name}`),
+          apiUrl(`/api/fs/${entry.name}`, uid),
           { headers: apiHeaders() },
         );
         if (!fileRes.ok) continue;
@@ -105,10 +105,10 @@ export async function syncFromCloud(uid: string): Promise<void> {
 /**
  * Sync changed local files back to API Server (GCS proxy) after task completion.
  */
-export async function syncToCloud(files: string[]): Promise<void> {
+export async function syncToCloud(files: string[], userId: string): Promise<void> {
   if (files.length === 0) return;
 
-  console.log(`[cloud-sync] uploading ${files.length} files`);
+  console.log(`[cloud-sync] uploading ${files.length} files for user ${userId}`);
   const state = await loadSyncState();
   let uploaded = 0;
 
@@ -122,7 +122,7 @@ export async function syncToCloud(files: string[]): Promise<void> {
       if (state.files[relativePath]?.hash === hash) continue;
 
       const res = await fetch(
-        apiUrl(`/api/fs/${relativePath}`),
+        apiUrl(`/api/fs/${relativePath}`, userId),
         {
           method: 'PUT',
           headers: {

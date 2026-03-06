@@ -280,37 +280,32 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     return newRoom;
   }, [onRoomSetup, updateAgentIdentity, ensureAudioContext, publishFallbackTracks, roomRef]);
 
-  // Anonymous connection (primary mode) — uses token cache for fast reconnects
-  const connectAnonymous = useCallback(async () => {
+  // Connect to LiveKit — requires Firebase auth (user must be logged in)
+  const connect = useCallback(async () => {
     try {
       setConnectionState('connecting');
+
+      const { auth } = await import('../services/firebase.js');
+      if (!auth.currentUser) {
+        console.warn('[LiveKit] No authenticated user — cannot connect');
+        setConnectionState('disconnected');
+        return;
+      }
 
       let tokenData;
       if (_tokenCache && (Date.now() - _tokenCache._ts) < TOKEN_CACHE_TTL) {
         tokenData = _tokenCache;
       } else {
-        tokenData = await api.getAnonymousLiveKitToken();
+        tokenData = await api.getLiveKitToken();
         _tokenCache = { ...tokenData, _ts: Date.now() };
       }
 
       const { token, livekit_url, session_id } = tokenData;
-      setSessionId(session_id);
-      await connectToRoom(token, livekit_url);
-    } catch (err) {
-      console.error('Failed to connect anonymously to LiveKit:', err);
-      _tokenCache = null; // Invalidate cache on error
-      setConnectionState('error');
-    }
-  }, [connectToRoom]);
-
-  // Authenticated connection
-  const connect = useCallback(async () => {
-    try {
-      setConnectionState('connecting');
-      const { token, livekit_url } = await api.getLiveKitToken();
+      if (session_id) setSessionId(session_id);
       await connectToRoom(token, livekit_url);
     } catch (err) {
       console.error('Failed to connect to LiveKit:', err);
+      _tokenCache = null;
       setConnectionState('error');
     }
   }, [connectToRoom]);
@@ -478,7 +473,6 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     sessionId,
     agentIdentity,
     connect,
-    connectAnonymous,
     disconnect,
     toggleMic,
     setCameraEnabled,

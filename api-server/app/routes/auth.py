@@ -1,107 +1,150 @@
+"""Firebase Authentication routes.
+
+POST /api/auth/firebase — create or login user via Firebase ID Token
+GET  /api/auth/me       — get current user info
+"""
+
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_current_user, get_db
+from ..deps import get_db, get_firebase_user
 from ..models import User
-from ..services.token_service import create_access_token
-from ..services.user_center import generate_vi_user_id, hash_password, verify_password
+from ..services.user_center import generate_vi_user_id
 
 from ..limiter import limiter
 
 router = APIRouter()
 
 
-class SignupRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
-    display_name: str | None = Field(None, max_length=100)
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class AuthResponse(BaseModel):
-    token: str
+class FirebaseAuthResponse(BaseModel):
     user_id: str
     vi_user_id: str
-    email: str
+    firebase_uid: str
     display_name: str | None
+    email: str | None
+    photo_url: str | None
+    sign_in_provider: str | None
+    language: str | None
+    is_new_user: bool
 
 
 class UserResponse(BaseModel):
     user_id: str
     vi_user_id: str
-    email: str
+    firebase_uid: str | None
     display_name: str | None
-    created_at: str
+    email: str | None
+    photo_url: str | None
+    sign_in_provider: str | None
+    language: str | None
+    created_at: str | None
 
 
-@router.post("/signup", response_model=AuthResponse)
-@limiter.limit("5/minute")
-async def signup(request: Request, req: SignupRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.email == req.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
+@router.post("/firebase", response_model=FirebaseAuthResponse)
+@limiter.limit("30/minute")
+async def create_or_login_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or get a Firebase user.
 
-    user = User(
-        email=req.email,
-        password_hash=hash_password(req.password),
-        vi_user_id=generate_vi_user_id(),
-        display_name=req.display_name,
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    Called by Flutter App / React Web after Firebase client-side login.
 
-    token = create_access_token({"sub": str(user.id)})
-    return AuthResponse(
-        token=token,
-        user_id=str(user.id),
-        vi_user_id=user.vi_user_id,
-        email=user.email,
-        display_name=user.display_name,
-    )
+    Required Headers:
+        id-token: Firebase ID Token
+        package-name: App bundle identifier
+        app-version: App version (optional)
+        accept-language: User language preference (optional)
+    """
+    id_token = request.headers.get("id-token")
+    package_name = request.headers.get("package-name")
+    app_version = request.headers.get("app-version", "")
+    language = request.headers.get("accept-language", "en")[:10]
 
+    if not id_token or not package_name:
+        raise HTTPException(status_code=401, detail="Missing id-token or package-name")
 
-@router.post("/login", response_model=AuthResponse)
-@limiter.limit("10/minute")
-async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == req.email))
+    firebase_mgr = getattr(request.app.state, "firebase_manager", None)
+    if firebase_mgr is None:
+        raise HTTPException(status_code=503, detail="Firebase not initialized")
+
+    try:
+        decoded = await firebase_mgr.verify_id_token(package_name, id_token)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    firebase_uid = decoded["uid"]
+    sign_in_provider = decoded.get("firebase", {}).get("sign_in_provider", "unknown")
+
+    result = await db.execute(select(User).where(User.firebase_uid == firebase_uid))
     user = result.scalar_one_or_none()
-    if not user:
-        # Constant-time comparison even when user doesn't exist (prevent timing attacks)
-        verify_password(req.password, "$2b$12$IlRSiOsGkUquEGmB7mR6jexC4pK4sT7rNVk6V1v0eOg8TSOA2mmKK")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    if not verify_password(req.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    is_new_user = user is None
 
-    user.last_login = datetime.now(timezone.utc)
-    await db.commit()
+    if is_new_user:
+        # Get full user info from Firebase
+        firebase_user = await firebase_mgr.get_user(package_name, firebase_uid)
 
-    token = create_access_token({"sub": str(user.id)})
-    return AuthResponse(
-        token=token,
+        user = User(
+            firebase_uid=firebase_uid,
+            package_name=package_name,
+            sign_in_provider=sign_in_provider,
+            firebase_info={
+                "display_name": firebase_user.display_name,
+                "email": firebase_user.email,
+                "photo_url": firebase_user.photo_url,
+                "phone_number": firebase_user.phone_number,
+                "email_verified": firebase_user.email_verified,
+                "provider_data": [
+                    {"provider_id": p.provider_id, "uid": p.uid}
+                    for p in (firebase_user.provider_data or [])
+                ],
+            },
+            vi_user_id=generate_vi_user_id(),
+            display_name=firebase_user.display_name or "",
+            email=firebase_user.email,
+            photo_url=firebase_user.photo_url,
+            phone_number=firebase_user.phone_number,
+            language=language,
+            app_version=app_version,
+            last_login=datetime.now(timezone.utc),
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    else:
+        # Update existing user
+        user.last_login = datetime.now(timezone.utc)
+        user.app_version = app_version or user.app_version
+        user.sign_in_provider = sign_in_provider
+        await db.commit()
+
+    return FirebaseAuthResponse(
         user_id=str(user.id),
         vi_user_id=user.vi_user_id,
-        email=user.email,
+        firebase_uid=user.firebase_uid,
         display_name=user.display_name,
+        email=user.email,
+        photo_url=user.photo_url,
+        sign_in_provider=user.sign_in_provider,
+        language=user.language,
+        is_new_user=is_new_user,
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(user: User = Depends(get_current_user)):
+async def me(user: User = Depends(get_firebase_user)):
     return UserResponse(
         user_id=str(user.id),
         vi_user_id=user.vi_user_id,
-        email=user.email,
+        firebase_uid=user.firebase_uid,
         display_name=user.display_name,
-        created_at=user.created_at.isoformat() if user.created_at else "",
+        email=user.email,
+        photo_url=user.photo_url,
+        sign_in_provider=user.sign_in_provider,
+        language=user.language,
+        created_at=user.created_at.isoformat() if user.created_at else None,
     )

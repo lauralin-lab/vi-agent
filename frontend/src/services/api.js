@@ -10,22 +10,9 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 class ApiClient {
   constructor() {
     this.baseUrl = API_URL;
-    this.token = sessionStorage.getItem('vi-token');
-    // Single-tenant override: if VITE_DEFAULT_USER_ID is set, always use it
-    // so the frontend publishes to the same Redis channels NanoClaw listens on.
-    const defaultUserId = import.meta.env.VITE_DEFAULT_USER_ID;
-    if (defaultUserId) {
-      this._viUserId = defaultUserId;
-      localStorage.setItem('vi-user-id', defaultUserId);
-    } else {
-      this._viUserId = localStorage.getItem('vi-user-id');
-      // Derive viUserId from deviceId if not yet set (matches backend formula)
-      if (!this._viUserId && !this.token) {
-        const deviceId = this.getDeviceId();
-        this._viUserId = `vi-${deviceId.slice(0, 16)}`;
-        localStorage.setItem('vi-user-id', this._viUserId);
-      }
-    }
+    this.packageName = import.meta.env.VITE_FIREBASE_PACKAGE_NAME || 'com.viapp.web';
+    // viUserId is set by useAuth after Firebase login (api.setViUserId)
+    this._viUserId = localStorage.getItem('vi-user-id') || null;
   }
 
   // --- Device ID management ---
@@ -53,46 +40,24 @@ class ApiClient {
     }
   }
 
-  // --- Standard headers builder ---
-
-  _headers() {
-    const headers = { 'Content-Type': 'application/json' };
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-    const deviceId = this.getDeviceId();
-    if (deviceId) {
-      headers['X-Device-Id'] = deviceId;
-    }
-    return headers;
-  }
-
-  // --- Auth token management ---
-
-  setToken(token) {
-    this.token = token;
-    if (token) {
-      sessionStorage.setItem('vi-token', token);
-    } else {
-      sessionStorage.removeItem('vi-token');
-    }
-  }
-
-  getToken() {
-    return this.token;
-  }
-
   async request(path, options = {}, { retries = 2, backoff = 500 } = {}) {
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    } else {
-      // For anonymous users, always include the X-Device-Id header
-      // so device-based auth endpoints can verify ownership.
+    // Firebase Auth: attach ID Token if user is signed in
+    try {
+      const { auth } = await import('./firebase.js');
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const idToken = await currentUser.getIdToken();
+        headers['id-token'] = idToken;
+        headers['package-name'] = this.packageName;
+      } else {
+        headers['X-Device-Id'] = this.getDeviceId();
+      }
+    } catch {
       headers['X-Device-Id'] = this.getDeviceId();
     }
 
@@ -109,7 +74,6 @@ class ApiClient {
         clearTimeout(timeout);
 
         if (response.status === 401) {
-          this.setToken(null);
           throw new Error('Unauthorized');
         }
 
@@ -142,25 +106,6 @@ class ApiClient {
     throw lastError;
   }
 
-  // Auth endpoints
-  async signup(email, password, displayName) {
-    const data = await this.request('/api/auth/signup', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, display_name: displayName }),
-    });
-    this.setToken(data.token);
-    return data;
-  }
-
-  async login(email, password) {
-    const data = await this.request('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    this.setToken(data.token);
-    return data;
-  }
-
   async getMe() {
     return this.request('/api/auth/me');
   }
@@ -182,23 +127,12 @@ class ApiClient {
 
   // Session endpoints
   async getSessions() {
-    if (this.token) {
-      const data = await this.request('/api/users/sessions');
-      return data.sessions || [];
-    }
-    return this.getSessionsByDevice();
+    const data = await this.request('/api/users/sessions');
+    return data.sessions || [];
   }
 
   async deleteSession(sessionId) {
-    if (this.token) {
-      return this.request(`/api/users/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
-    }
-    const viUserId = this.getViUserId();
-    if (!viUserId) throw new Error('No user identity');
-    return this.request(
-      `/api/users/sessions/by-device/${encodeURIComponent(sessionId)}?vi_user_id=${encodeURIComponent(viUserId)}`,
-      { method: 'DELETE' },
-    );
+    return this.request(`/api/users/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
   }
 
   async getSessionsByDevice(viUserId) {
@@ -212,55 +146,26 @@ class ApiClient {
 
   async listMemory(layer = null) {
     const params = new URLSearchParams();
-    if (this.token) {
-      if (layer) params.set('layer', layer);
-      const qs = params.toString();
-      return this.request(`/api/users/memories${qs ? '?' + qs : ''}`);
-    }
-    const viUserId = this.getViUserId();
-    if (!viUserId) return [];
-    params.set('vi_user_id', viUserId);
     if (layer) params.set('layer', layer);
-    return this.request(`/api/users/memory/by-device?${params.toString()}`);
+    const qs = params.toString();
+    return this.request(`/api/users/memories${qs ? '?' + qs : ''}`);
   }
 
   async getMemory(filenameOrId) {
-    if (this.token) {
-      // V3: try UUID-based endpoint first, fallback to filename
-      return this.request(`/api/users/memory/${encodeURIComponent(filenameOrId)}`);
-    }
-    const viUserId = this.getViUserId();
-    if (!viUserId) throw new Error('No user identity');
-    return this.request(
-      `/api/users/memory/by-device/${encodeURIComponent(filenameOrId)}?vi_user_id=${encodeURIComponent(viUserId)}`,
-    );
+    return this.request(`/api/users/memory/${encodeURIComponent(filenameOrId)}`);
   }
 
   async upsertMemory(filename, content, layer = null) {
     const body = { content };
     if (layer) body.layer = layer;
-    const opts = { method: 'PUT', body: JSON.stringify(body) };
-    if (this.token) {
-      return this.request(`/api/users/memory/${encodeURIComponent(filename)}`, opts);
-    }
-    const viUserId = this.getViUserId();
-    if (!viUserId) throw new Error('No user identity');
-    return this.request(
-      `/api/users/memory/by-device/${encodeURIComponent(filename)}?vi_user_id=${encodeURIComponent(viUserId)}`,
-      opts,
-    );
+    return this.request(`/api/users/memory/${encodeURIComponent(filename)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
   }
 
   async deleteMemory(filename) {
-    if (this.token) {
-      return this.request(`/api/users/memory/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-    }
-    const viUserId = this.getViUserId();
-    if (!viUserId) throw new Error('No user identity');
-    return this.request(
-      `/api/users/memory/by-device/${encodeURIComponent(filename)}?vi_user_id=${encodeURIComponent(viUserId)}`,
-      { method: 'DELETE' },
-    );
+    return this.request(`/api/users/memory/${encodeURIComponent(filename)}`, { method: 'DELETE' });
   }
 
   // S3 Upload endpoints
@@ -369,6 +274,14 @@ class ApiClient {
     });
   }
 
+  // Device endpoints
+  async reportDevice(deviceInfo) {
+    return this.request('/api/devices', {
+      method: 'POST',
+      body: JSON.stringify(deviceInfo),
+    });
+  }
+
   // OAuth token endpoints
 
   async getTokenStatus(provider) {
@@ -383,8 +296,13 @@ class ApiClient {
     return this.request(`/api/tokens/${encodeURIComponent(provider)}`, { method: 'DELETE' });
   }
 
-  logout() {
-    this.setToken(null);
+  async logout() {
+    try {
+      const { auth, signOut } = await import('./firebase.js');
+      await signOut(auth);
+    } catch {
+      // Firebase not initialized or already signed out
+    }
   }
 }
 

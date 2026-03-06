@@ -192,7 +192,17 @@ cmd_deploy() {
       frontend)
         ssh_cmd "
           cd '$WORK_DIR/src/frontend'
-          docker build --build-arg VITE_API_URL= -t collov/vi-agent-frontend:$IMAGE_TAG .
+          set -a; source '$WORK_DIR/.env' 2>/dev/null; set +a
+          docker build \
+            --build-arg VITE_API_URL= \
+            --build-arg VITE_FIREBASE_API_KEY=\${VITE_FIREBASE_API_KEY:-} \
+            --build-arg VITE_FIREBASE_AUTH_DOMAIN=\${VITE_FIREBASE_AUTH_DOMAIN:-} \
+            --build-arg VITE_FIREBASE_PROJECT_ID=\${VITE_FIREBASE_PROJECT_ID:-} \
+            --build-arg VITE_FIREBASE_STORAGE_BUCKET=\${VITE_FIREBASE_STORAGE_BUCKET:-} \
+            --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID=\${VITE_FIREBASE_MESSAGING_SENDER_ID:-} \
+            --build-arg VITE_FIREBASE_APP_ID=\${VITE_FIREBASE_APP_ID:-} \
+            --build-arg VITE_FIREBASE_PACKAGE_NAME=\${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web} \
+            -t collov/vi-agent-frontend:$IMAGE_TAG .
         " 2>&1
         ;;
       nanoclaw)

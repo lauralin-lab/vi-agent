@@ -16,6 +16,7 @@ from .config import settings
 from .limiter import limiter
 from .models import Session, engine, init_db
 from .routes.auth import router as auth_router
+from .routes.devices import router as devices_router
 from .routes.events import router as events_router
 from .routes.fs import router as fs_router
 from .routes.internal import router as internal_router
@@ -50,9 +51,47 @@ async def cleanup_stale_sessions():
             logger.error("Stale session cleanup failed", exc_info=True)
 
 
+def parse_firebase_projects(config_str: str) -> list[dict]:
+    """Parse FIREBASE_PROJECTS env var.
+
+    Format: "package:project_id:sa_path,package2:project_id2:sa_path2"
+    """
+    projects = []
+    for entry in config_str.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts = entry.split(":")
+        if len(parts) < 2:
+            continue
+        projects.append({
+            "package_name": parts[0],
+            "project_id": parts[1],
+            "service_account_path": parts[2] if len(parts) > 2 else None,
+        })
+    return projects
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Firebase Manager
+    if settings.FIREBASE_ENABLED:
+        from .services.firebase_manager import FirebaseManager
+
+        firebase_mgr = FirebaseManager()
+        for project_config in parse_firebase_projects(settings.FIREBASE_PROJECTS):
+            firebase_mgr.register_project(
+                package_name=project_config["package_name"],
+                project_id=project_config["project_id"],
+                service_account_path=project_config.get("service_account_path"),
+            )
+        app.state.firebase_manager = firebase_mgr
+        logger.info("Firebase initialized with %d project(s)", firebase_mgr.project_count)
+    else:
+        app.state.firebase_manager = None
+        logger.warning("Firebase disabled — auth endpoints will use fallback mode")
 
     # Connect to Redis (graceful degradation if unavailable)
     try:
@@ -104,6 +143,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(devices_router, prefix="/api/devices", tags=["devices"])
 app.include_router(internal_router, prefix="/api/internal", tags=["internal"])
 app.include_router(livekit_router, prefix="/api/livekit", tags=["livekit"])
 app.include_router(upload_router, prefix="/api/upload", tags=["upload"])

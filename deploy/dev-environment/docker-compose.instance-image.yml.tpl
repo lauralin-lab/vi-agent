@@ -78,6 +78,8 @@ services:
       - API_BASE_URL=http://${SERVER_IP}:__API_PORT__
       - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,https://${SERVER_IP}:__FRONTEND_HTTPS_PORT__,http://localhost:__FRONTEND_PORT__
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
       - VI_AGENT_NAME=vi-__DEV_NAME__
       - IMAGE_TAG=__IMAGE_TAG__
       - USER_DATA_DIR=/data/users
@@ -141,7 +143,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - API_SERVER_URL=http://api-server:8000
-      - USER_ID=${NANOCLAW_USER_ID:-dev-user}
+      # USER_ID no longer needed — NanoClaw discovers active users dynamically
       - USER_DATA_DIR=/workspace
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}

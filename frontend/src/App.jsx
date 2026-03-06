@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import HistoryView from './components/HistoryView';
 import DeviceFrame from './components/DeviceFrame';
+import LoginPage from './components/LoginPage';
 
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
@@ -158,7 +159,8 @@ function App() {
   }, [livekit.memoryUpdatedAt]);
 
   // ── SSE real-time events (global — active on ALL pages when LiveKit is disconnected) ──
-  const viUserId = api.getViUserId();
+  // Only connect SSE after Firebase auth completes (avoid 401 with stale/invalid userId)
+  const viUserId = auth.isAuthenticated ? api.getViUserId() : null;
   const livekitConnected = livekit.connectionState === 'connected';
   const { events: sseEvents, sseConnected } = useRealtimeEvents(viUserId, livekitConnected, nanoClaw.processEvent);
 
@@ -190,13 +192,13 @@ function App() {
   const SESSION_CACHE_MAX = 10;
   const sessionCacheRef = useRef(new Map());
 
-  // --- Auto-connect LiveKit on mount ---
+  // --- Auto-connect LiveKit when authenticated ---
   useEffect(() => {
-    if (livekit.connectionState === 'disconnected') {
-      livekit.connectAnonymous();
+    if (auth.isAuthenticated && livekit.connectionState === 'disconnected') {
+      livekit.connect();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentional: only on mount
+  }, [auth.isAuthenticated]);
 
   // --- Camera enable/disable based on view ---
   // V5: Keep camera enabled during live-session for PiP
@@ -329,6 +331,30 @@ function App() {
   const handleProfileTap = () => {
     setViewState('memory');
   };
+
+  // --- Auth gate: show login page if not authenticated ---
+  if (auth.loading) {
+    return (
+      <div className="flex flex-col items-center h-full overflow-hidden bg-black">
+        <DeviceFrame>
+          <div className="w-full h-full bg-black" />
+        </DeviceFrame>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center h-full overflow-hidden bg-black">
+        <DeviceFrame>
+          <LoginPage
+            onLoginWithGoogle={auth.loginWithGoogle}
+            error={auth.error}
+          />
+        </DeviceFrame>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center h-full overflow-hidden bg-black">
