@@ -257,10 +257,6 @@ EOF
   echo "Starting services..."
   docker compose up -d
 
-  # --- Database migrations ---
-  echo "Running database migrations..."
-  docker compose exec -T api-server alembic upgrade head
-
   # --- Health check ---
   echo "Waiting for API server..."
   for i in $(seq 1 30); do
@@ -275,6 +271,13 @@ EOF
     fi
     sleep 2
   done
+
+  # --- Database migrations (after health check to ensure DB is ready) ---
+  echo "Running database migrations..."
+  docker compose exec -T api-server alembic upgrade head || {
+    echo "WARNING: Migration failed — check api-server logs"
+    docker compose logs --tail=10 api-server 2>/dev/null || true
+  }
 
   # --- Run tests if available ---
   if [ -f "$TEMPLATE_DIR/test-instance.sh" ]; then
