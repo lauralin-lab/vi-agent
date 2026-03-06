@@ -53,6 +53,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Prepare build context
+        run: |
+          if [ "${{ matrix.service }}" = "api-server" ]; then
+            cp -r nanoclaw/data/shared/skills api-server/shared_skills
+          fi
+
       - uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.service }}

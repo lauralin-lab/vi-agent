@@ -11,6 +11,8 @@ COPY . .
 
 EXPOSE 8000
 
+COPY shared_skills/ /data/shared/skills/
+
 RUN useradd -m -r appuser \
     && mkdir -p /data/users \
     && chown -R appuser:appuser /data
