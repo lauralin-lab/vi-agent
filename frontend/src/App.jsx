@@ -7,6 +7,7 @@ import DeviceFrame from './components/DeviceFrame';
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
 import SettingsView from './components/SettingsView';
+import AllTasksView from './components/AllTasksView';
 
 import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
@@ -100,6 +101,7 @@ function App() {
     if (path === '/home' || path === '/history') return 'home';
     return 'camera';
   });
+  const [allTasksScrollDate, setAllTasksScrollDate] = useState(null);
   const [sessionData, setSessionData] = useState(null);
   const [liveResult, setLiveResult] = useState(null);
   const [capturedPhotos, setCapturedPhotos] = useState([]);
@@ -216,7 +218,7 @@ function App() {
 
   // D.3: Register navigation callback so agent can navigate user
   const handleAgentNavigate = useCallback((page) => {
-    const validPages = ['camera', 'history', 'home', 'live-session', 'memory'];
+    const validPages = ['camera', 'history', 'home', 'live-session', 'memory', 'all-tasks'];
     if (validPages.includes(page)) {
       setViewState(page);
     }
@@ -262,6 +264,11 @@ function App() {
 
   const handleOpenHistory = () => {
     setViewState('home');
+  };
+
+  const handleOpenAllTasks = (dateKey = null) => {
+    setAllTasksScrollDate(dateKey);
+    setViewState('all-tasks');
   };
 
   const handleSelectSession = (useCaseData) => {
@@ -361,6 +368,7 @@ function App() {
                 onSelectSession={handleSelectSession}
                 onProfileTap={handleProfileTap}
                 onClearSessionCache={handleClearSessionCache}
+                onOpenAllTasks={handleOpenAllTasks}
                 isAuthenticated={auth.isAuthenticated}
                 user={auth.user}
                 livekit={livekit}
@@ -378,6 +386,7 @@ function App() {
                 onSelectSession={handleSelectSession}
                 onProfileTap={handleProfileTap}
                 onClearSessionCache={handleClearSessionCache}
+                onOpenAllTasks={handleOpenAllTasks}
                 isAuthenticated={auth.isAuthenticated}
                 user={auth.user}
                 livekit={livekit}
@@ -385,6 +394,16 @@ function App() {
                 memoryBadge={badges.memory}
                 sseEvents={sseEvents}
                 sseConnected={sseConnected}
+              />
+            )}
+
+            {viewState === 'all-tasks' && (
+              <AllTasksView
+                key="all-tasks"
+                onBack={handleBackToHistory}
+                onSelectSession={handleSelectSession}
+                scrollToDateKey={allTasksScrollDate}
+                isAuthenticated={auth.isAuthenticated}
               />
             )}
 
