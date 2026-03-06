@@ -18,6 +18,7 @@ RUN useradd -m -r appuser \
     && chown -R appuser:appuser /data
 
 ENV USER_DATA_DIR=/data/users
+ENV SHARED_SKILLS_DIR=/data/shared/skills
 
 USER appuser
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

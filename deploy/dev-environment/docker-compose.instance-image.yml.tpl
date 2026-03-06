@@ -81,6 +81,7 @@ services:
       - VI_AGENT_NAME=vi-__DEV_NAME__
       - IMAGE_TAG=__IMAGE_TAG__
       - USER_DATA_DIR=/data/users
+      - SHARED_SKILLS_DIR=/data/shared/skills
     volumes:
       - api_user_data:/data/users
     depends_on:

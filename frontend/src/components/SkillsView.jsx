@@ -99,7 +99,9 @@ export default function SkillsView() {
 
   const loadSkills = useCallback(async () => {
     try {
-      const data = await api.request('/api/skills');
+      const viUserId = api.getViUserId();
+      const qs = viUserId ? `?vi_user_id=${encodeURIComponent(viUserId)}` : '';
+      const data = await api.request(`/api/skills${qs}`);
       setSkills(Array.isArray(data) ? data : (data?.skills || []));
     } catch (e) {
       console.error('Failed to load skills:', e);
@@ -117,11 +119,13 @@ export default function SkillsView() {
   const handleToggle = useCallback(async (skill) => {
     const slug = skill.slug;
     const isEnabled = skill.enabled !== false;
+    const viUserId = api.getViUserId();
+    const qs = viUserId ? `?vi_user_id=${encodeURIComponent(viUserId)}` : '';
     try {
       if (isEnabled) {
-        await api.request(`/api/skills/${encodeURIComponent(slug)}/disable`, { method: 'POST' });
+        await api.request(`/api/skills/${encodeURIComponent(slug)}/disable${qs}`, { method: 'POST' });
       } else {
-        await api.request(`/api/skills/${encodeURIComponent(slug)}/enable`, { method: 'POST' });
+        await api.request(`/api/skills/${encodeURIComponent(slug)}/enable${qs}`, { method: 'POST' });
       }
       // Optimistic update
       setSkills(prev =>
