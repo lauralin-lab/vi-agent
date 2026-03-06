@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import HistoryView from './components/HistoryView';
 import DeviceFrame from './components/DeviceFrame';
-import ActivePiP from './components/ActivePiP';
 
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
@@ -208,12 +207,7 @@ function App() {
     }
   }, [viewState, livekit.setCameraEnabled]);
 
-  // V5: Return to full camera from PiP
-  const handleReturnToCamera = useCallback(() => {
-    setViewState('camera');
-  }, []);
-
-  // D.1: Send page context to agent when view changes
+// D.1: Send page context to agent when view changes
   useEffect(() => {
     if (livekit.connectionState === 'connected' && livekit.sendPageContext) {
       livekit.sendPageContext(viewState);
@@ -403,17 +397,7 @@ function App() {
             )}
           </AnimatePresence>
 
-          {/* V5: Camera PiP overlay during session view */}
-          {viewState === 'live-session' && (
-            <ActivePiP
-              localVideoTrack={livekit.localVideoTrack}
-              onReturnToCamera={handleReturnToCamera}
-              onCapture={handleAddPhotoToSession}
-              visible={true}
-            />
-          )}
-
-          {/* Global toast notifications */}
+{/* Global toast notifications */}
           <NotificationManager toasts={toasts} onDismiss={dismissToast} />
         </div>
       </DeviceFrame>

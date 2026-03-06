@@ -210,7 +210,7 @@ export default function HistoryView({
                 const normalized = (sessions || []).map(s => ({
                     id: s.id,
                     prompt: s.prompt || s.title || s.intention || '',
-                    status: s.status === 'completed' ? 'complete'
+                    status: s.status === 'completed' || s.status === 'ended' ? 'complete'
                         : s.status === 'dispatched' ? 'pending'
                             : s.status === 'failed' ? 'error'
                                 : s.status || 'pending',
