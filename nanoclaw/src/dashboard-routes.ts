@@ -275,7 +275,7 @@ export function createDashboardRouter(): Router {
 
   // List files in a memory layer
   router.get('/api/dashboard/memory/:layer', async (req: Request, res: Response) => {
-    const { layer } = req.params;
+    const layer = req.params.layer as string;
     if (!validateLayer(layer)) {
       res.status(400).json({ error: 'Invalid layer. Must be: identity, semantic, or episodic' });
       return;
@@ -302,7 +302,8 @@ export function createDashboardRouter(): Router {
 
   // Read a memory file
   router.get('/api/dashboard/memory/:layer/:filename', async (req: Request, res: Response) => {
-    const { layer, filename } = req.params;
+    const layer = req.params.layer as string;
+    const filename = req.params.filename as string;
     if (!validateLayer(layer)) {
       res.status(400).json({ error: 'Invalid layer' });
       return;
@@ -323,7 +324,8 @@ export function createDashboardRouter(): Router {
 
   // Write/update a memory file
   router.put('/api/dashboard/memory/:layer/:filename', async (req: Request, res: Response) => {
-    const { layer, filename } = req.params;
+    const layer = req.params.layer as string;
+    const filename = req.params.filename as string;
     if (!validateLayer(layer)) {
       res.status(400).json({ error: 'Invalid layer' });
       return;
@@ -352,7 +354,8 @@ export function createDashboardRouter(): Router {
 
   // Delete a memory file
   router.delete('/api/dashboard/memory/:layer/:filename', async (req: Request, res: Response) => {
-    const { layer, filename } = req.params;
+    const layer = req.params.layer as string;
+    const filename = req.params.filename as string;
     if (!validateLayer(layer)) {
       res.status(400).json({ error: 'Invalid layer' });
       return;
@@ -453,7 +456,8 @@ export function createDashboardRouter(): Router {
 
   // Get specific task result
   router.get('/api/dashboard/sessions/:sessionId/:taskId', async (req: Request, res: Response) => {
-    const { sessionId, taskId } = req.params;
+    const sessionId = req.params.sessionId as string;
+    const taskId = req.params.taskId as string;
     const filePath = join(config.userDataDir, 'sessions', sessionId, `${taskId}.json`);
     try {
       const raw = await readFile(filePath, 'utf-8');
