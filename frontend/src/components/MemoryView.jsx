@@ -6,16 +6,8 @@ import {
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
 import { IOS_SPRING } from '../constants';
-import SkillsView from './SkillsView';
-import ConnectionsView from './ConnectionsView';
 
-const PROFILE_TABS = [
-  { key: 'skills', label: 'Skills' },
-  { key: 'memory', label: 'Memory' },
-  { key: 'connections', label: 'Connections' },
-];
-
-// ── Memory Block Card (like the reference image) ──
+// ── Memory Block Card ──
 const MemoryCard = memo(function MemoryCard({ file, onEdit, onDelete, onView, index }) {
   const layerLabel = (file.layer || 'semantic').charAt(0).toUpperCase() + (file.layer || 'semantic').slice(1);
 
@@ -36,7 +28,7 @@ const MemoryCard = memo(function MemoryCard({ file, onEdit, onDelete, onView, in
         padding: '20px 22px',
       }}
     >
-      {/* Layer tag — like the date tag in reference image */}
+      {/* Layer tag */}
       <span
         className="font-medium"
         style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)' }}
@@ -44,7 +36,7 @@ const MemoryCard = memo(function MemoryCard({ file, onEdit, onDelete, onView, in
         {layerLabel}
       </span>
 
-      {/* Title / filename — big bold like reference */}
+      {/* Title / filename */}
       <p
         className="font-bold leading-snug mt-1 line-clamp-2"
         style={{ fontSize: 22, color: '#000', letterSpacing: '-0.01em' }}
@@ -62,21 +54,8 @@ const MemoryCard = memo(function MemoryCard({ file, onEdit, onDelete, onView, in
   );
 });
 
-function formatDate(isoStr) {
-  if (!isoStr) return '';
-  try {
-    const d = new Date(isoStr);
-    const now = new Date();
-    const diff = now - d;
-    if (diff < 60000) return 'just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch { return ''; }
-}
-
-// ── Memory Tab Content (inner component) ──
-function MemoryTabContent({ livekit }) {
+// ── Memory Content (standalone — used by SettingsView) ──
+export default function MemoryContent({ livekit }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
@@ -169,11 +148,9 @@ function MemoryTabContent({ livekit }) {
   // Sort/filter files
   const sortedFiles = (() => {
     let result = [...files];
-    // If a type is selected, filter by that layer
     if (['identity', 'semantic', 'episodic'].includes(sortBy)) {
       result = result.filter(f => (f.layer || 'semantic') === sortBy);
     }
-    // Always sort by last updated
     result.sort((a, b) => {
       const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
       const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
@@ -348,7 +325,7 @@ function MemoryTabContent({ livekit }) {
         )}
       </div>
 
-      {/* ═══ Bottom sorting button — round like camera FAB ═══ */}
+      {/* ═══ Bottom sorting button ═══ */}
       <div className="absolute z-50" style={{ bottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))', right: '1.25rem' }}>
         <motion.button
           onClick={() => setShowSortMenu(true)}
@@ -470,68 +447,6 @@ function MemoryTabContent({ livekit }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
-  );
-}
-
-// ── ProfileView — tabbed container (Skills + Memory) ──
-// Exported as default; replaces the old MemoryView in App.jsx routing.
-export default function MemoryView({ onBack, livekit }) {
-  const [activeTab, setActiveTab] = useState('skills');
-
-  return (
-    <motion.div
-      key="profile"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="w-full h-full flex flex-col"
-      style={{ background: '#F2F2F7' }}
-    >
-      {/* Header */}
-      <div className="safe-area-top shrink-0 px-6 pb-2">
-        <div className="flex items-center gap-3 mb-3">
-          <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
-            <ChevronLeft size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
-          </button>
-          <h1 className="font-bold" style={{ fontSize: 28, color: '#000' }}>Profile</h1>
-        </div>
-
-        {/* Tab bar */}
-        <div
-          className="flex rounded-xl p-0.5"
-          style={{ background: 'rgba(0,0,0,0.04)' }}
-        >
-          {PROFILE_TABS.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className="flex-1 py-2 rounded-lg font-medium transition-all duration-200"
-              style={{
-                fontSize: 14,
-                color: activeTab === tab.key ? '#000' : 'rgba(0,0,0,0.35)',
-                background: activeTab === tab.key ? '#fff' : 'transparent',
-                boxShadow: activeTab === tab.key
-                  ? '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)'
-                  : 'none',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-hidden pt-2">
-        {activeTab === 'skills' ? (
-          <SkillsView />
-        ) : activeTab === 'connections' ? (
-          <ConnectionsView />
-        ) : (
-          <MemoryTabContent livekit={livekit} />
-        )}
-      </div>
     </motion.div>
   );
 }

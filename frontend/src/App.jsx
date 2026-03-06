@@ -6,7 +6,7 @@ import DeviceFrame from './components/DeviceFrame';
 
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
-import MemoryView from './components/MemoryView';
+import SettingsView from './components/SettingsView';
 
 import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
@@ -389,8 +389,8 @@ function App() {
             )}
 
             {viewState === 'memory' && (
-              <MemoryView
-                key="memory"
+              <SettingsView
+                key="settings"
                 onBack={handleBackToHistory}
                 livekit={livekit}
               />
