@@ -60,6 +60,7 @@
   let chatTaskId = null;
   let selectedSkill = null;
   let skillsList = [];
+  let chatCards = {}; // cardId -> { template, data, status, rawMode } for current response
 
   // Load skills for picker
   async function loadSkillsForPicker() {
@@ -101,13 +102,181 @@
       finalizeAssistantMessage(data.summary);
     } else if (data.type === 'exec_error') {
       finalizeAssistantError(data.error);
-    } else if (data.op === 'html_stream' || data.op === 'stream_to_card') {
-      appendToAssistantStream(data.chunk || '');
+    } else if (data.op === 'html_stream') {
+      handleChatCardOp(data);
+    } else if (data.op === 'stream_to_card') {
+      handleChatCardOp(data);
     } else if (data.op === 'create_card') {
-      appendAssistantCard(data);
+      handleChatCardOp(data);
+    } else if (data.op === 'update_card') {
+      handleChatCardOp(data);
+    } else if (data.op === 'append_to_card') {
+      handleChatCardOp(data);
+    } else if (data.op === 'replace_card') {
+      handleChatCardOp(data);
     } else if (data.op === 'finalize_card') {
-      // Card done, no action needed
+      handleChatCardOp(data);
+    } else if (data.op === 'remove_card') {
+      handleChatCardOp(data);
     }
+  }
+
+  // ── Chat Card State Management ──
+  function handleChatCardOp(op) {
+    if (!currentAssistantDiv) appendAssistantThinking();
+    const cardId = op.cardId;
+
+    switch (op.op) {
+      case 'create_card':
+        chatCards[cardId] = { cardId, template: op.template, data: { ...op.data }, status: 'streaming' };
+        break;
+      case 'update_card':
+        if (chatCards[cardId]) Object.assign(chatCards[cardId].data, op.updates);
+        break;
+      case 'stream_to_card':
+        if (chatCards[cardId]) {
+          const prev = chatCards[cardId].data[op.slot] || '';
+          chatCards[cardId].data[op.slot] = prev + op.chunk;
+        }
+        break;
+      case 'append_to_card':
+        if (chatCards[cardId]) {
+          const arr = chatCards[cardId].data[op.slot] || [];
+          chatCards[cardId].data[op.slot] = arr.concat(op.items);
+        }
+        break;
+      case 'replace_card':
+        if (chatCards[cardId]) {
+          chatCards[cardId].template = op.template;
+          chatCards[cardId].data = { ...op.data };
+        }
+        break;
+      case 'finalize_card':
+        if (chatCards[cardId]) chatCards[cardId].status = 'finalized';
+        break;
+      case 'remove_card':
+        delete chatCards[cardId];
+        break;
+      case 'html_stream':
+        if (!chatCards[cardId]) {
+          chatCards[cardId] = { cardId, template: 'html_stream', data: { html: '' }, status: 'streaming' };
+        }
+        chatCards[cardId].data.html = (chatCards[cardId].data.html || '') + op.chunk;
+        if (op.done) chatCards[cardId].status = 'finalized';
+        break;
+    }
+
+    renderChatCards();
+  }
+
+  function renderChatCards() {
+    if (!currentAssistantDiv) return;
+    // Find or create the cards container in the current assistant message
+    let cardsContainer = currentAssistantDiv.querySelector('.chat-cards-container');
+    if (!cardsContainer) {
+      cardsContainer = document.createElement('div');
+      cardsContainer.className = 'chat-cards-container';
+      currentAssistantDiv.appendChild(cardsContainer);
+    }
+
+    const ids = Object.keys(chatCards);
+    if (ids.length === 0) return;
+
+    cardsContainer.innerHTML = ids.map(id => {
+      const card = chatCards[id];
+      if (card.rawMode) return renderCardRaw(card);
+      try {
+        return renderCardVisual(card);
+      } catch {
+        return renderCardRaw(card);
+      }
+    }).join('');
+
+    // Wire up per-card toggle buttons
+    cardsContainer.querySelectorAll('.chat-card-toggle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cardId = btn.dataset.cardId;
+        if (chatCards[cardId]) {
+          chatCards[cardId].rawMode = !chatCards[cardId].rawMode;
+          renderChatCards();
+        }
+      });
+    });
+
+    const msgs = $('chat-messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function renderCardToggle(card) {
+    return '<button class="chat-card-toggle" data-card-id="' + escapeHtml(card.cardId) + '" title="Show raw JSON">&lt;/&gt;</button>';
+  }
+
+  function renderCardVisual(card) {
+    const statusBadge = card.status === 'finalized'
+      ? '<span class="badge badge-green" style="font-size:10px">done</span>'
+      : '<span class="badge badge-yellow" style="font-size:10px">streaming</span>';
+    const toggle = renderCardToggle(card);
+
+    // html_stream — render HTML directly
+    if (card.template === 'html_stream' && card.data.html) {
+      return '<div class="chat-card-rendered">' +
+        '<div class="chat-card-header">HTML ' + statusBadge + toggle + '</div>' +
+        '<div class="chat-card-html">' + card.data.html + '</div>' +
+        '</div>';
+    }
+
+    // thinking-process — render as steps
+    if (card.template === 'thinking-process' || card.template === 'thinking_process') {
+      const title = card.data.title || 'Thinking...';
+      const steps = card.data.steps || [];
+      return '<div class="chat-card-rendered chat-card-thinking">' +
+        '<div class="chat-card-header">' + escapeHtml(title) + ' ' + statusBadge + toggle + '</div>' +
+        steps.map(s =>
+          '<div class="chat-card-step">' +
+          '<div class="chat-card-step-label">' + escapeHtml(s.label || '') + '</div>' +
+          '<div class="chat-card-step-content">' + escapeHtml(s.content || '') + '</div>' +
+          '</div>'
+        ).join('') +
+        '</div>';
+    }
+
+    // Generic card — render data fields nicely
+    const data = card.data || {};
+    const entries = Object.entries(data);
+    if (entries.length === 0) {
+      return '<div class="chat-card-rendered">' +
+        '<div class="chat-card-header">' + escapeHtml(card.template) + ' ' + statusBadge + toggle + '</div>' +
+        '<div class="chat-card-empty">No data</div>' +
+        '</div>';
+    }
+
+    return '<div class="chat-card-rendered">' +
+      '<div class="chat-card-header">' + escapeHtml(card.template) + ' ' + statusBadge + toggle + '</div>' +
+      '<div class="chat-card-fields">' +
+      entries.map(([key, val]) => {
+        const valStr = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+        if (typeof val === 'string' && val.length > 100) {
+          return '<div class="chat-card-field-block">' +
+            '<div class="chat-card-field-key">' + escapeHtml(key) + '</div>' +
+            '<div class="chat-card-field-val-long">' + escapeHtml(valStr) + '</div>' +
+            '</div>';
+        }
+        return '<div class="chat-card-field">' +
+          '<span class="chat-card-field-key">' + escapeHtml(key) + '</span>' +
+          '<span class="chat-card-field-val">' + escapeHtml(valStr) + '</span>' +
+          '</div>';
+      }).join('') +
+      '</div>' +
+      '</div>';
+  }
+
+  function renderCardRaw(card) {
+    const toggle = '<button class="chat-card-toggle raw" data-card-id="' + escapeHtml(card.cardId) + '" title="Show rendered">&lt;/&gt;</button>';
+    return '<div class="chat-card-result">' +
+      toggle +
+      escapeHtml(JSON.stringify(card, null, 2)) +
+      '</div>';
   }
 
   function appendUserMessage(text, skill) {
@@ -157,16 +326,6 @@
     bubble.innerHTML = escapeHtml(assistantStreamText);
   }
 
-  function appendAssistantCard(cardOp) {
-    if (!currentAssistantDiv) appendAssistantThinking();
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'chat-card-result';
-    cardDiv.textContent = JSON.stringify(cardOp.data || {}, null, 2);
-    currentAssistantDiv.appendChild(cardDiv);
-    const msgs = $('chat-messages');
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
   function finalizeAssistantMessage(summary) {
     if (!currentAssistantDiv) return;
     const bubble = currentAssistantDiv.querySelector('.chat-bubble');
@@ -193,6 +352,8 @@
     if (!text) return;
 
     input.value = '';
+    chatCards = {};
+    currentAssistantDiv = null;
     appendUserMessage(text, selectedSkill ? selectedSkill.slug : null);
 
     try {
