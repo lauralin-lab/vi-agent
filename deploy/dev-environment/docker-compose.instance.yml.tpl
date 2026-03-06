@@ -152,6 +152,7 @@ services:
       - USER_DATA_DIR=/workspace
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - DASHBOARD=true
     volumes:
       - nanoclaw_workspace:/workspace
       - __REPO_DIR__/packages:/packages:ro

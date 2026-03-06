@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NanoClaw Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>NanoClaw</h1>
+      <div class="subtitle">Debug Dashboard</div>
+    </div>
+    <nav class="nav-links">
+      <a class="nav-link active" data-page="health">
+        <span class="icon">&#9829;</span> Health
+      </a>
+      <a class="nav-link" data-page="skills">
+        <span class="icon">&#9889;</span> Skills
+      </a>
+      <a class="nav-link" data-page="sse">
+        <span class="icon">&#9679;</span> SSE Monitor
+      </a>
+      <a class="nav-link" data-page="cards">
+        <span class="icon">&#9638;</span> Card Preview
+      </a>
+      <a class="nav-link" data-page="tasks">
+        <span class="icon">&#9776;</span> Task Inspector
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="status-dot live"></span> Connected
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- Health Page -->
+    <section class="page active" id="page-health">
+      <div class="page-header">
+        <h2>Health</h2>
+        <p>System status and resource overview</p>
+      </div>
+      <div class="grid" id="health-cards"></div>
+      <div style="margin-top:24px">
+        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Queue Depths</h3>
+        <div class="table-wrap" id="health-queues">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skills Page -->
+    <section class="page" id="page-skills">
+      <div class="page-header">
+        <h2>Skills</h2>
+        <p>Registered skill manifests</p>
+      </div>
+      <div class="table-wrap" id="skills-table">
+        <div class="loading">Loading...</div>
+      </div>
+    </section>
+
+    <!-- SSE Monitor Page -->
+    <section class="page" id="page-sse">
+      <div class="page-header">
+        <h2>SSE Monitor</h2>
+        <p>Live event stream from Redis</p>
+      </div>
+      <div class="controls">
+        <label style="font-size:13px;color:var(--text-dim)">User ID:</label>
+        <input type="text" id="sse-uid" placeholder="default: from config">
+        <button class="btn btn-primary" id="sse-connect">Connect</button>
+        <button class="btn" id="sse-clear">Clear</button>
+        <span id="sse-status" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      <div class="sse-log" id="sse-log"></div>
+    </section>
+
+    <!-- Card Preview Page -->
+    <section class="page" id="page-cards">
+      <div class="page-header">
+        <h2>Card Preview</h2>
+        <p>Live card state from SSE stream</p>
+      </div>
+      <div class="controls">
+        <span style="font-size:13px;color:var(--text-dim)">Cards update in real-time from the SSE stream</span>
+      </div>
+      <div class="grid" id="card-canvas"></div>
+      <div style="margin-top:16px">
+        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Card Event Log</h3>
+        <div class="json-view" id="card-event-log">No events yet</div>
+      </div>
+    </section>
+
+    <!-- Task Inspector Page -->
+    <section class="page" id="page-tasks">
+      <div class="page-header">
+        <h2>Task Inspector</h2>
+        <p>Templates and session card store</p>
+      </div>
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Templates</h3>
+        <div class="table-wrap" id="templates-table">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+      <div>
+        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Card Store Stats</h3>
+        <div class="grid" id="store-stats"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

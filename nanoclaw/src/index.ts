@@ -1,4 +1,6 @@
 import express from 'express';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { connectRedis, disconnectRedis } from './redis-client.js';
 import { startExecHandler } from './channels/exec-handler.js';
 import { startFramesConsumer } from './channels/frames-consumer.js';
@@ -9,6 +11,7 @@ import { startPool, stopPool, getPoolStatus } from './pool/process-pool.js';
 import { getQueueDepths } from './pool/queue-router.js';
 import { getStoreStats } from './persistence/card-store.js';
 import { config } from './config.js';
+import { createDashboardRouter } from './dashboard-routes.js';
 
 // ---------------------------------------------------------------------------
 // CLI flag parsing
@@ -46,7 +49,7 @@ async function startSingleUser(): Promise<void> {
   // 4. Start context compiler loop (30s interval)
   await startContextCompiler();
 
-  // 5. Health endpoint
+  // 5. Health endpoint + optional dashboard
   const app = express();
   app.get('/health', (_req, res) => {
     res.json({
@@ -57,6 +60,7 @@ async function startSingleUser(): Promise<void> {
       cardStore: getStoreStats(),
     });
   });
+  mountDashboard(app);
   app.listen(config.healthPort, () => {
     console.log(`[nanoclaw] health endpoint on :${config.healthPort}`);
   });
@@ -99,11 +103,27 @@ async function startPoolMode(): Promise<void> {
       });
     }
   });
+  mountDashboard(app);
   app.listen(config.healthPort, () => {
     console.log(`[nanoclaw] health endpoint on :${config.healthPort}`);
   });
 
   console.log('[nanoclaw] pool mode ready');
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard (opt-in via DASHBOARD=true)
+// ---------------------------------------------------------------------------
+
+function mountDashboard(app: express.Express): void {
+  if (!config.dashboardEnabled) return;
+
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const publicDir = join(__dirname, '..', 'public');
+
+  app.use(createDashboardRouter());
+  app.use(express.static(publicDir));
+  console.log('[nanoclaw] dashboard enabled at /');
 }
 
 // ---------------------------------------------------------------------------

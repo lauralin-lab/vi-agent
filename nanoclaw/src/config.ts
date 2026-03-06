@@ -43,4 +43,7 @@ export const config = {
   // Models
   intentionModel: optional('INTENTION_MODEL', 'claude-haiku-4-5-20251001'),
   executorModel: optional('EXECUTOR_MODEL', 'claude-sonnet-4-20250514'),
+
+  // Dashboard
+  dashboardEnabled: optional('DASHBOARD', 'false') === 'true',
 } as const;
