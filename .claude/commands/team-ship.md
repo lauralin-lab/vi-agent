@@ -155,11 +155,9 @@ git status --porcelain
 
 - If there are uncommitted changes → warn: "You have uncommitted changes. Committing them now."
   ```bash
-  # Only stage tracked files — never use `git add -A` (risks committing secrets/.env)
-  git add -u
+  git add -A
   git commit -m "chore: pre-ship cleanup | Mission: #{issue}"
   ```
-- If there are also untracked files, list them and ask the user which to include.
 
 ### 2d: Run tests
 
@@ -170,7 +168,7 @@ Read config for service-aware testing:
 # If project.services exists in config, run per-service tests for affected services
 # Otherwise fall back to project.test_command
 
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 
 # Determine affected services from changes
@@ -246,7 +244,7 @@ Closes #{issue}
 
 ```bash
 # Read base branch and extract Issue title from Contract
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 ISSUE_TITLE=$(bash ~/.claude/commands/scripts/tw-contract.sh read-field "$TEAMWORK_DIR/active/MISSION-{issue}.md" title)
 
@@ -351,27 +349,19 @@ The Contract has served its purpose. The PR body now contains the essential info
 ## Step 8: Output Delivery Summary
 
 ```
-MISSION SHIPPED
-═══════════════════════════════════════
-Issue:  #{issue} — {title}
-Branch: {branch}
-PR:     {pr-url}
-CI:     {passing/failing/not configured}
-Review: {requested from {reviewer} / not required}
+📦 SHIPPED ── #{issue} {title} ─────────────
+🔀 {branch}
+🔀 PR: {pr-url}
+{ci_icon} CI: {passing/failing/not configured}
+Review:    {requested from @{reviewer} / not required}
+Labels:    {actual current labels}
 
-Sub-tasks delivered:
-  [x] {task 1}
-  [x] {task 2}
-  ...
+📋 SUB-TASKS DELIVERED
+  ✅ {task 1}
+  ✅ {task 2}
 
-Contract: cleaned up ✅
-Issue:    {CURRENT_LABELS from Step 7a — show actual labels, not assumed}
-═══════════════════════════════════════
-Next steps:
-  - After merge: /team-ship done (close Issue, update labels, clean worktree)
-  - To AI-review PR: /team-ship review
-  - To claim next mission: /team-claim
-  - To see team status: /team
+────────────────────────────────────────────
+/team-ship done (after merge) │ /team-ship review │ /team
 ```
 
 ---
@@ -452,16 +442,15 @@ bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISS
 ### D8: Output summary
 
 ```
-MISSION DONE ✅
-═══════════════════════════════════════
-Issue:     #{issue} — {title} (closed)
-PR:        {pr-url} (merged)
-Labels:    status:done
-Worktree:  {removed/kept/not applicable}
-Branch:    returned to $BASE_BRANCH
-═══════════════════════════════════════
-Next: /team-claim to pick up next mission
-      /team to see dashboard
+🏁 DONE ── #{issue} {title} ────────────────
+Issue:     closed
+🔀 PR: {pr-url} (merged)
+Labels:    {STATUS_PREFIX}done
+Worktree:  {removed/kept/n/a}
+Branch:    {BASE_BRANCH}
+
+────────────────────────────────────────────
+/team-claim (next mission) │ /team (dashboard)
 ```
 
 ---
@@ -531,7 +520,7 @@ Output: "Review published on PR #{pr}: {approve/request-changes/comment}"
 
 ```bash
 BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh current)
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 ```
 

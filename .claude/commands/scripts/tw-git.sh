@@ -34,8 +34,8 @@ TW_CONFIG="$SCRIPT_DIR/tw-config.sh"
 # Read config values
 _base_branch() {
   local b
-  b=$(bash "$TW_CONFIG" conventions.base_branch "pre-launch" 2>/dev/null)
-  echo "${b:-pre-launch}"
+  b=$(bash "$TW_CONFIG" conventions.base_branch "main" 2>/dev/null)
+  echo "${b:-main}"
 }
 
 _production_branch() {
@@ -49,12 +49,12 @@ _branch_pattern() {
   # Try conventions.branch_pattern first, then worktree.branch_pattern (single call with fallback)
   p=$(bash "$TW_CONFIG" conventions.branch_pattern "" 2>/dev/null)
   if [ -z "$p" ]; then
-    p=$(bash "$TW_CONFIG" worktree.branch_pattern "" 2>/dev/null)
+    p=$(bash "$TW_CONFIG" worktree.branch_pattern "mission/{issue}-{slug}-{user}" 2>/dev/null)
   fi
   # CRITICAL: Do NOT use ${p:-default} when default contains {} — bash closes
   # parameter expansion at first unmatched }, appending leftover text to output.
   if [ -z "$p" ]; then
-    p="mission/{issue}-{slug}"
+    p="mission/{issue}-{slug}-{user}"
   fi
   echo "$p"
 }

@@ -1,6 +1,6 @@
 ---
 description: "Claim Issue → Contract → Branch. Try: /team-claim help"
-version: "3.0.0"
+version: "3.0.1"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -32,7 +32,7 @@ WHAT HAPPENS:
   1. Fetches Issue from GitHub
   2. Generates AI-enriched Mission Contract (.teamwork/active/MISSION-N.md)
      — scans project to discover relevant files (Context Files)
-  3. Creates branch: mission/{issue}-{slug}
+  3. Creates branch: mission/{issue}-{slug}-{user}
   4. Posts claim comment on GitHub
 
 NOTE: Issues are assigned via /team-issue (any team member can create and assign).
@@ -87,9 +87,23 @@ If not → "You ({GH_USER}) are not in the team roster. Run `/team` to join — 
 ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
 ```
 
-If any Contract exists → read it, display the active mission info.
+**Check worktree config:**
+```bash
+# Read worktree setting: if worktree: section exists → enabled (unless worktree.enabled is explicitly false)
+WORKTREE_ENABLED=$(bash ~/.claude/commands/scripts/tw-config.sh worktree.enabled "" 2>/dev/null)
+if [ -z "$WORKTREE_ENABLED" ]; then
+  # Check if worktree: section exists at all (presence = enabled)
+  grep -q "^worktree:" $TEAMWORK_DIR/config.yml 2>/dev/null && WORKTREE_ENABLED="true" || WORKTREE_ENABLED="false"
+fi
+```
+
+**If worktree DISABLED (default):** If any Contract exists → read it, display the active mission info.
 - "You already have an active mission: #{issue} — {title}. Complete it with `/team-ship` first, or remove `$TEAMWORK_DIR/active/MISSION-{issue}.md` to abandon."
 - **STOP** (enforce one-at-a-time rule)
+
+**If worktree ENABLED:** Allow multiple active Contracts. Each mission gets its own worktree directory, so parallel work is safe.
+- If any Contract exists → display it as info: "Active mission(s): #{issue} — {title}. Worktree mode: parallel claiming allowed."
+- Continue to Step 2 (do NOT stop).
 
 ---
 
@@ -106,9 +120,9 @@ Show Issues assigned to the current user.
 Format as numbered list:
 ```
 Your assigned missions:
-  1. #42 Add user authentication [P1]
-  2. #45 Add rate limiting [P1]
-  3. #47 Write API docs [P2]
+  🟠 1. #42 Add user authentication
+  🟠 2. #45 Add rate limiting
+  🟡 3. #47 Write API docs
 ```
 
 If none → "No missions assigned to you. Ask your team lead to assign one via `/team-issue`." → **STOP**
@@ -128,8 +142,7 @@ gh issue list --label "$MISSION_LABEL" --state open --assignee "$GH_USER" --json
 Show the user's assigned Issues sorted by priority (P0 first, then P1, P2, P3).
 If none → "No missions assigned to you. Ask your team lead to assign one via `/team-issue`." → **STOP**
 
-If only one → auto-select it and proceed to Step 3.
-If multiple → use `AskUserQuestion` to let user pick one, then proceed to Step 3.
+Use `AskUserQuestion` to let user confirm or pick one (even if only one issue — always confirm before claiming). Then proceed to Step 3.
 
 ---
 
@@ -178,7 +191,7 @@ title: "{title}"
 assignee: {user}
 priority: {priority}
 labels: [{labels}]
-branch: mission/{issue}-{slug}
+branch: mission/{issue}-{slug}-{user}
 milestone: "{milestone — from Issue JSON, falls back to config versions.current, or 'none'}"
 claimed: {ISO_TIMESTAMP}
 issue_content_hash: "{SHA256 of title + body at claim time}"
@@ -219,7 +232,7 @@ Use `Glob` and `Grep` with keywords from the Issue title and objective to discov
 ## Step 5: Create Branch (+ optional worktree)
 
 Read branch pattern from config: `conventions.branch_pattern` (or `worktree.branch_pattern` for `.teamspace` configs).
-Default: `"mission/{issue}-{slug}"`.
+Default: `"mission/{issue}-{slug}-{user}"`.
 
 Read worktree config: if `worktree:` section exists in config → treat as enabled (unless `worktree.enabled` is explicitly `false`). If no `worktree:` section → disabled.
 
@@ -271,31 +284,27 @@ Non-fatal: if comment fails, warn but continue.
 Display a formatted briefing:
 
 ```
-MISSION CLAIMED
-═══════════════════════════════════════
-Issue:    #{issue} — {title}
-Priority: {priority}
-Branch:   {branch}
-Contract: $TEAMWORK_DIR/active/MISSION-{issue}.md
-{If worktree:} Worktree: {worktree path}
-{If worktree:} Hint: cd {worktree path} to work in isolation
+📋 CLAIMED ── #{issue} {title} ─────────────
+{priority_dot}  {priority}  Branch: {branch}
+Contract:  $TEAMWORK_DIR/active/MISSION-{issue}.md
+{If worktree:} Worktree:  {path}
 
-Objective:
+🎯 OBJECTIVE
   {objective summary}
 
-Sub-tasks:
-  - [ ] {task 1}
-  - [ ] {task 2}
-  - [ ] ...
+📋 SUB-TASKS
+  [ ] {task 1}
+  [ ] {task 2}
+  [ ] ...
 
-Acceptance Criteria:
+✅ ACCEPTANCE CRITERIA
   {criteria}
 
-Context Files:
+📁 CONTEXT FILES
   {list of relevant files}
-═══════════════════════════════════════
-Next: /team-drive to start execution
-      /team-ship when complete
+
+────────────────────────────────────────────
+/team-drive to execute │ /team-ship when done
 ```
 
 ---

@@ -85,7 +85,7 @@ info "Current branch: $ORIGINAL_BRANCH"
 # ─── Phase 1: Config reads ───────────────────────────────
 section "PHASE 1: CONFIG READS (tw-config.sh)"
 
-BASE_BRANCH=$(run_script tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH=$(run_script tw-config.sh conventions.base_branch "main" 2>/dev/null)
 if [ -n "$BASE_BRANCH" ]; then
   pass "base_branch = $BASE_BRANCH"
 else
@@ -135,7 +135,7 @@ This issue will be automatically closed after validation.
 - [ ] Run validation
 BODY
 )" \
-  --label "${MC_LABEL:-mission},priority:P3,${STATUS_PREFIX}queued,size:S" 2>&1) || {
+  --label "${MC_LABEL:-mission-contract},priority:P3,${STATUS_PREFIX}queued,size:S" 2>&1) || {
   fail "Could not create test issue: $ISSUE_URL"
   exit 1
 }

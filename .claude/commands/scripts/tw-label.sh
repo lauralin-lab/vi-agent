@@ -28,9 +28,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TW_CONFIG="$SCRIPT_DIR/tw-config.sh"
 
-# Read status prefix from config (try v3 key first, then legacy)
-STATUS_PREFIX=$(bash "$TW_CONFIG" labels.status_prefix "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
+# Read status prefix from config
+STATUS_PREFIX=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
 
 # All known status values

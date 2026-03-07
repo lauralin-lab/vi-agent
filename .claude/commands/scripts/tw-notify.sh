@@ -67,13 +67,13 @@ PARAM_MC_COUNT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --issue)      PARAM_ISSUE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    --title)      PARAM_TITLE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    --assignee)   PARAM_ASSIGNEE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    --branch)     PARAM_BRANCH="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    --pr)         PARAM_PR="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    --feedback)   PARAM_FEEDBACK="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    --mc_count)   PARAM_MC_COUNT="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --issue)      PARAM_ISSUE="${2:-}"; shift 2 ;;
+    --title)      PARAM_TITLE="${2:-}"; shift 2 ;;
+    --assignee)   PARAM_ASSIGNEE="${2:-}"; shift 2 ;;
+    --branch)     PARAM_BRANCH="${2:-}"; shift 2 ;;
+    --pr)         PARAM_PR="${2:-}"; shift 2 ;;
+    --feedback)   PARAM_FEEDBACK="${2:-}"; shift 2 ;;
+    --mc_count)   PARAM_MC_COUNT="${2:-}"; shift 2 ;;
     *)            shift ;;
   esac
 done

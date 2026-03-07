@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "3.0.0"
+version: "3.1.0"
 ---
 
 # /team — Init + Dashboard (Teamwork v3)
@@ -19,6 +19,7 @@ version: "3.0.0"
 | `learn` | Show design philosophy, visual diagrams, and manual |
 | `init` | Force re-initialize (even if config exists) |
 | `queue` | Show all open mission Issues (full list, sorted by priority) |
+| `doctor` | Run local git + issue health diagnostics |
 
 ---
 
@@ -30,6 +31,7 @@ Parse `$ARGUMENTS`:
 - If starts with `#` or is a number → jump to **Operation MC Detail**
 - If `init` → jump to **Step 0** (skip config check, force init)
 - If `queue` → jump to **Operation Queue**
+- If `doctor` → jump to **Operation Doctor**
 - If empty → continue to **Step 0** (auto-detect init vs dashboard)
 
 ---
@@ -39,8 +41,8 @@ Parse `$ARGUMENTS`:
 Output the following guide directly to the user, then **STOP**:
 
 ```
-TEAMWORK v3.0.0 — AI-Native Team Coordination (Push Model)
-Author: liyasong + casey | Released: 2026-03-05
+TEAMWORK v3.1.0 — AI-Native Team Coordination (Push Model)
+Author: liyasong + casey | Released: 2026-03-06
 ═══════════════════════════════════════════
 
 SETUP (one time):
@@ -49,8 +51,10 @@ SETUP (one time):
 DAILY WORKFLOW:
   /team                 See role-based dashboard (leader=team view, member=my view)
   /team #42             View MC #42 details (branch, commits, PRs)
+  /team doctor          Local git + issue health diagnostics
   /team-issue <desc>    Create MC (solo: self-assign; team: prompt for assignee)
   /team-issue <desc> @user  Create MC + assign to @user
+  /team-issue fix #N    Fix untracked Issue (add teamwork labels)
   /team-issue batch ... Batch create milestone + multiple MCs
   /team-claim #N        Claim assigned Issue → generate Contract + branch
   /team-claim list      Browse my assigned missions
@@ -177,12 +181,19 @@ RC LIFECYCLE (the key innovation):
 
 DAILY FLOW:
 
-  /team-issue "用户登录"     → Issue #42
-  /team-claim 42             → Branch from develop
+  /team-issue "用户登录"     → Issue #42 (create + assign + branch)
+  /team-issue fix #94        → Fix untracked Issue (add labels)
+  /team-claim 42             → Contract from develop
   /team-drive                → Code, test, commit
   /team-ship                 → PR → develop (squash)
   /team-rc                   → Cut RC → staging
   /team-rc promote           → Ship to production
+
+UNTRACKED ISSUES:
+
+  Issues assigned on GitHub but missing teamwork labels are "untracked".
+  /team dashboard shows them in UNTRACKED section.
+  Fix: /team-issue fix #N → adds mission + status + priority labels.
 
 ═══════════════════════════════════════════
 Full manual: docs/teamwork-ai-manual.md
@@ -235,27 +246,25 @@ Sort by priority: P0 first → P1 → P2 → P3 → no priority last. Show assig
 Output formatted list:
 
 ```
-OPEN MISSIONS — {repo name} ({total} issues)
-════════════════════════════════════════════
+QUEUE ── {repo name} ── {total} open ───────
 
-P0 (critical):
-  #{N} {title} [@{assignee} | unassigned]
+🔴 P0 CRITICAL
+  #{N}  {title}  @{assignee}
 
-P1 (high):
-  #{N} {title} [@{assignee} | unassigned]
+🟠 P1 HIGH
+  #{N}  {title}  @{assignee}
 
-P2 (medium):
-  #{N} {title} [@{assignee} | unassigned]
+🟡 P2 MEDIUM
+  #{N}  {title}  @{assignee}
 
-P3 (low):
-  #{N} {title} [@{assignee} | unassigned]
+⚪ P3 LOW
+  #{N}  {title}  @{assignee}
 
-No priority:
-  #{N} {title} [@{assignee} | unassigned]
+▸ NO PRIORITY
+  #{N}  {title}  @{assignee}
 
-════════════════════════════════════════════
-Details: /team #{N}
-Claim:   /team-claim #{N}
+────────────────────────────────────────────
+/team #{N} details │ /team-claim #{N} claim
 ```
 
 Omit priority groups that have zero issues. Then **STOP**.
@@ -285,11 +294,11 @@ If Issue not found → "Issue #$ISSUE_NUMBER not found." → **STOP**
 # Read branch pattern from config
 BRANCH_PATTERN=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.branch_pattern "" 2>/dev/null)
 if [ -z "$BRANCH_PATTERN" ]; then
-  BRANCH_PATTERN="mission/{issue}-{slug}"
+  BRANCH_PATTERN="mission/{issue}-{slug}-{user}"
 fi
 
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
 
 # Search for branch matching this Issue number
 BRANCH=$(git ls-remote --heads origin "mission/${ISSUE_NUMBER}-*" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||' | head -1)
@@ -306,22 +315,25 @@ RELATED_PRS=$(gh pr list --search "Closes #$ISSUE_NUMBER" --state all --json num
 ### MD4: Format and display
 
 ```
-MISSION CONTRACT — #{ISSUE_NUMBER}
-═══════════════════════════════════
-Title:     {title}
-Assignee:  @{assignee}
-Status:    {status label, e.g., wip/review/done}
-Priority:  {Pn from labels}
-Milestone: {milestone title or "none"}
-URL:       {issue url}
-─────────────────────────────────
+MC #{ISSUE_NUMBER} ── {title} ──────────────
+Assignee:   @{assignee}
+Status:     {wip/review/done}
+Priority:   {Pn}
+Milestone:  {milestone or "—"}
+URL:        {issue url}
+────────────────────────────────────────────
 {Full Issue body}
-─────────────────────────────────
-BRANCH: {branch or "not found"}
-  Remote: {exists/not found}
-  Commits: {commit log or "no commits yet"}
-RELATED PRs: {list with state and CI status}
-═══════════════════════════════════
+────────────────────────────────────────────
+
+▸ BRANCH  {branch or "(not created)"}
+  Commits: {commit log or "(none)"}
+
+▸ RELATED PRs
+  #{pr}  {state}  {CI status}
+  {If none:} (none)
+
+────────────────────────────────────────────
+/team-claim #{N} │ git checkout {branch}
 ```
 
 If branch exists and user is not currently on it, show:
@@ -464,8 +476,8 @@ After confirming membership, verify that the config has the fields needed by oth
 |-------|---------|-------------------|
 | `project.test_command` | team-drive, team-ship | warn "No test command" |
 | `project.lint_command` | git hooks | warn "No lint command" |
-| `conventions.branch_pattern` | team-claim | `"mission/{issue}-{slug}"` |
-| `conventions.base_branch` | team-claim, team-ship, team-drive | `"pre-launch"` |
+| `conventions.branch_pattern` | team-claim | `"mission/{issue}-{slug}-{user}"` |
+| `conventions.base_branch` | team-claim, team-ship, team-drive | `"main"` |
 | `conventions.production_branch` | team-rc, protect-check | `"main"` |
 | `deploy.staging_workflow` | team-rc | `""` (skip staging check) |
 | `label_prefix` or `github.label_prefix` | all skills, post-merge Action | `status:`, `priority:` |
@@ -475,7 +487,7 @@ If critical fields are missing (no `project:` section at all, no `conventions.br
 ```
 ⚠ Config is missing some fields used by teamwork skills:
   - project.test_command: tests won't run during /team-drive and /team-ship
-  - conventions.branch_pattern: will use default "mission/{issue}-{slug}"
+  - conventions.branch_pattern: will use default "mission/{issue}-{slug}-{user}"
   Tip: run /team init to regenerate a complete config.
 ```
 
@@ -613,8 +625,8 @@ Preserve all existing content. Only update `skill_version` and append missing to
 
 ```bash
 # Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 3.0.0/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.0.0/" $TEAMWORK_DIR/config.yml
+sed -i '' "s/^skill_version:.*/skill_version: 3.1.0/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.1.0/" $TEAMWORK_DIR/config.yml
 
 # Update schema_version if present
 if grep -q "^schema_version:" $TEAMWORK_DIR/config.yml; then
@@ -719,7 +731,7 @@ notifications:
 
 ```
 ✅ Config updated (merge mode — existing config preserved)
-   schema_version → 3 | skill_version → 3.0.0
+   schema_version → 3 | skill_version → 3.1.0
    Preserved sections: {list of sections kept}
    Added sections: {list of sections appended, or "(none — already complete)"}
 ```
@@ -734,7 +746,7 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 3
-skill_version: 3.0.0
+skill_version: 3.1.0
 
 roles:
   - id: leader
@@ -1437,16 +1449,14 @@ done
 
 ### 6c: Fetch GitHub data
 
-Read the mission label from config. If config has `mc_label` field → use it. If config has the teamwork v2 schema → use `mission`. Default: `mission`.
+Read the mission label and label prefixes from config:
 
 ```bash
-# Determine the mission label — try github.mc_label (teamspace schema) then mc_label (teamwork schema)
 MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh labels.mission "" 2>/dev/null)
 [ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
 
-# Determine label prefixes from config (flat schema: label_prefix.status; nested schema: defaults)
 STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
@@ -1454,32 +1464,40 @@ PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.prio
 [ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.priority_prefix "" 2>/dev/null)
 [ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX="priority:"
 
-# All mission issues
-gh issue list --label "$MISSION_LABEL" --json number,title,assignees,labels,state,milestone --limit 50
-
-# WIP issues (for "working on" display)
-gh issue list --label "$MISSION_LABEL" --label "${STATUS_PREFIX}wip" --json number,title,assignees --limit 20
-
-# Review issues (shipped, PR open, awaiting merge)
-gh issue list --label "$MISSION_LABEL" --label "${STATUS_PREFIX}review" --json number,title,assignees,url --limit 20
-
-# Open PRs
-gh pr list --json number,title,author,headRefName,statusCheckRollup,reviewDecision --limit 20
-
-# Merge count per team member (merged PRs to base branch)
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
-gh pr list --state merged --base "$BASE_BRANCH" --json author --limit 100
-
-# Version progress (if versions.current configured in config)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
 CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
-if [ -n "$CURRENT_VERSION" ]; then
-  # Use GitHub Milestones for version progress tracking
-  gh api "repos/$REPO/milestones" --jq ".[] | select(.title == \"$CURRENT_VERSION\") | {open: .open_issues, closed: .closed_issues}"
-fi
 ```
 
-If `versions.current` is set, query version-tagged issues and calculate done/total percentage for the dashboard header.
+**Performance: fetch data in parallel.** Make these calls using **parallel Bash tool calls** (not sequential):
+
+```bash
+# Call 1: ALL mission issues (replaces 3 separate calls — filter WIP/review/unassigned client-side from labels)
+gh issue list --label "$MISSION_LABEL" --state open --json number,title,assignees,labels,milestone --limit 100
+
+# Call 2: Open PRs
+gh pr list --json number,title,author,headRefName,statusCheckRollup,reviewDecision --limit 20
+
+# Call 3: All open issues (for untracked detection) — leader: all assigned; member: own only
+gh issue list --state open --json number,title,labels,assignees --limit 100
+# (member: add --assignee "$GH_USER" --limit 50)
+
+# Call 4: Merged PR count
+gh pr list --state merged --base "$BASE_BRANCH" --json author --limit 100
+
+# Call 5 (if CURRENT_VERSION set): Milestone progress
+# Use startswith for prefix matching — config stores short name (e.g. "V0.1")
+# but milestone title may be longer (e.g. "V0.1 — AI Camera Pipeline")
+gh api "repos/$REPO/milestones" --jq ".[] | select(.title | startswith(\"$CURRENT_VERSION\")) | {open: .open_issues, closed: .closed_issues}"
+```
+
+**Client-side filtering** from Call 1 results (no extra API calls):
+- **WIP issues**: entries where labels contain `${STATUS_PREFIX}wip`
+- **Review issues**: entries where labels contain `${STATUS_PREFIX}review`
+- **Unassigned**: entries where assignees is empty
+- **Priority**: extract from labels matching `${PRIORITY_PREFIX}P*`
+
+**Compute untracked issues**: Call 3 results MINUS Call 1 results (by issue number). Issues in Call 3 but not in Call 1 are untracked — assigned on GitHub but missing the mission label.
 
 ### 6d: Format and display (role-based)
 
@@ -1488,65 +1506,469 @@ Output a formatted dashboard based on user's role level.
 #### Solo / Leader Dashboard
 
 ```
-TEAM DASHBOARD — {repo name} (v3.0.0)
-{If CURRENT_VERSION set and milestone found:} Version {CURRENT_VERSION}: {closed}/{closed+open} tasks done ({pct}%)
-════════════════════════════════════════════
+TEAM DASHBOARD ── {repo name} ──────────────
+{If CURRENT_VERSION:} {VERSION}  {progress_bar}  {pct}%  {done}/{total}
 
-TEAM STATUS:
-{For each team member from config:}
-  {username} ({role label})
-     {If has assigned status:wip issue:} Working on: #{N} {title} [{priority}] {If ISSUE_STALE:} [UPDATED]
-     {If has open PR:} PR: #{pr} — {CI status}
-     {If idle:} Idle — no active mission
+👥 TEAM ({member_count} members)
+  {For each team member:}
+  {username} ({role})
+    {If WIP:}  🟢 #{N} {title} [{priority_dot}] {If STALE: ⚡}
+    {If PR:}   🔀 #{pr} — {ci_icon}
+    {If idle:} ⚪ (idle)
 
-UNDER REVIEW ({review_count}):
-  {Issues with label "${STATUS_PREFIX}review":}
-     #{N} {title} [@{assignee}]
+🔀 UNDER REVIEW ({count})
+  🟡 #{N}  {title}  @{assignee}
+  {If none:} (none)
 
-UNASSIGNED ({unassigned_count}):
-  {Issues with no assignee, sorted by priority, show top 5:}
-     #{N} {title} [{priority}]
-  {If unassigned_count > 5:} ... and {unassigned_count - 5} more — run /team queue to see all
+📋 UNASSIGNED ({count})
+  {priority_dot}  #{N}  {title}
+  {If count > 5:} ... +{remaining} more → /team queue
+  {If none:} (none)
 
-MERGE COUNT:
-  {username}: {count} | {username}: {count} | ...
+⚠️ UNTRACKED ({count})
+  #{N}  {title}  @{assignee}
+  Fix: /team-issue fix #{N}
+  {Omit entire section if count == 0}
 
-SUGGESTED NEXT ACTION:
-  {If unassigned issues exist:} Assign missions: /team-issue <desc> @user
-  {If all issues assigned:} Check review queue: /team-ship review
-  {If milestone near complete:} Prepare release: /team-rc
-════════════════════════════════════════════
-Commands: /team #N | /team-issue | /team-claim | /team-drive | /team-ship
+📊 MERGES  {user}:{n}  {user}:{n}  ...
+
+💡 Next: {one context-specific suggestion}
+────────────────────────────────────────────
+/team #N │ /team-issue │ /team-claim │ /team-drive │ /team-ship
 ```
+
+**Visual encoding rules** (apply to ALL teamwork output):
+
+| Symbol | Meaning | Used for |
+|--------|---------|----------|
+| 🔴 | P0 critical | Priority dot in issue lines |
+| 🟠 | P1 high | Priority dot |
+| 🟡 | P2 medium / under review | Priority dot / review status |
+| ⚪ | P3 low / idle | Priority dot / member idle |
+| 🟢 | Active / WIP | Member working status |
+| ✅ | Done / CI passing | Completed items, CI green |
+| ❌ | Failed / CI failing | CI red, errors |
+| ⚡ | Stale / updated | Issue changed since claim |
+| 🔀 | PR / merge | Pull request related |
+| ▸ | Section marker | Generic section headers |
+
+**Progress bar**: Map percentage to 10 chars: `█` for filled, `░` for empty. E.g., 14% → `█░░░░░░░░░`, 50% → `█████░░░░░`, 100% → `██████████`.
+
+**`{priority_dot}`** shorthand: replace `Pn` prefix with colored dot — `🔴` P0, `🟠` P1, `🟡` P2, `⚪` P3. E.g., `🟠 #134 Unified NanoClaw Architecture @initialneil`.
+
+**`{ci_icon}`** shorthand: `✅` if all checks pass, `❌` if any fail, `⏳` if pending/running.
 
 #### Member Dashboard
 
 ```
-MY DASHBOARD — {repo name} (v3.0.0)
-{If CURRENT_VERSION set:} Version {CURRENT_VERSION}: {closed}/{closed+open} tasks done ({pct}%)
-════════════════════════════════════════════
+MY DASHBOARD ── {repo name} ────────────────
+{If CURRENT_VERSION:} {VERSION}  {progress_bar}  {pct}%  {done}/{total}
 
-MY MISSIONS:
-  {For each Issue assigned to GH_USER with status:wip:}
-     #{N} {title} [{priority}] {If ISSUE_STALE:} [UPDATED]
-     Branch: {branch}
-     {If has local Contract:} Contract: ready → /team-drive
-     {If no Contract:} Next: /team-claim #{N}
+🎯 MY MISSIONS
+  🟢 #{N} {title} [{priority_dot}] {If STALE: ⚡}
+    {branch}  {If Contract: → /team-drive │ Else: → /team-claim #{N}}
+  {If none:} (none)
 
-  {If no wip missions:} No active missions assigned to you.
+🔀 MY PRs
+  #{pr} {title}  {ci_icon}  {review}
+  {If none:} (none)
 
-MY PRs:
-  {For each open PR by GH_USER:}
-     #{pr} {title} — {CI status} {review decision}
+⚠️ UNTRACKED ({count})
+  #{N}  {title}
+  Fix: /team-issue fix #{N}
+  {Omit entire section if count == 0}
 
-SUGGESTED NEXT ACTION:
-  {If has wip issue without Contract:} Claim your mission: /team-claim #{N}
-  {If has Contract:} Start execution: /team-drive
-  {If has completed mission:} Ship it: /team-ship
-  {If idle:} No missions assigned — ask your team lead
-════════════════════════════════════════════
-Commands: /team #N | /team-claim | /team-drive | /team-ship
+────────────────────────────────────────────
+👥 TEAM WIP ({count})
+  {priority_dot}  #{N}  {title}  @{assignee}
+  {List all WIP issues sorted by priority}
+  {Omit entire section if solo mode}
+
+🔀 UNDER REVIEW ({count})
+  🟡 #{N}  {title}  @{assignee}
+  {If none:} (none)
+
+📊 MERGES  {user}:{n}  {user}:{n}  ...
+
+💡 Next: {one context-specific suggestion}
+────────────────────────────────────────────
+/team #N │ /team-claim │ /team-drive │ /team-ship
 ```
+
+---
+
+## Operation Doctor
+
+> Triggered by `/team doctor`. Read-only local git + issue health diagnostics with 3-layer visual report.
+> Design spec: `docs/team-doctor-design.md`
+
+### Prerequisites
+
+Same as dashboard: config must exist, `gh` must be authenticated, must be in a git repo.
+
+```bash
+# Identity
+GH_USER=$(gh api user --jq '.login' 2>/dev/null)
+
+# Config
+if [ -f .teamwork/config.yml ]; then
+  TEAMWORK_DIR=".teamwork"
+elif [ -f .teamspace/config.yml ]; then
+  TEAMWORK_DIR=".teamspace"
+else
+  echo "NO_CONFIG"
+fi
+
+# Read config values
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
+[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
+STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
+[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+```
+
+If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
+
+### Data Collection Phase
+
+Run these commands to gather all raw data. Order doesn't matter — collect everything first, analyze second.
+
+```bash
+# 1. Local branches with tracking info
+git branch -vv --no-color
+
+# 2. Remote branches (for orphan detection)
+git ls-remote --heads origin 2>/dev/null
+
+# 3. Current branch
+git branch --show-current
+
+# 4. Uncommitted changes
+git status --porcelain
+
+# 5. Stash list with dates
+git stash list --format='%gd|%ci|%s'
+
+# 6. Worktree list
+git worktree list --porcelain
+
+# 7. All open mission issues (with state, labels, assignees)
+gh issue list --label "$MISSION_LABEL" --state open --json number,title,state,labels,assignees --limit 50
+
+# 8. Recently closed/merged mission issues (for orphan branch detection)
+gh issue list --label "$MISSION_LABEL" --state closed --json number,title,closedAt --limit 30
+
+# 9. Open PRs (with CI status, mergeable)
+gh pr list --author "$GH_USER" --state open --json number,title,headRefName,mergeable,reviewDecision,statusCheckRollup,url --limit 20
+
+# 10. Recently merged PRs (for orphan branch detection)
+gh pr list --author "$GH_USER" --state merged --json number,title,headRefName,mergedAt --limit 20
+
+# 11. Active contracts
+ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
+
+# 12. Branch behind/ahead counts for mission branches
+for branch in $(git branch --list 'mission/*' --format='%(refname:short)'); do
+  echo "$branch: $(git rev-list --left-right --count origin/$BASE_BRANCH...$branch 2>/dev/null || echo 'N/A')"
+done
+
+# 13. Open mission issue bodies (for duplicate/overlap detection)
+gh issue list --label "$MISSION_LABEL" --state open --json number,title,body,assignees,labels --limit 50
+```
+
+### Analysis Phase — 7 Diagnostic Checks
+
+Each check produces findings with a severity level:
+
+| Severity | Icon | Meaning |
+|----------|------|---------|
+| CRITICAL | 🔴 | Blocking work or risking data loss — fix before continuing |
+| WARNING | 🟡 | Should fix soon, causes friction or accumulates debt |
+| INFO | 🟢 | Cleanup opportunity, low urgency |
+
+#### Check 1: Orphan Branches
+
+A local branch is orphan if its corresponding issue is CLOSED or its PR is MERGED.
+
+```
+For each local branch matching mission/* pattern:
+  1. Extract issue number from branch name (first numeric segment after /)
+  2. Check if issue number appears in closed issues list → ORPHAN
+  3. Check if branch name appears in merged PRs list → ORPHAN
+  4. If orphan → severity 🟢, recommend: git branch -d {branch}
+```
+
+Edge cases:
+- Branch name doesn't contain an issue number → skip (not a mission branch)
+- Branch has unmerged local commits not in any PR → severity 🟡 instead of 🟢
+  - Detect: `git log origin/$BASE_BRANCH..{branch} --oneline` has commits not in merged PR
+  - Message: "Branch has local commits that may not be merged. Verify before deleting."
+
+#### Check 2: Cross-Contamination (Dirty Branches)
+
+Uncommitted changes on the current branch may belong to a different MC. This is the highest-value check and requires LLM judgment.
+
+```
+1. Get current branch name → extract its issue number
+2. Get git status --porcelain → list of changed files
+3. For each changed file:
+   a. Read the diff (git diff -- {file} + git diff --cached -- {file})
+   b. Cross-reference with open issues:
+      - Does the file path or change content relate to a DIFFERENT open issue?
+      - Does the diff match the description/title of another MC?
+4. Group findings:
+   - Changes that belong to current MC → OK
+   - Changes that likely belong to another MC → 🔴 CRITICAL
+   - Changes that don't match any MC → 🟡 WARNING (untracked work)
+```
+
+Heuristics for cross-referencing (LLM should use judgment, not rigid rules):
+- File path matches another issue's title keywords
+- Diff content matches another issue's description
+- File is completely unrelated to current branch's issue scope
+
+Edge case: No uncommitted changes → skip this check, output nothing.
+
+#### Check 3: Branch Staleness (Behind Base)
+
+Mission branches that fall too far behind base branch will have painful merges later.
+
+```
+For each local mission/* branch:
+  1. Count commits behind: git rev-list --count {branch}..origin/$BASE_BRANCH
+  2. Thresholds:
+     - 0-10 behind → OK (don't report)
+     - 11-30 behind → 🟡 WARNING
+     - 31+ behind → 🔴 CRITICAL
+  3. Only report for branches with corresponding OPEN issues (skip orphans)
+```
+
+#### Check 4: Stale Stashes
+
+Stashes older than 7 days or whose parent branch is deleted/merged are likely forgotten.
+
+```
+For each stash entry:
+  1. Parse date from git stash list --format='%gd|%ci|%s'
+  2. Parse branch name from stash message (usually "WIP on {branch}: ...")
+  3. Check age:
+     - < 7 days → OK
+     - 7-30 days → 🟢 INFO
+     - > 30 days → 🟡 WARNING
+  4. Check if parent branch still exists:
+     - Branch deleted or merged → 🟡 WARNING (stash is likely orphaned)
+  5. Check size:
+     - > 10 files → 🟡 WARNING (too large for stash, needs its own MC)
+  6. Show stash content summary: git stash show stash@{N} --stat
+```
+
+#### Check 5: Worktree Health
+
+Detect prunable worktrees and worktrees on deleted/merged branches.
+
+```
+Parse git worktree list --porcelain output:
+  For each worktree (skip the main one):
+    1. Check if marked "prunable" → 🟡 prunable
+    2. Check if branch is an orphan (issue closed / PR merged) → 🟡 orphan
+    3. Check if worktree directory exists on disk → if not, 🔴 broken (corrupted)
+```
+
+#### Check 6: Shippable PRs
+
+PRs that are ready to merge but sitting idle.
+
+```
+For each open PR:
+  1. Check CI status (statusCheckRollup) → all passing?
+  2. Check mergeable → MERGEABLE?
+  3. Check reviewDecision → APPROVED or no review required?
+  4. If all three → this PR is shippable
+  5. Severity: 🟡 WARNING (it's blocking progress)
+```
+
+#### Check 7: Issue Health (Duplicates, Overlap, Orphans)
+
+LLM reads all open mission issue titles + bodies and cross-references for problems. This check requires LLM judgment — semantic similarity detection, not string matching.
+
+```
+Sub-checks:
+
+A. DUPLICATE DETECTION
+   For each pair of open mission issues:
+     1. Compare titles semantically (not string match)
+     2. Compare objectives/descriptions
+     3. If high overlap → 🟡 WARNING "Issues #X and #Y appear to be duplicates"
+     Action: close one with gh issue close N --reason "not planned" --comment "Duplicate of #M"
+
+B. UNASSIGNED ISSUES
+   For each open mission issue:
+     1. Check if assignees list is empty
+     2. If unassigned and older than 3 days → 🟡 WARNING
+     Action: assign via gh issue edit N --add-assignee USER
+
+C. STALE ISSUES (no activity)
+   For each open mission issue:
+     1. Check if status:wip but no branch exists and no PR exists
+     2. If claimed (status:wip) but no commits on branch for >7 days → 🟡 WARNING
+     Action: re-evaluate priority or reassign
+
+D. ORPHAN CONTRACTS
+   For each file in $TEAMWORK_DIR/active/MISSION-*.md:
+     1. Extract issue number from filename
+     2. Check if corresponding GitHub issue is still open
+     3. If issue closed but contract still exists → 🟡 WARNING
+     Action: rm $TEAMWORK_DIR/active/MISSION-N.md
+```
+
+Heuristics for duplicate detection (LLM judgment):
+- "fix camera on Safari" and "iOS media access broken" are the same problem even with zero shared words
+- "add rate limiting" and "rate limit upload API" overlap but may be different scope — flag as potential, not definite
+- Issues sharing >50% sub-tasks are likely duplicates
+
+### Output Format — 3-Layer Visual Report
+
+1. **Snapshot tables** — structured data, one table per dimension (branches, PRs, stashes, worktrees, issues)
+2. **Diagnosis** — LLM cross-referencing analysis (the high-value part humans can't do with `git status`)
+3. **Action Plan** — prioritized fix list, grouped by urgency
+
+#### Layer 1: Snapshot Tables
+
+Each table shows raw state with inline emoji status indicators. Tables use box-drawing characters for visual clarity. Only show tables that have content worth reporting (skip empty/clean dimensions).
+
+**Branches table** — all local mission/* branches:
+- Status column: `🔴 dirty` (uncommitted changes), `🟢 clean`, `🟡 stale` (>30 commits behind), `💀 orph` (issue closed / PR merged)
+
+**Open PRs table** — only if there are open PRs:
+- Ready? column: `🟢 SHIP` (all green), `🔴 CI fail`, `🟡 review`, `🔴 conflict`, `⏳ pending`
+
+**Stashes table** — only if stashes exist:
+- Verdict column: `🟢 KEEP` (recent + active branch), `🟡 REVIEW` (old but active branch), `🟡 LARGE` (>10 files), `🔴 DROP` (parent branch deleted/merged)
+
+**Worktrees table** — only if non-main worktrees exist:
+- Health column: `🟢 active`, `🟡 prunable`, `🟡 orphan` (branch merged/deleted), `🔴 broken` (dir missing)
+
+**Issues table** — only if issues have problems (duplicates, unassigned, stale):
+- Health column: `🟡 DUP?` (potential duplicate), `🟡 NOBODY` (unassigned >3d), `🟡 STALE` (wip but no activity), `🟢 OK` (healthy)
+
+#### Layer 2: Diagnosis
+
+After the tables, cross-reference all data and output narrative findings. This is where the real intelligence lives — connecting dots across dimensions that no single `git` command can show.
+
+Rules:
+- Use emoji severity prefix: 🔴 / 🟡 / 🟢
+- Group related findings (e.g., multiple orphan branches in one finding, not separate entries)
+- Explain the cross-dimensional insight (WHY this is a problem, not just WHAT)
+- Prioritize cross-contamination and shippable PRs — these block real work
+- If a check finds nothing wrong, report it as 🟢 with a one-liner
+
+#### Layer 3: Action Plan
+
+Concrete commands, grouped by severity (🔴 first, then 🟡, then 🟢). Each action maps to a diagnosis finding.
+
+Rules:
+- Every action has a numbered step + the exact command(s) to run
+- Stash drops must be ordered from highest index first (indices shift on drop)
+- Cross-contamination fixes suggest both options (discard vs stash for later)
+- Shippable PRs suggest both `gh pr merge` and `/team-ship done`
+- Duplicate issues suggest `gh issue close N --reason "not planned" --comment "Duplicate of #M"`
+- Large stashes suggest creating a new MC via `/team-issue`
+
+#### Clean State Output
+
+If all checks pass:
+
+```
+🏥 LOCAL HEALTH — {repo name}
+══════════════════════════════════════════════════
+🟢 All clear.
+   {N} mission branches — all active, no contamination
+   {N} stashes — all recent
+   {N} worktrees — all healthy
+   {N} open PRs — none ready to ship yet
+   {N} open issues — no duplicates, all assigned
+══════════════════════════════════════════════════
+```
+
+No tables, no diagnosis, no action plan. Just the summary.
+
+#### Report Format Example
+
+```
+🏥 LOCAL HEALTH — {repo name}
+   Current: {current branch} | Base: {base branch}
+══════════════════════════════════════════════════════════════════════════
+
+📋 BRANCHES ({N} local)
+┌──────────────────────────────┬────────────┬──────────┬──────────────────────────────────────┐
+│ Branch                       │ Status     │ vs Base  │ Issue / PR                           │
+├──────────────────────────────┼────────────┼──────────┼──────────────────────────────────────┤
+│ mission/42-feat-* [cur]      │ 🔴 dirty   │ +6, -1   │ #42 OPEN  │ PR #43 ✅ pass          │
+│ mission/29-fix-*             │ 💀 orph    │ +0, -38  │ #29 CLOSED│ PR #30 merged            │
+└──────────────────────────────┴────────────┴──────────┴──────────────────────────────────────┘
+
+📋 OPEN PRS ({N})
+┌──────┬───────────────────────────────┬──────┬───────────┬────────┬──────────┐
+│  PR  │ Title                         │ CI   │ Mergeable │ Review │ Ready?   │
+├──────┼───────────────────────────────┼──────┼───────────┼────────┼──────────┤
+│ #43  │ feat: user login              │ ✅   │ ✅        │ —      │ 🟢 SHIP │
+└──────┴───────────────────────────────┴──────┴───────────┴────────┴──────────┘
+
+📋 STASHES ({N})
+┌───────────┬─────────┬──────────────────────────┬──────────────────────┬──────────┐
+│ Stash     │ Age     │ Message                  │ Content              │ Verdict  │
+├───────────┼─────────┼──────────────────────────┼──────────────────────┼──────────┤
+│ stash@{0} │ 3 days  │ WIP on mission/42: feat  │ 14 files (~2800 ln)  │ 🟡 LARGE │
+│ stash@{1} │ 42 days │ WIP on mission/18: fix   │ 1 file               │ 🔴 DROP  │
+└───────────┴─────────┴──────────────────────────┴──────────────────────┴──────────┘
+
+📋 WORKTREES ({N} extra)
+┌──────────────────────────────────────┬────────────────────┬─────────────┐
+│ Path                                 │ Branch             │ Health      │
+├──────────────────────────────────────┼────────────────────┼─────────────┤
+│ ../repo-wt-feat                      │ mission/42-feat    │ 🟢 active   │
+│ ../repo-wt-old                       │ (missing)          │ 🟡 prunable │
+└──────────────────────────────────────┴────────────────────┴─────────────┘
+
+📋 ISSUES ({N} problems in {M} open)
+┌───────┬──────────────────────────────────┬──────────────┬─────────────┬───────────┐
+│ Issue │ Title                            │ Assignee     │ Status      │ Health    │
+├───────┼──────────────────────────────────┼──────────────┼─────────────┼───────────┤
+│ #50   │ fix: Safari camera permission    │ user1        │ status:wip  │ 🟡 DUP?  │
+│ #52   │ fix: iOS media access broken     │ user1        │ status:wip  │ 🟡 DUP?  │
+│ #48   │ feat: add usage analytics        │ (none)       │ status:wip  │ 🟡 NOBODY│
+└───────┴──────────────────────────────────┴──────────────┴─────────────┴───────────┘
+
+🔍 DIAGNOSIS
+──────────────────────────────────────────────────────────────────────────
+
+{🔴/🟡/🟢 severity findings — LLM cross-references all data and outputs
+ narrative insights. Group related findings. Explain WHY, not just WHAT.
+ Prioritize cross-contamination and shippable PRs first.}
+
+📌 ACTION PLAN ({N} actions)
+══════════════════════════════════════════════════════════════════════════
+
+ 🔴 Critical
+ ───────────────────
+ [1] {action}: {exact command(s)}
+
+ 🟡 Warning
+ ───────────────────
+ [2] {action}: {exact command(s)}
+
+ 🟢 Cleanup
+ ───────────────────
+ [3] {action}: {exact command(s)}
+
+══════════════════════════════════════════════════════════════════════════
+SUMMARY: 🔴 {N} critical │ 🟡 {N} warnings │ 🟢 {N} cleanup
+══════════════════════════════════════════════════════════════════════════
+```
+
+Then **STOP**.
 
 ---
 

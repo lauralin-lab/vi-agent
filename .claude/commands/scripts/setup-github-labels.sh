@@ -29,12 +29,9 @@ MC_LABEL="mission"
 
 TW_CONFIG="$HOME/.claude/commands/scripts/tw-config.sh"
 if [[ -x "$TW_CONFIG" ]] || [[ -f "$TW_CONFIG" ]]; then
-  _S=$(bash "$TW_CONFIG" labels.status_prefix "" 2>/dev/null)
-  [[ -z "$_S" ]] && _S=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
-  _P=$(bash "$TW_CONFIG" labels.priority_prefix "" 2>/dev/null)
-  [[ -z "$_P" ]] && _P=$(bash "$TW_CONFIG" label_prefix.priority "" 2>/dev/null)
-  _M=$(bash "$TW_CONFIG" labels.mission "" 2>/dev/null)
-  [[ -z "$_M" ]] && _M=$(bash "$TW_CONFIG" github.mc_label "" 2>/dev/null)
+  _S=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
+  _P=$(bash "$TW_CONFIG" label_prefix.priority "" 2>/dev/null)
+  _M=$(bash "$TW_CONFIG" github.mc_label "" 2>/dev/null)
   [[ -z "$_M" ]] && _M=$(bash "$TW_CONFIG" mc_label "" 2>/dev/null)
   [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
   [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
