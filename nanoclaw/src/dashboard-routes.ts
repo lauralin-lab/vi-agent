@@ -9,6 +9,7 @@ import { getAllTemplates } from './packages/template-registry.js';
 import { getStoreStats, getSessionCardState } from './persistence/card-store.js';
 import { getPoolStatus } from './pool/process-pool.js';
 import { getQueueDepths } from './pool/queue-router.js';
+import { getActiveUserIds } from './channels/active-users.js';
 import { channels, type ExecRequest } from './channels/types.js';
 import { config } from './config.js';
 
@@ -25,6 +26,20 @@ export function createDashboardRouter(): Router {
   router.get('/api/dashboard/health', async (_req: Request, res: Response) => {
     try {
       const queueDepths = await getQueueDepths();
+      // Count persisted sessions from filesystem
+      let persistedSessionCount = 0;
+      try {
+        const sessionsDir = join(config.userDataDir, 'sessions');
+        const dirs = await readdir(sessionsDir);
+        for (const d of dirs) {
+          if (d === 'active') continue;
+          try {
+            const st = await stat(join(sessionsDir, d));
+            if (st.isDirectory()) persistedSessionCount++;
+          } catch { /* skip */ }
+        }
+      } catch { /* no sessions dir */ }
+
       res.json({
         status: 'ok',
         service: 'nanoclaw',
@@ -33,6 +48,8 @@ export function createDashboardRouter(): Router {
         pool: getPoolStatus(),
         queues: queueDepths,
         cardStore: getStoreStats(),
+        activeUsers: getActiveUserIds(),
+        persistedSessions: persistedSessionCount,
       });
     } catch (err) {
       res.status(500).json({

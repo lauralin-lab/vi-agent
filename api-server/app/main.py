@@ -78,20 +78,33 @@ async def lifespan(app: FastAPI):
 
     # Firebase Manager
     if settings.FIREBASE_ENABLED:
-        from .services.firebase_manager import FirebaseManager
+        try:
+            from .services.firebase_manager import FirebaseManager
 
-        firebase_mgr = FirebaseManager()
-        for project_config in parse_firebase_projects(settings.FIREBASE_PROJECTS):
-            firebase_mgr.register_project(
-                package_name=project_config["package_name"],
-                project_id=project_config["project_id"],
-                service_account_path=project_config.get("service_account_path"),
-            )
-        app.state.firebase_manager = firebase_mgr
-        logger.info("Firebase initialized with %d project(s)", firebase_mgr.project_count)
+            project_configs = parse_firebase_projects(settings.FIREBASE_PROJECTS)
+            if not project_configs:
+                logger.error(
+                    "FIREBASE_ENABLED=true but FIREBASE_PROJECTS is empty or invalid. "
+                    "Format: 'package_name:project_id:sa_path' (sa_path optional on GCP). "
+                    "Auth endpoints will return 503."
+                )
+                app.state.firebase_manager = None
+            else:
+                firebase_mgr = FirebaseManager()
+                for project_config in project_configs:
+                    firebase_mgr.register_project(
+                        package_name=project_config["package_name"],
+                        project_id=project_config["project_id"],
+                        service_account_path=project_config.get("service_account_path"),
+                    )
+                app.state.firebase_manager = firebase_mgr
+                logger.info("Firebase initialized with %d project(s)", firebase_mgr.project_count)
+        except Exception:
+            logger.error("Firebase initialization failed — auth endpoints will return 503", exc_info=True)
+            app.state.firebase_manager = None
     else:
         app.state.firebase_manager = None
-        logger.warning("Firebase disabled — auth endpoints will use fallback mode")
+        logger.warning("Firebase disabled (FIREBASE_ENABLED != true) — auth endpoints will return 503")
 
     # Connect to Redis (graceful degradation if unavailable)
     try:

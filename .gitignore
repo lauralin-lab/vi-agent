@@ -34,6 +34,9 @@ docker-compose.override.yml
 ssl
 *.egg-info
 
+# Firebase service account keys (secrets — never commit)
+firebase/*.json
+
 # Terraform
 .terraform/
 *.tfstate

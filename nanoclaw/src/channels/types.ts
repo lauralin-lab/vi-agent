@@ -187,6 +187,8 @@ export interface ExecStartEvent {
   type: 'exec_start';
   taskId: string;
   executor: string;
+  prompt?: string;
+  mediaUrls?: string[];
 }
 
 export interface ExecProgressEvent {

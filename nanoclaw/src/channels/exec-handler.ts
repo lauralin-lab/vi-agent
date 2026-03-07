@@ -24,7 +24,7 @@ async function processNext(): Promise<void> {
 
   try {
     console.log(`[redis][nanoclaw] Executing task ${request.taskId} for user ${userId} (queue: ${taskQueue.length} remaining)`);
-    await requestContext.run({ userId }, () => executeTask(request));
+    await requestContext.run({ userId, sessionId: request.sessionId }, () => executeTask(request));
   } catch (err) {
     console.error(`[redis][nanoclaw] unhandled error for task ${request.taskId}:`, err);
   } finally {

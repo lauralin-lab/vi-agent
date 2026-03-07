@@ -65,8 +65,12 @@ services:
       GCS_BUCKET: ${GCS_BUCKET:-vi-uploads}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-vi-internal-dev-token}
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
+      FIREBASE_PROJECTS: ${FIREBASE_PROJECTS:-}
       SHARED_SKILLS_DIR: /data/shared/skills
       USER_DATA_DIR: /data/users
+    volumes:
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     depends_on:
       postgres:
         condition: service_healthy

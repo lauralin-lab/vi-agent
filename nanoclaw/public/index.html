@@ -13,32 +13,11 @@
       <div class="subtitle">Control Center</div>
     </div>
     <nav class="nav-links">
-      <a class="nav-link active" data-page="chat">
+      <a class="nav-link active" data-page="overview">
+        <span class="icon">&#9776;</span> Overview
+      </a>
+      <a class="nav-link" data-page="chat">
         <span class="icon">&#9993;</span> Chat
-      </a>
-      <a class="nav-link" data-page="channels">
-        <span class="icon">&#9733;</span> Channels
-      </a>
-      <a class="nav-link" data-page="sessions">
-        <span class="icon">&#9201;</span> Sessions
-      </a>
-      <a class="nav-link" data-page="memory">
-        <span class="icon">&#9671;</span> Memory
-      </a>
-      <a class="nav-link" data-page="health">
-        <span class="icon">&#9829;</span> Health
-      </a>
-      <a class="nav-link" data-page="skills">
-        <span class="icon">&#9889;</span> Skills
-      </a>
-      <a class="nav-link" data-page="sse">
-        <span class="icon">&#9679;</span> SSE Monitor
-      </a>
-      <a class="nav-link" data-page="cards">
-        <span class="icon">&#9638;</span> Card Preview
-      </a>
-      <a class="nav-link" data-page="tasks">
-        <span class="icon">&#9776;</span> Task Inspector
       </a>
     </nav>
     <div class="sidebar-footer">
@@ -47,200 +26,185 @@
   </aside>
 
   <main class="main">
-    <!-- Chat Page -->
-    <section class="page active" id="page-chat">
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- OVERVIEW PAGE                                           -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page active" id="page-overview">
       <div class="page-header">
-        <h2>Chat</h2>
-        <p>Send prompts to NanoClaw and see responses in real-time</p>
+        <h2>Overview</h2>
+        <p>System status, skills, memory, and configuration</p>
       </div>
-      <div class="chat-container">
-        <div class="chat-messages" id="chat-messages">
-          <div class="chat-empty">Send a message to start a conversation with NanoClaw</div>
-        </div>
-        <div class="chat-input-area">
-          <div class="skill-picker" id="skill-picker" style="display:none">
-            <div class="skill-picker-header">Select a skill</div>
-            <div class="skill-picker-list" id="skill-picker-list"></div>
-          </div>
-          <div class="chat-input-row">
-            <input type="text" id="chat-input" placeholder="Type a message... Use @ to mention a skill" autocomplete="off">
-            <button class="btn btn-primary" id="chat-send">Send</button>
-          </div>
-          <div class="chat-skill-tag" id="chat-skill-tag" style="display:none">
-            <span id="chat-skill-name"></span>
-            <button class="chat-skill-remove" id="chat-skill-remove">&times;</button>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Multi-Channel Monitor Page -->
-    <section class="page" id="page-channels">
-      <div class="page-header">
-        <h2>Channel Monitor</h2>
-        <p>All Redis channels for this user in real-time</p>
-      </div>
-      <div class="controls">
-        <label style="font-size:13px;color:var(--text-dim)">User ID:</label>
-        <input type="text" id="ch-uid" placeholder="default: from config" style="width:160px">
-        <button class="btn btn-primary" id="ch-connect">Connect</button>
-        <button class="btn" id="ch-clear">Clear</button>
-        <span id="ch-status" style="font-size:12px;color:var(--text-dim)"></span>
-      </div>
-      <div class="channel-filters" id="channel-filters">
-        <label class="ch-filter"><input type="checkbox" value="ctx" checked><span class="ch-dot ch-ctx"></span>ctx</label>
-        <label class="ch-filter"><input type="checkbox" value="exec" checked><span class="ch-dot ch-exec"></span>exec</label>
-        <label class="ch-filter"><input type="checkbox" value="stream" checked><span class="ch-dot ch-stream"></span>stream</label>
-        <label class="ch-filter"><input type="checkbox" value="intent" checked><span class="ch-dot ch-intent"></span>intent</label>
-        <label class="ch-filter"><input type="checkbox" value="actions" checked><span class="ch-dot ch-actions"></span>actions</label>
-        <label class="ch-filter"><input type="checkbox" value="summary" checked><span class="ch-dot ch-summary"></span>summary</label>
-        <label class="ch-filter"><input type="checkbox" value="frames" checked><span class="ch-dot ch-frames"></span>frames</label>
-        <label class="ch-filter"><input type="checkbox" value="media" checked><span class="ch-dot ch-media"></span>media</label>
-        <label class="ch-filter"><input type="checkbox" value="events" checked><span class="ch-dot ch-events"></span>events</label>
-      </div>
-      <div class="sse-log" id="ch-log"></div>
-    </section>
-
-    <!-- Session History Page -->
-    <section class="page" id="page-sessions">
-      <div class="page-header">
-        <h2>Session History</h2>
-        <p>Timeline of all task executions</p>
-      </div>
-      <div class="controls">
-        <button class="btn btn-primary" id="sessions-refresh">Refresh</button>
-        <span id="sessions-count" style="font-size:12px;color:var(--text-dim)"></span>
-      </div>
-      <div class="timeline" id="sessions-timeline">
-        <div class="loading">Loading...</div>
-      </div>
-    </section>
-
-    <!-- Memory Manager Page -->
-    <section class="page" id="page-memory">
-      <div class="page-header">
-        <h2>Memory Manager</h2>
-        <p>Browse and edit the 3-layer memory system</p>
-      </div>
-      <div class="memory-layout">
-        <div class="memory-sidebar">
-          <div class="memory-layer" data-layer="identity">
-            <div class="memory-layer-header">
-              <span>Identity</span>
-              <button class="btn-sm" data-action="create" data-layer="identity">+</button>
-            </div>
-            <div class="memory-file-list" id="mem-files-identity"></div>
-          </div>
-          <div class="memory-layer" data-layer="semantic">
-            <div class="memory-layer-header">
-              <span>Semantic</span>
-              <button class="btn-sm" data-action="create" data-layer="semantic">+</button>
-            </div>
-            <div class="memory-file-list" id="mem-files-semantic"></div>
-          </div>
-          <div class="memory-layer" data-layer="episodic">
-            <div class="memory-layer-header">
-              <span>Episodic</span>
-              <button class="btn-sm" data-action="create" data-layer="episodic">+</button>
-            </div>
-            <div class="memory-file-list" id="mem-files-episodic"></div>
-          </div>
-        </div>
-        <div class="memory-editor">
-          <div class="memory-editor-header" id="mem-editor-header">
-            <span id="mem-editor-title">Select a file to view</span>
-            <div id="mem-editor-actions" style="display:none">
-              <button class="btn btn-primary btn-sm" id="mem-save">Save</button>
-              <button class="btn btn-sm mem-delete" id="mem-delete">Delete</button>
-            </div>
-          </div>
-          <textarea id="mem-editor-content" class="memory-textarea" placeholder="Select a file from the left panel..."></textarea>
-        </div>
-        <div class="memory-context">
-          <div class="memory-context-header">
-            <span>Context Snapshot</span>
-            <span class="badge badge-blue" id="mem-version">v0</span>
-          </div>
-          <div class="memory-context-body" id="mem-context-body">
-            <div class="loading">Waiting for context update...</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Health Page -->
-    <section class="page" id="page-health">
-      <div class="page-header">
-        <h2>Health</h2>
-        <p>System status and resource overview</p>
-      </div>
+      <!-- Status Cards -->
       <div class="grid" id="health-cards"></div>
-      <div style="margin-top:24px">
-        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Queue Depths</h3>
-        <div class="table-wrap" id="health-queues">
-          <div class="loading">Loading...</div>
+
+      <!-- Active Users -->
+      <div class="overview-section" style="margin-top:24px">
+        <div class="section-header" data-toggle="users">
+          <span>Active Users</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-users">
+          <div id="active-users-list" class="grid">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="overview-section" style="margin-top:16px">
+        <div class="section-header" data-toggle="skills">
+          <span>Skills</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-skills">
+          <div id="skills-grid" class="skills-grid"></div>
+        </div>
+      </div>
+
+      <!-- Memory -->
+      <div class="overview-section" style="margin-top:16px">
+        <div class="section-header" data-toggle="memory">
+          <span>Memory</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-memory">
+          <div class="memory-layout">
+            <div class="memory-sidebar">
+              <div class="memory-layer" data-layer="identity">
+                <div class="memory-layer-header">
+                  <span>Identity</span>
+                  <button class="btn-sm" data-action="create" data-layer="identity">+</button>
+                </div>
+                <div class="memory-file-list" id="mem-files-identity"></div>
+              </div>
+              <div class="memory-layer" data-layer="semantic">
+                <div class="memory-layer-header">
+                  <span>Semantic</span>
+                  <button class="btn-sm" data-action="create" data-layer="semantic">+</button>
+                </div>
+                <div class="memory-file-list" id="mem-files-semantic"></div>
+              </div>
+              <div class="memory-layer" data-layer="episodic">
+                <div class="memory-layer-header">
+                  <span>Episodic</span>
+                  <button class="btn-sm" data-action="create" data-layer="episodic">+</button>
+                </div>
+                <div class="memory-file-list" id="mem-files-episodic"></div>
+              </div>
+            </div>
+            <div class="memory-editor">
+              <div class="memory-editor-header">
+                <span id="mem-editor-title">Select a file to view</span>
+                <div id="mem-editor-actions" style="display:none">
+                  <button class="btn btn-primary btn-sm" id="mem-save">Save</button>
+                  <button class="btn btn-sm mem-delete" id="mem-delete">Delete</button>
+                </div>
+              </div>
+              <textarea id="mem-editor-content" class="memory-textarea" placeholder="Select a file from the left panel..."></textarea>
+            </div>
+            <div class="memory-context">
+              <div class="memory-context-header">
+                <span>Context Snapshot</span>
+                <span class="badge badge-blue" id="mem-version">v0</span>
+              </div>
+              <div class="memory-context-body" id="mem-context-body">
+                <div class="loading">Waiting for context update...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Queues & Templates -->
+      <div class="overview-section" style="margin-top:16px">
+        <div class="section-header" data-toggle="infra">
+          <span>Queues & Templates</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-infra">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">Queue Depths</h4>
+              <div class="table-wrap" id="health-queues"><div class="loading">Loading...</div></div>
+            </div>
+            <div>
+              <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">Templates</h4>
+              <div class="table-wrap" id="templates-table"><div class="loading">Loading...</div></div>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">Card Store</h4>
+            <div class="grid" id="store-stats"></div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Skills Page -->
-    <section class="page" id="page-skills">
-      <div class="page-header">
-        <h2>Skills</h2>
-        <p>Registered skill manifests</p>
-      </div>
-      <div class="table-wrap" id="skills-table">
-        <div class="loading">Loading...</div>
-      </div>
-    </section>
-
-    <!-- SSE Monitor Page -->
-    <section class="page" id="page-sse">
-      <div class="page-header">
-        <h2>SSE Monitor</h2>
-        <p>Live event stream from Redis</p>
-      </div>
-      <div class="controls">
-        <label style="font-size:13px;color:var(--text-dim)">User ID:</label>
-        <input type="text" id="sse-uid" placeholder="default: from config">
-        <button class="btn btn-primary" id="sse-connect">Connect</button>
-        <button class="btn" id="sse-clear">Clear</button>
-        <span id="sse-status" style="font-size:12px;color:var(--text-dim)"></span>
-      </div>
-      <div class="sse-log" id="sse-log"></div>
-    </section>
-
-    <!-- Card Preview Page -->
-    <section class="page" id="page-cards">
-      <div class="page-header">
-        <h2>Card Preview</h2>
-        <p>Live card state from SSE stream</p>
-      </div>
-      <div class="controls">
-        <span style="font-size:13px;color:var(--text-dim)">Cards update in real-time from the SSE stream</span>
-      </div>
-      <div class="grid" id="card-canvas"></div>
-      <div style="margin-top:16px">
-        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Card Event Log</h3>
-        <div class="json-view" id="card-event-log">No events yet</div>
-      </div>
-    </section>
-
-    <!-- Task Inspector Page -->
-    <section class="page" id="page-tasks">
-      <div class="page-header">
-        <h2>Task Inspector</h2>
-        <p>Templates and session card store</p>
-      </div>
-      <div style="margin-bottom:24px">
-        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Templates</h3>
-        <div class="table-wrap" id="templates-table">
-          <div class="loading">Loading...</div>
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- CHAT PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-chat">
+      <div class="chat-layout">
+        <!-- Session Sidebar -->
+        <div class="chat-sidebar">
+          <div class="chat-sidebar-header">
+            <span class="chat-sidebar-title">Sessions</span>
+            <div class="chat-sidebar-actions">
+              <button class="btn-sm" id="refresh-sessions-btn" title="Refresh sessions">&#8635;</button>
+              <button class="btn btn-primary btn-sm" id="new-session-btn">+ New</button>
+            </div>
+          </div>
+          <div class="chat-sidebar-list" id="session-list">
+            <div class="loading" style="padding:16px;font-size:12px">Loading...</div>
+          </div>
+          <div class="chat-sidebar-info" id="session-info">
+            <div class="session-info-empty">Select a session for details</div>
+          </div>
         </div>
-      </div>
-      <div>
-        <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-dim)">Card Store Stats</h3>
-        <div class="grid" id="store-stats"></div>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-empty">Send a message to start a conversation with NanoClaw</div>
+          </div>
+
+          <!-- Collapsible Monitor -->
+          <div class="monitor-panel" id="monitor-panel">
+            <div class="monitor-header" id="monitor-toggle">
+              <span>&#9660; Monitor</span>
+              <div class="monitor-filters" id="channel-filters">
+                <label class="ch-filter"><input type="checkbox" value="ctx" checked><span class="ch-dot ch-ctx"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="exec" checked><span class="ch-dot ch-exec"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="stream" checked><span class="ch-dot ch-stream"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="intent" checked><span class="ch-dot ch-intent"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="actions" checked><span class="ch-dot ch-actions"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="summary" checked><span class="ch-dot ch-summary"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="frames" checked><span class="ch-dot ch-frames"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="media" checked><span class="ch-dot ch-media"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="events" checked><span class="ch-dot ch-events"></span></label>
+              </div>
+              <button class="btn-sm" id="monitor-clear">Clear</button>
+            </div>
+            <div class="monitor-log" id="monitor-log" style="display:none"></div>
+          </div>
+
+          <!-- Input Area -->
+          <div class="chat-input-area">
+            <div class="skill-picker" id="skill-picker" style="display:none">
+              <div class="skill-picker-header">Select a skill</div>
+              <div class="skill-picker-list" id="skill-picker-list"></div>
+            </div>
+            <div class="chat-input-row">
+              <input type="text" id="chat-input" placeholder="Type a message... Use @ to mention a skill" autocomplete="off">
+              <button class="btn btn-primary" id="chat-send">Send</button>
+            </div>
+            <div class="chat-skill-tag" id="chat-skill-tag" style="display:none">
+              <span id="chat-skill-name"></span>
+              <button class="chat-skill-remove" id="chat-skill-remove">&times;</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </main>

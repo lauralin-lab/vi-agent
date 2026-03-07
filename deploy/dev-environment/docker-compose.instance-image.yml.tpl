@@ -86,6 +86,7 @@ services:
       - SHARED_SKILLS_DIR=/data/shared/skills
     volumes:
       - api_user_data:/data/users
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     depends_on:
       postgres:
         condition: service_healthy

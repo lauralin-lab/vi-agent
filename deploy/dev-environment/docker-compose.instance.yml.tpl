@@ -78,12 +78,15 @@ services:
       - API_BASE_URL=http://${SERVER_IP}:__API_PORT__
       - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,https://${SERVER_IP}:__FRONTEND_HTTPS_PORT__,http://localhost:__FRONTEND_PORT__
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
       - VI_AGENT_NAME=vi-__DEV_NAME__
       - IMAGE_TAG=__SLOT__-build
       - USER_DATA_DIR=/data/users
       - SHARED_SKILLS_DIR=/data/shared/skills
     volumes:
       - api_user_data:/data/users
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     depends_on:
       postgres:
         condition: service_healthy

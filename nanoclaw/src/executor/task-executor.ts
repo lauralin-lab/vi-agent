@@ -6,6 +6,7 @@ import { syncToCloud } from '../fs/cloud-sync.js';
 import { readFileOrNull } from '../fs/user-fs.js';
 import { config } from '../config.js';
 import { requestContext } from '../channels/request-context.js';
+import { getSessionCardState } from '../persistence/card-store.js';
 import type { ExecRequest } from '../channels/types.js';
 
 /**
@@ -87,14 +88,26 @@ async function persistResult(
       `${request.taskId}.json`,
     );
     await mkdir(dirname(resultPath), { recursive: true });
+
+    // Collect card final state from in-memory card store
+    const cardState = getSessionCardState(request.sessionId);
+    const cards: Record<string, unknown> = {};
+    for (const [cardId, state] of Object.entries(cardState.finalState)) {
+      if (state.status !== 'removed') {
+        cards[cardId] = { template: state.template, data: state.data, status: state.status };
+      }
+    }
+
     await writeFile(
       resultPath,
       JSON.stringify({
         taskId: request.taskId,
         sessionId: request.sessionId,
-        skillSlug: request.skillSlug || '_generic',
+        skillSlug: request.skillSlug || 'agent:main',
         prompt: request.prompt,
+        mediaUrls: request.mediaUrls || [],
         result: result.slice(0, 10000),
+        cards: Object.keys(cards).length > 0 ? cards : undefined,
         durationMs,
         ts: Date.now(),
       }),
@@ -129,8 +142,8 @@ function buildGenericSkill(request: ExecRequest) {
   const hasMedia = !!request.mediaUrls?.length;
   return {
     manifest: {
-      name: 'Generic Assistant',
-      slug: '_generic',
+      name: 'Main Agent',
+      slug: 'agent:main',
       icon: '🤖',
       description: 'General-purpose assistant',
       category: 'general' as const,

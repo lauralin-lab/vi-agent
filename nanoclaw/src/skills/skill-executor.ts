@@ -622,11 +622,13 @@ This is critical — present results as a structured card, not plain text in you
   const predefinedSteps = skill.manifest.thinking?.steps || [];
   let stepIndex = 0;
 
-  // Publish exec_start
+  // Publish exec_start (include prompt + media so dashboard can display them)
   await publishStreamEvent({
     type: 'exec_start',
     taskId,
     executor: `nanoclaw:${skill.manifest.slug}`,
+    prompt: request.prompt,
+    mediaUrls: request.mediaUrls,
   });
 
   // Progress step 1: Preparing
