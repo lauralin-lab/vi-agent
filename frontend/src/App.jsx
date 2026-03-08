@@ -107,6 +107,7 @@ function App() {
   const [liveResult, setLiveResult] = useState(null);
   const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [lastIntention, setLastIntention] = useState('');
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   // ── Badge state ──
   const [badges, setBadges] = useState({ home: 0, memory: 0 });
@@ -258,6 +259,7 @@ function App() {
       }
     }
     setViewState('home');
+    setHistoryRefreshKey(k => k + 1);
   };
 
   const handleOpenCamera = () => {
@@ -266,6 +268,7 @@ function App() {
 
   const handleOpenHistory = () => {
     setViewState('home');
+    setHistoryRefreshKey(k => k + 1);
   };
 
   const handleOpenAllTasks = (dateKey = null) => {
@@ -359,7 +362,7 @@ function App() {
   return (
     <div className="flex flex-col items-center h-full overflow-hidden bg-black">
       <DeviceFrame>
-        <div className="relative w-full h-full bg-black font-sans select-none">
+        <div className="relative w-full h-full font-sans select-none" style={{ background: '#F2F2F7' }}>
           <AnimatePresence mode="wait">
             {viewState === 'camera' && (
               <LiveCameraView
@@ -387,7 +390,7 @@ function App() {
 
             {viewState === 'home' && (
               <HistoryView
-                key="home"
+                key={`home-${historyRefreshKey}`}
                 isHome={true}
                 onBack={handleBackToHistory}
                 onOpenCamera={handleOpenCamera}
@@ -423,21 +426,20 @@ function App() {
               />
             )}
 
-            {viewState === 'all-tasks' && (
-              <AllTasksView
-                key="all-tasks"
-                onBack={handleBackToHistory}
-                onSelectSession={handleSelectSession}
-                scrollToDateKey={allTasksScrollDate}
-                isAuthenticated={auth.isAuthenticated}
-              />
-            )}
-
             {viewState === 'memory' && (
               <SettingsView
                 key="settings"
                 onBack={handleBackToHistory}
                 livekit={livekit}
+              />
+            )}
+            {viewState === 'all-tasks' && (
+              <AllTasksView
+                key="all-tasks"
+                onBack={() => setViewState('home')}
+                onSelectSession={handleSelectSession}
+                scrollToDateKey={allTasksScrollDate}
+                isAuthenticated={auth.isAuthenticated}
               />
             )}
           </AnimatePresence>

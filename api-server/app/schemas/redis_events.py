@@ -172,6 +172,8 @@ class ExecStart(BaseModel):
     type: Literal["exec_start"] = "exec_start"
     taskId: str
     executor: str
+    prompt: str | None = None
+    mediaUrls: list[str] | None = None
 
 
 class ExecProgress(BaseModel):

@@ -205,7 +205,7 @@ EOF
   fi
 
   # Update API keys from environment (injected by GitHub Actions)
-  for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET GOOGLE_API_KEY ANTHROPIC_API_KEY GCS_BUCKET; do
+  for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET GOOGLE_API_KEY ANTHROPIC_API_KEY GCS_BUCKET FIREBASE_ENABLED FIREBASE_PROJECTS; do
     val="${!key:-}"
     if [ -n "$val" ]; then
       sed -i "/^${key}=/d" "$INSTANCE_DIR/.env"

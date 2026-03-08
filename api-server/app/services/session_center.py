@@ -144,9 +144,9 @@ class SessionCenter:
         if "status" in updates and updates["status"] not in VALID_SESSION_STATUSES:
             raise ValueError(f"Invalid session status: {updates['status']}")
         allowed_fields = {
-            "title", "intention", "status", "progress_step", "progress_total",
-            "progress_message", "result_summary", "result_html", "artifacts",
-            "timeline", "memory_updates",
+            "title", "intention", "status", "context", "progress_step",
+            "progress_total", "progress_message", "result_summary",
+            "result_html", "artifacts", "timeline", "memory_updates",
         }
         for key, value in updates.items():
             if key in allowed_fields and value is not None:

@@ -119,18 +119,16 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={IOS_SPRING}
-            className="w-full h-full relative z-40"
+            className="w-full h-full relative z-50 flex flex-col overflow-hidden"
             style={{ background: '#F2F2F7' }}
         >
-            {/* Header — frosted glass */}
+            {/* Header — fixed at top */}
             <div
-                className="sticky top-0 z-10 flex items-center gap-3 px-4"
+                className="flex-shrink-0 flex items-center gap-3 px-4"
                 style={{
                     paddingTop: 'max(60px, calc(env(safe-area-inset-top, 16px) + 44px))',
                     paddingBottom: 12,
-                    background: 'rgba(242,242,247,0.92)',
-                    backdropFilter: 'blur(20px)',
-                    WebkitBackdropFilter: 'blur(20px)',
+                    background: '#F2F2F7',
                 }}
             >
                 <motion.button
@@ -147,7 +145,7 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
             {/* Scrollable timeline */}
             <div
                 ref={scrollRef}
-                className="w-full h-full overflow-y-auto px-4"
+                className="w-full flex-1 min-h-0 overflow-y-auto px-4"
                 style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 120 }}
             >
                 {dateGroups.map((group, gi) => (

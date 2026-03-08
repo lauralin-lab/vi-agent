@@ -324,8 +324,16 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
                 logger.warning(f"[conversation] Error creating session: {e}")
 
     async def persist_conversation_timeline(self):
-        """Persist conversation timeline to DB on disconnect."""
+        """Persist conversation timeline to DB on disconnect.
+
+        Only persists if there are user messages — agent-only timelines
+        (e.g. just a greeting) are not worth saving as sessions.
+        """
         if not self._conversation_timeline:
+            return
+        has_user_message = any(e.get("type") == "user" for e in self._conversation_timeline)
+        if not has_user_message:
+            logger.info("[conversation] Skipping timeline persist — no user messages (agent-only)")
             return
         try:
             await self.ensure_conversation_session()
@@ -568,9 +576,10 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         except Exception as e:
             logger.warning(f"[shutdown] Failed to persist conversation timeline: {e}")
 
-        # Trigger session-end memory extraction
+        # Trigger session-end memory extraction (only if user actually spoke)
+        has_user_msg = any(e.get("type") == "user" for e in self._conversation_timeline)
         try:
-            if self._conversation_timeline and self._vi_user_id:
+            if self._conversation_timeline and self._vi_user_id and has_user_msg:
                 summary_parts = []
                 for entry in self._conversation_timeline[:20]:
                     role = entry.get("type", "unknown")
