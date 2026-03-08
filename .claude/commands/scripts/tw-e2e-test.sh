@@ -239,12 +239,11 @@ issue_content_hash: "test-hash-will-not-match"
 - [ ] Run validation
 EOCONTRACT
 
-# find contract
-FIND_OUT=$(run_script tw-contract.sh find "$TEST_ISSUE" 2>&1)
-if echo "$FIND_OUT" | grep -q "MISSION-${TEST_ISSUE}"; then
-  pass "contract find → MISSION-${TEST_ISSUE}.md"
+# verify contract exists
+if [ -f "$TW_DIR/active/MISSION-${TEST_ISSUE}.md" ]; then
+  pass "contract exists → MISSION-${TEST_ISSUE}.md"
 else
-  fail "contract find: $FIND_OUT"
+  fail "contract not found: $TW_DIR/active/MISSION-${TEST_ISSUE}.md"
 fi
 
 # read-field

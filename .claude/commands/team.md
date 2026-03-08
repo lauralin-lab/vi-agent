@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "3.1.0"
+version: "3.4.0"
 ---
 
 # /team — Init + Dashboard (Teamwork v3)
@@ -20,6 +20,10 @@ version: "3.1.0"
 | `init` | Force re-initialize (even if config exists) |
 | `queue` | Show all open mission Issues (full list, sorted by priority) |
 | `doctor` | Run local git + issue health diagnostics |
+| `doctor fix` | Interactive fix — execute doctor actions with confirmation |
+| `doctor help` | Show doctor usage guide |
+| `wrap` | Retroactive closure: code-first → issue + PR + labels |
+| `auto [#N]` | One-shot: claim → drive → ship (pick from queue or specify #N) |
 
 ---
 
@@ -31,7 +35,11 @@ Parse `$ARGUMENTS`:
 - If starts with `#` or is a number → jump to **Operation MC Detail**
 - If `init` → jump to **Step 0** (skip config check, force init)
 - If `queue` → jump to **Operation Queue**
+- If `doctor help` → jump to **Operation Doctor Help**
+- If `doctor fix` → jump to **Operation Doctor Fix**
 - If `doctor` → jump to **Operation Doctor**
+- If `wrap` → jump to **Operation Wrap**
+- If starts with `auto` → jump to **Operation Auto**
 - If empty → continue to **Step 0** (auto-detect init vs dashboard)
 
 ---
@@ -41,8 +49,8 @@ Parse `$ARGUMENTS`:
 Output the following guide directly to the user, then **STOP**:
 
 ```
-TEAMWORK v3.1.0 — AI-Native Team Coordination (Push Model)
-Author: liyasong + casey | Released: 2026-03-06
+TEAMWORK v3.4.0 — AI-Native Team Coordination (Push Model)
+Author: liyasong + casey | Released: 2026-03-08
 ═══════════════════════════════════════════
 
 SETUP (one time):
@@ -52,6 +60,8 @@ DAILY WORKFLOW:
   /team                 See role-based dashboard (leader=team view, member=my view)
   /team #42             View MC #42 details (branch, commits, PRs)
   /team doctor          Local git + issue health diagnostics
+  /team doctor fix      Interactive fix — execute actions with confirmation
+  /team doctor help     Doctor usage guide
   /team-issue <desc>    Create MC (solo: self-assign; team: prompt for assignee)
   /team-issue <desc> @user  Create MC + assign to @user
   /team-issue fix #N    Fix untracked Issue (add teamwork labels)
@@ -61,6 +71,13 @@ DAILY WORKFLOW:
   /team-drive           Execute mission (sub-tasks → test → commit loop)
   /team-ship            Push + create PR (auto-closes Issue on merge)
   /team-ship review     AI code review on PR
+
+ONE-SHOT:
+  /team auto #42        Claim → Drive → Ship in one command
+  /team auto            Pick from your assigned queue, then auto
+
+RETROACTIVE:
+  /team wrap            Code-first closure (auto-detects state, creates issue+PR)
 
 AFTER MERGE:
   /team-ship done       Close Issue, update labels, clean up
@@ -73,6 +90,7 @@ RC LIFECYCLE:
 LIFECYCLE (Push Model):
   /team-issue → assigns @member → Issue + branch created
   /team-claim #N → Contract → /team-drive → /team-ship → PR
+  /team auto #N  ← shortcut: claim+drive+ship in one command
   /team-rc → staging → /team-rc promote → production
 
   Any team member can create Issues and assign to anyone.
@@ -82,9 +100,19 @@ CONFIG:
   .teamwork/config.yml  (or .teamspace/config.yml)
   Edit roles, members, notifications, quality gates directly.
 
+INFO:
+  /team learn           Design philosophy + visual guide (10 sections)
+  /team queue           Browse all open missions sorted by priority
+  /team help            This help screen
+
 REQUIREMENTS:
   gh (GitHub CLI)       gh auth login
   git remote            git remote add origin <url>
+
+DOCS (in erwin repo):
+  docs/teamwork-ai-manual.md         Complete manual
+  docs/teamwork-v2-architecture.md   Architecture design
+  docs/team-doctor-design.md         Doctor design spec
 ═══════════════════════════════════════════
 ```
 
@@ -94,47 +122,19 @@ REQUIREMENTS:
 
 Read and present the design philosophy behind this workflow. Output the content from the manual with visual diagrams, then **STOP**.
 
-### Step L1: Locate manual files
-
-```bash
-# Check for manual files in docs/ (erwin-managed repos)
-# or in .teamwork/docs/ or .teamspace/docs/ (standalone repos)
-MANUAL=""
-GIT_MODEL=""
-
-for dir in docs .teamwork/docs .teamspace/docs; do
-  [ -f "$dir/teamwork-ai-manual.md" ] && MANUAL="$dir/teamwork-ai-manual.md"
-  [ -f "$dir/git-model-v0.1.0.md" ] && GIT_MODEL="$dir/git-model-v0.1.0.md"
-done
-```
-
-### Step L2: Present content
-
-**If `MANUAL` found** → Read the file and present its full content to the user. This file contains:
-- Why this model exists (AI commit frequency problem)
-- The Four Branches diagram
-- Why squash everything
-- RC lifecycle (the key innovation)
-- Complete end-to-end example
-- The Six Skills overview
-
-**If `GIT_MODEL` also found** → Mention it as deeper technical reference:
-```
-For the formal Git branching spec, see: {GIT_MODEL}
-```
-
-**If neither found** → Output the embedded overview below and **STOP**:
+Output the following directly and **STOP** (no file reading needed — content is self-contained):
 
 ```
-TEAMWORK — Design Philosophy
-═══════════════════════════════════════════
+TEAMWORK v3.3 — Design Philosophy & Complete Guide
+═══════════════════════════════════════════════════════════════
 
-WHY THIS MODEL?
+1. WHY THIS MODEL?
+───────────────────
 
 Traditional teams: 6 people, manageable commit frequency.
 Our reality: 6 people + AI assistants = 20-30x commit frequency.
 
-Problem with simple model (GitHub Flow):
+Problem with GitHub Flow (single branch):
 
 main ── feat/A ── feat/B ── feat/C ── feat/D ── feat/E ──►
         (merge)   (merge)   (merge)   (merge)   (merge)
@@ -152,7 +152,9 @@ develop ── A ── B ── C ── D ── E ──►     ← AI noise 
                         │
 main ────────────── [V0.1.0] ──►          ← only verified code
 
-THE FOUR BRANCHES:
+
+2. THE FOUR BRANCHES
+─────────────────────
 
 ┌──────────┬──────────────┬───────────────────────┬───────────────────┐
 │ Branch   │ Role         │ Who writes to it      │ How clean?        │
@@ -160,45 +162,171 @@ THE FOUR BRANCHES:
 │ main     │ Production   │ Only rc/* via PR      │ Always clean      │
 │ develop  │ Dev trunk    │ All feature PRs       │ CI-verified       │
 │ rc/*     │ Staging      │ Hotfixes only         │ Converging        │
-│ feat/*   │ Work         │ You                   │ Dirty             │
+│ mission/*│ Work         │ You + AI              │ Dirty             │
 └──────────┴──────────────┴───────────────────────┴───────────────────┘
 
-WHY SQUASH EVERYTHING?
+
+3. ISSUE LIFECYCLE — STATE MACHINE
+────────────────────────────────────
+
+Every Issue transitions through exactly these states:
+
+  ┌───────────┐     /team-issue     ┌───────────┐
+  │  backlog  │ ──────────────────► │    wip    │
+  └───────────┘                     └─────┬─────┘
+                                          │ /team-ship
+                                    ┌─────▼─────┐
+                                    │  review   │
+                                    └─────┬─────┘
+                                          │ PR merged
+                                    ┌─────▼─────┐
+                                    │   done    │
+                                    └───────────┘
+
+Labels:  status:backlog → status:wip → status:review → status:done
+GitHub:  Issue OPEN ─────────────────────────────► Issue CLOSED
+
+
+4. WHY SQUASH EVERYTHING?
+──────────────────────────
 
 AI generates dozens of commits per feature. These are machine noise:
 
   Without squash:  fix typo → WIP → try approach → revert → fix → forgot save
   With squash:     feat: user login system (#42)
 
-RC LIFECYCLE (the key innovation):
+One Issue = one squash commit = one clean history entry.
+
+
+5. THE SIX SKILLS
+──────────────────
+
+Skills are grouped by lifecycle stage:
+
+  CREATE    /team-issue "desc"        Create Issue + assign
+  CLAIM     /team-claim #42           Generate Contract + mission branch
+  EXECUTE   /team-drive               Code → test → commit loop
+  DELIVER   /team-ship                Push + PR (auto-closes Issue on merge)
+  RELEASE   /team-rc                  Cut RC → staging → production
+
+  HUB       /team                     Dashboard, init, doctor, help, learn,
+                                      queue, wrap, auto — all subcommands
+
+Lifecycle flow:
+
+  /team-issue → /team-claim → /team-drive → /team-ship → /team-ship done
+       │              │              │              │              │
+    Issue #42    Contract +     Code + test    PR created     Cleanup
+    created      branch          loop         (squash)     branch deleted
+
+
+6. THE MISSION CONTRACT
+────────────────────────
+
+Contract = AI-enriched execution view of a GitHub Issue.
+Lives at: .teamwork/active/MISSION-42.md
+
+  ┌─────────────────────────────────────────────┐
+  │ GitHub Issue #42           ← source of truth│
+  │ ─────────────────                           │
+  │ Title, Objective, Sub-tasks                 │
+  └──────────────┬──────────────────────────────┘
+                 │ /team-claim (auto-generate)
+  ┌──────────────▼──────────────────────────────┐
+  │ Mission Contract           ← AI view       │
+  │ ─────────────────                           │
+  │ Issue content                               │
+  │ + Context Files (AI-scanned)                │
+  │ + Test Command (from config)                │
+  │ + AI Notes (populated during drive)         │
+  │ + Issue content hash (freshness check)      │
+  └─────────────────────────────────────────────┘
+                 │ PR merged
+                 ▼ Contract auto-deleted (ephemeral)
+
+
+7. SHORTCUTS — WRAP & AUTO
+────────────────────────────
+
+Sometimes you don't follow the standard flow:
+
+  /team auto #42    One-shot: claim → drive → ship in one command.
+                    Stops at PR creation. Human merges.
+
+                    ┌─────────────────────────────────┐
+                    │ Claim → Drive → Ship → PR       │
+                    │ (fully automated, no prompts)    │
+                    └─────────────────────────────────┘
+
+  /team wrap        Retroactive: you already wrote code, now
+                    back-fill the teamwork flow.
+
+                    Auto-detects your code state:
+                    ┌──────────────────┬──────────────────────────┐
+                    │ State            │ Strategy                 │
+                    ├──────────────────┼──────────────────────────┤
+                    │ Uncommitted      │ stash → issue → branch   │
+                    │                  │ → stash pop → drive      │
+                    │ Committed local  │ issue → branch →         │
+                    │                  │ cherry-pick → drive      │
+                    │ Already pushed   │ issue → close (tracking) │
+                    └──────────────────┴──────────────────────────┘
+
+
+8. DASHBOARD & DOCTOR
+──────────────────────
+
+  /team             Dashboard — GitHub status overview
+                    Shows: missions, PRs, cleanup, team WIP
+                    Role-based: leader sees team, member sees self
+
+  /team doctor      Local diagnostics — git health report
+                    7 checks: orphan branches, cross-contamination,
+                    branch staleness, stale stashes, worktree health,
+                    shippable PRs, issue health (duplicates/stale)
+
+                    Output: 3-layer report
+                    ┌─────────────────────────────────────────┐
+                    │ Layer 1: Snapshot Tables (raw data)     │
+                    │ Layer 2: Diagnosis (cross-referencing)  │
+                    │ Layer 3: Action Plan (exact commands)   │
+                    └─────────────────────────────────────────┘
+
+
+9. RC LIFECYCLE (the key innovation)
+──────────────────────────────────────
 
   /team-rc           → cut rc/V0.1.0 from develop (frozen)
   verify on staging  → hotfix if needed (cherry-pick to develop)
   /team-rc promote   → squash merge rc → main, tag V0.1.0, GitHub Release
 
   Think of RC as a bus: missed this one? Take the next one.
-  Buses come frequently.
 
-DAILY FLOW:
+  develop ── A ── B ── C ──────── D ── E ──►
+                        │                │
+                   rc/V0.1.0        rc/V0.2.0
+                     (bus 1)         (bus 2)
+                        │                │
+  main ─────────── [V0.1.0] ───── [V0.2.0] ──►
 
-  /team-issue "用户登录"     → Issue #42 (create + assign + branch)
-  /team-issue fix #94        → Fix untracked Issue (add labels)
-  /team-claim 42             → Contract from develop
-  /team-drive                → Code, test, commit
-  /team-ship                 → PR → develop (squash)
-  /team-rc                   → Cut RC → staging
-  /team-rc promote           → Ship to production
 
-UNTRACKED ISSUES:
+10. DESIGN PRINCIPLES
+──────────────────────
 
-  Issues assigned on GitHub but missing teamwork labels are "untracked".
-  /team dashboard shows them in UNTRACKED section.
-  Fix: /team-issue fix #N → adds mission + status + priority labels.
+  1. GitHub IS the system — don't replicate what GitHub does
+  2. Enhance, don't duplicate — Contract adds what Issue can't
+  3. Ephemeral over persistent — local state is disposable
+  4. Scripts for deterministic ops, LLM for judgment calls
+  5. 6 skill limit — new features = subcommands, not new skills
 
-═══════════════════════════════════════════
-Full manual: docs/teamwork-ai-manual.md
-Git model:   docs/git-model-v0.1.0.md
-═══════════════════════════════════════════
+═══════════════════════════════════════════════════════════════
+DEEP DIVE (docs in erwin repo):
+  docs/teamwork-ai-manual.md        ← Complete manual (15 chapters)
+  docs/teamwork-v2-architecture.md  ← Architecture design + ADR
+  docs/team-doctor-design.md        ← Doctor design spec + examples
+  skills/teamwork/ONBOARDING.md     ← Team onboarding guide
+  skills/teamwork/CHANGELOG.md      ← Version history
+═══════════════════════════════════════════════════════════════
 ```
 
 ---
@@ -210,32 +338,18 @@ Show the full list of open mission issues, sorted by priority. Requires existing
 ### Prerequisite: config detection
 
 ```bash
-if [ -f .teamwork/config.yml ]; then
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-else
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
   echo "No teamwork config found. Run /team init first."
   # STOP
-fi
+}
 ```
 
 ### Fetch and display
 
 ```bash
 # Read mission label + priority prefix from config
-MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh labels.mission "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
-
-STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
-
-PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "" 2>/dev/null)
-[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.priority_prefix "" 2>/dev/null)
-[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX="priority:"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
+# Now MISSION_LABEL, STATUS_PREFIX, PRIORITY_PREFIX are set
 
 # Fetch all open mission issues
 gh issue list --label "$MISSION_LABEL" --state open --json number,title,labels,assignees --limit 100
@@ -379,26 +493,14 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 # Force init if $ARGUMENTS == "init"
 if [ "$ARGUMENTS" = "init" ]; then
   echo "INIT"
-  # Preserve existing TEAMWORK_DIR if config found
-  if [ -f .teamwork/config.yml ]; then
-    TEAMWORK_DIR=".teamwork"
-  elif [ -f .teamspace/config.yml ]; then
-    TEAMWORK_DIR=".teamspace"
-  else
-    TEAMWORK_DIR=".teamwork"
-  fi
+  # Preserve existing TEAMWORK_DIR if config found, else default
+  TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=".teamwork"
 else
   # Auto-detect: config exists → dashboard, otherwise → init
-  if [ -f .teamwork/config.yml ]; then
-    echo "DASHBOARD"
-    TEAMWORK_DIR=".teamwork"
-  elif [ -f .teamspace/config.yml ]; then
-    echo "DASHBOARD"
-    TEAMWORK_DIR=".teamspace"
-  else
+  TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) && echo "DASHBOARD" || {
     echo "INIT"
     TEAMWORK_DIR=".teamwork"
-  fi
+  }
 fi
 ```
 
@@ -625,8 +727,8 @@ Preserve all existing content. Only update `skill_version` and append missing to
 
 ```bash
 # Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 3.1.0/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.1.0/" $TEAMWORK_DIR/config.yml
+sed -i '' "s/^skill_version:.*/skill_version: 3.3.1/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.3.1/" $TEAMWORK_DIR/config.yml
 
 # Update schema_version if present
 if grep -q "^schema_version:" $TEAMWORK_DIR/config.yml; then
@@ -731,7 +833,7 @@ notifications:
 
 ```
 ✅ Config updated (merge mode — existing config preserved)
-   schema_version → 3 | skill_version → 3.1.0
+   schema_version → 3 | skill_version → 3.3.0
    Preserved sections: {list of sections kept}
    Added sections: {list of sections appended, or "(none — already complete)"}
 ```
@@ -746,7 +848,7 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 3
-skill_version: 3.1.0
+skill_version: 3.3.1
 
 roles:
   - id: leader
@@ -943,7 +1045,7 @@ ls .github/workflows/ci.yml .github/workflows/CI.yml .github/workflows/*.yml 2>/
 - If `.github/workflows/ci.yml` (or similar) already exists → **DO NOT overwrite**. Read the existing file, display a summary, and ask: "CI workflow already exists. Keep existing? Or regenerate?" (via AskUserQuestion). If the user keeps existing, skip to Step 4e.
 - If no CI workflow exists → generate based on detected language.
 
-**Branch triggers**: Use `{BASE_BRANCH}` from config (not hardcoded `main`). In dual-branch mode (when `RELEASE_BRANCH != BASE_BRANCH`), include both branches in `push` triggers so CI runs on release branch merges too:
+**Branch triggers**: Use `$BASE_BRANCH` from config (not hardcoded `main`). In dual-branch mode (when `$PROD_BRANCH != $BASE_BRANCH`), include both branches in `push` triggers so CI runs on production branch merges too:
 
 ```yaml
 # Single-branch mode (default):
@@ -953,12 +1055,12 @@ on:
   push:
     branches: [{BASE_BRANCH}]
 
-# Dual-branch mode (RELEASE_BRANCH configured):
+# Dual-branch mode (PROD_BRANCH differs from BASE_BRANCH):
 on:
   pull_request:
     branches: [{BASE_BRANCH}]
   push:
-    branches: [{BASE_BRANCH}, {RELEASE_BRANCH}]
+    branches: [{BASE_BRANCH}, {PROD_BRANCH}]
 ```
 
 **For monorepo projects** (`IS_MONOREPO=true`), generate a multi-service CI that runs each service's checks in a separate job:
@@ -969,7 +1071,7 @@ on:
   pull_request:
     branches: [{BASE_BRANCH}]
   push:
-    branches: [{BASE_BRANCH}]  # add {RELEASE_BRANCH} if dual-branch mode
+    branches: [{BASE_BRANCH}]  # add {PROD_BRANCH} if dual-branch mode
 
 jobs:
   # One job per detected service
@@ -1068,9 +1170,7 @@ ls .github/workflows/post-merge.yml 2>/dev/null
 Read label prefixes from config for substitution:
 
 ```bash
-STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
 ```
 
 ```yaml
@@ -1219,12 +1319,7 @@ bash ~/.claude/commands/scripts/setup-github-labels.sh
 If the script is not available (e.g., installed without scripts):
 ```bash
 # Fallback: inline label creation (read prefixes from config)
-STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
-PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "" 2>/dev/null)
-[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.priority_prefix "" 2>/dev/null)
-[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX="priority:"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
 
 gh label create "$MISSION_LABEL" --color 0075ca --description "Team mission" --force
 gh label create "${STATUS_PREFIX}queued" --color c2e0c6 --description "Ready to be claimed" --force
@@ -1410,20 +1505,9 @@ cat $TEAMWORK_DIR/config.yml
 
 **Determine current user's role level:**
 ```bash
-# Count members
-MEMBER_COUNT=$(grep -c "github:" $TEAMWORK_DIR/config.yml 2>/dev/null || echo "1")
-
-# Solo mode: if only 1 member, show unified dashboard (no role distinction)
-if [ "$MEMBER_COUNT" -le 1 ]; then
-  USER_LEVEL="solo"
-else
-  # Find user's role in members, look up level in roles
-  # If config has roles: section → find user's role id → find role's level
-  # If no roles: section → treat everyone as leader (backward compat with schema v1)
-  USER_ROLE=$(# find GH_USER in members, get their role value)
-  USER_LEVEL=$(# find that role id in roles, get its level — "leader" or "member")
-  # If roles: section doesn't exist, USER_LEVEL="leader" (backward compat)
-fi
+USER_LEVEL=$(bash ~/.claude/commands/scripts/tw-config.sh get-user-level "$GH_USER" 2>/dev/null)
+USER_LEVEL="${USER_LEVEL:-leader}"
+# USER_LEVEL is "solo", "leader", or "member"
 ```
 
 ### 6b: Check Issue freshness for active Contracts
@@ -1442,7 +1526,7 @@ for CONTRACT_PATH in $TEAMWORK_DIR/active/MISSION-*.md; do
 done
 ```
 
-- If `issue_content_hash` is not in Contract (pre-v2.3.0) → skip check
+- If `issue_content_hash` is not in Contract (legacy) → skip check
 - If `gh issue view` fails (network) → skip check (non-fatal)
 - If `CURRENT_HASH ≠ CONTRACT_HASH` → set `ISSUE_STALE=true` for this Issue
 - If hashes match → Issue content unchanged since claim
@@ -1452,17 +1536,8 @@ done
 Read the mission label and label prefixes from config:
 
 ```bash
-MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh labels.mission "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
-
-STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
-PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.priority "" 2>/dev/null)
-[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.priority_prefix "" 2>/dev/null)
-[ -z "$PRIORITY_PREFIX" ] && PRIORITY_PREFIX="priority:"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
+# Now MISSION_LABEL, STATUS_PREFIX, PRIORITY_PREFIX are set
 
 BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
@@ -1486,9 +1561,19 @@ gh issue list --state open --json number,title,labels,assignees --limit 100
 gh pr list --state merged --base "$BASE_BRANCH" --json author --limit 100
 
 # Call 5 (if CURRENT_VERSION set): Milestone progress
-# Use startswith for prefix matching — config stores short name (e.g. "V0.1")
-# but milestone title may be longer (e.g. "V0.1 — AI Camera Pipeline")
-gh api "repos/$REPO/milestones" --jq ".[] | select(.title | startswith(\"$CURRENT_VERSION\")) | {open: .open_issues, closed: .closed_issues}"
+if [ -n "$CURRENT_VERSION" ]; then
+  MILESTONE_FULL=$(bash ~/.claude/commands/scripts/tw-git.sh milestone-resolve "$CURRENT_VERSION" 2>/dev/null)
+  gh api "repos/$REPO/milestones" --jq ".[] | select(.title == \"$MILESTONE_FULL\") | {open: .open_issues, closed: .closed_issues}"
+fi
+```
+
+```bash
+# Call 6: Local mission branches with merged PRs (cleanup detection)
+bash ~/.claude/commands/scripts/tw-git.sh list-merged-branches 2>/dev/null
+
+# Call 7: Local git state (for NEEDS CLEANUP dirty tree hint)
+git branch --show-current
+git status --porcelain 2>/dev/null
 ```
 
 **Client-side filtering** from Call 1 results (no extra API calls):
@@ -1530,11 +1615,18 @@ TEAM DASHBOARD ── {repo name} ──────────────
   Fix: /team-issue fix #{N}
   {Omit entire section if count == 0}
 
+🧹 NEEDS CLEANUP ({count})
+  {branch} — PR #{pr} merged
+  {If current branch == this branch AND dirty tree: ⚠️ uncommitted changes — will auto-stash on cleanup}
+  💡 Run: /team-ship done
+  {Omit entire section if count == 0}
+
 📊 MERGES  {user}:{n}  {user}:{n}  ...
 
 💡 Next: {one context-specific suggestion}
 ────────────────────────────────────────────
-/team #N │ /team-issue │ /team-claim │ /team-drive │ /team-ship
+/team help │ /team doctor │ /team #N
+/team-issue │ /team-claim │ /team-drive │ /team-ship │ /team-rc
 ```
 
 **Visual encoding rules** (apply to ALL teamwork output):
@@ -1578,6 +1670,12 @@ MY DASHBOARD ── {repo name} ────────────────
   Fix: /team-issue fix #{N}
   {Omit entire section if count == 0}
 
+🧹 NEEDS CLEANUP ({count})
+  {branch} — PR #{pr} merged
+  {If current branch == this branch AND dirty tree: ⚠️ uncommitted changes — will auto-stash on cleanup}
+  💡 Run: /team-ship done
+  {Omit entire section if count == 0}
+
 ────────────────────────────────────────────
 👥 TEAM WIP ({count})
   {priority_dot}  #{N}  {title}  @{assignee}
@@ -1592,7 +1690,8 @@ MY DASHBOARD ── {repo name} ────────────────
 
 💡 Next: {one context-specific suggestion}
 ────────────────────────────────────────────
-/team #N │ /team-claim │ /team-drive │ /team-ship
+/team help │ /team doctor │ /team #N
+/team-claim │ /team-drive │ /team-ship │ /team-rc
 ```
 
 ---
@@ -1611,25 +1710,17 @@ Same as dashboard: config must exist, `gh` must be authenticated, must be in a g
 GH_USER=$(gh api user --jq '.login' 2>/dev/null)
 
 # Config
-if [ -f .teamwork/config.yml ]; then
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-else
-  echo "NO_CONFIG"
-fi
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "Teamwork not initialized. Run /team first."
+  # STOP
+}
 
 # Read config values
 BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
-MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
-STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
+# Now MISSION_LABEL, STATUS_PREFIX, PRIORITY_PREFIX are set
 ```
-
-If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
 
 ### Data Collection Phase
 
@@ -1676,6 +1767,15 @@ done
 
 # 13. Open mission issue bodies (for duplicate/overlap detection)
 gh issue list --label "$MISSION_LABEL" --state open --json number,title,body,assignees,labels --limit 50
+
+# 14. Branch vs Remote tracking (ahead/behind own remote branch)
+for branch in $(git branch --format='%(refname:short)'); do
+  if git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+    echo "$branch: $(git rev-list --left-right --count origin/$branch...$branch 2>/dev/null)"
+  else
+    echo "$branch: NO_REMOTE"
+  fi
+done
 ```
 
 ### Analysis Phase — 7 Diagnostic Checks
@@ -1828,6 +1928,23 @@ Heuristics for duplicate detection (LLM judgment):
 - "add rate limiting" and "rate limit upload API" overlap but may be different scope — flag as potential, not definite
 - Issues sharing >50% sub-tasks are likely duplicates
 
+#### Check 8: Remote Sync (Behind Origin)
+
+Local branches that are behind their own remote tracking branch need a pull.
+
+```
+For each local branch that has a remote tracking branch (origin/{branch}):
+  1. Count commits behind: git rev-list --count {branch}..origin/{branch}
+  2. Count commits ahead: git rev-list --count origin/{branch}..{branch}
+  3. Thresholds:
+     - behind = 0 → OK (don't report)
+     - behind > 0, ahead = 0 → 🟡 WARNING "behind remote, needs pull"
+     - behind > 0, ahead > 0 → 🟡 WARNING "diverged from remote"
+  4. Special attention to current branch — if current branch is behind remote,
+     this is the most actionable finding (user can fix RIGHT NOW with git pull --rebase)
+  5. Action: git pull --rebase origin {branch}, or /team-ship sync if on a mission branch
+```
+
 ### Output Format — 3-Layer Visual Report
 
 1. **Snapshot tables** — structured data, one table per dimension (branches, PRs, stashes, worktrees, issues)
@@ -1838,8 +1955,10 @@ Heuristics for duplicate detection (LLM judgment):
 
 Each table shows raw state with inline emoji status indicators. Tables use box-drawing characters for visual clarity. Only show tables that have content worth reporting (skip empty/clean dimensions).
 
-**Branches table** — all local mission/* branches:
+**Branches table** — all local branches (not just mission/*):
 - Status column: `🔴 dirty` (uncommitted changes), `🟢 clean`, `🟡 stale` (>30 commits behind), `💀 orph` (issue closed / PR merged)
+- vs Base column: `+N, -M` (commits ahead/behind base branch)
+- vs Remote column: `+N, -M` (commits ahead/behind own `origin/{branch}`), `⚠ behind` if local is behind remote, `—` if no remote tracking branch
 
 **Open PRs table** — only if there are open PRs:
 - Ready? column: `🟢 SHIP` (all green), `🔴 CI fail`, `🟡 review`, `🔴 conflict`, `⏳ pending`
@@ -1870,11 +1989,14 @@ Concrete commands, grouped by severity (🔴 first, then 🟡, then 🟢). Each 
 
 Rules:
 - Every action has a numbered step + the exact command(s) to run
+- **Prefer teamwork commands over raw git** where applicable:
+  - Shippable PRs → `/team-ship done` (not raw `gh pr merge`)
+  - Branch behind remote → `/team-ship sync` or `git pull --rebase`
+  - Large stashes → `/team-issue "..."` to create a proper MC
+  - Duplicate issues → `gh issue close N --reason "not planned" --comment "Duplicate of #M"`
 - Stash drops must be ordered from highest index first (indices shift on drop)
 - Cross-contamination fixes suggest both options (discard vs stash for later)
-- Shippable PRs suggest both `gh pr merge` and `/team-ship done`
-- Duplicate issues suggest `gh issue close N --reason "not planned" --comment "Duplicate of #M"`
-- Large stashes suggest creating a new MC via `/team-issue`
+- **Remind user**: "Run `/team doctor fix` to execute these actions interactively."
 
 #### Clean State Output
 
@@ -1902,12 +2024,13 @@ No tables, no diagnosis, no action plan. Just the summary.
 ══════════════════════════════════════════════════════════════════════════
 
 📋 BRANCHES ({N} local)
-┌──────────────────────────────┬────────────┬──────────┬──────────────────────────────────────┐
-│ Branch                       │ Status     │ vs Base  │ Issue / PR                           │
-├──────────────────────────────┼────────────┼──────────┼──────────────────────────────────────┤
-│ mission/42-feat-* [cur]      │ 🔴 dirty   │ +6, -1   │ #42 OPEN  │ PR #43 ✅ pass          │
-│ mission/29-fix-*             │ 💀 orph    │ +0, -38  │ #29 CLOSED│ PR #30 merged            │
-└──────────────────────────────┴────────────┴──────────┴──────────────────────────────────────┘
+┌──────────────────────────────┬────────────┬──────────┬────────────┬──────────────────────────────────────┐
+│ Branch                       │ Status     │ vs Base  │ vs Remote  │ Issue / PR                           │
+├──────────────────────────────┼────────────┼──────────┼────────────┼──────────────────────────────────────┤
+│ main [cur]                   │ 🟢 clean   │ —        │ ⚠ -3       │ base branch                          │
+│ mission/42-feat-*            │ 🔴 dirty   │ +6, -1   │ +2, 0      │ #42 OPEN  │ PR #43 ✅ pass          │
+│ mission/29-fix-*             │ 💀 orph    │ +0, -38  │ —          │ #29 CLOSED│ PR #30 merged            │
+└──────────────────────────────┴────────────┴──────────┴────────────┴──────────────────────────────────────┘
 
 📋 OPEN PRS ({N})
 ┌──────┬───────────────────────────────┬──────┬───────────┬────────┬──────────┐
@@ -1966,6 +2089,919 @@ No tables, no diagnosis, no action plan. Just the summary.
 ══════════════════════════════════════════════════════════════════════════
 SUMMARY: 🔴 {N} critical │ 🟡 {N} warnings │ 🟢 {N} cleanup
 ══════════════════════════════════════════════════════════════════════════
+```
+
+Then **STOP**.
+
+---
+
+## Operation Doctor Help
+
+> Triggered by `/team doctor help`. Self-contained usage guide for doctor.
+
+Output the following and **STOP**:
+
+```
+/team doctor — Local Git Health Diagnostics
+═══════════════════════════════════════════
+
+USAGE:
+  /team doctor          Full health scan (branches, stashes, worktrees, issues, PRs)
+  /team doctor fix      Interactive fix — execute actions with confirmation
+  /team doctor help     This help screen
+
+WHAT IT CHECKS:
+  1. Orphan branches     Local branches whose Issue is closed / PR merged
+  2. Cross-contamination Uncommitted changes that belong to a different Issue
+  3. Branch staleness    Branches falling behind base branch
+  4. Stale stashes       Old stashes or stashes on deleted branches
+  5. Worktree health     Prunable or broken worktrees
+  6. Shippable PRs       PRs ready to merge but sitting idle
+  7. Issue health        Duplicates, unassigned, stale issues
+  8. Remote sync         Local branches behind their remote tracking branch
+
+OUTPUT:
+  Layer 1: Snapshot tables (branches, stashes, worktrees, PRs, issues)
+  Layer 2: Diagnosis (cross-referencing analysis)
+  Layer 3: Action plan (prioritized fix commands)
+
+TYPICAL WORKFLOW:
+  /team doctor          ← see what's wrong
+  /team doctor fix      ← fix it interactively
+
+SEVERITY LEVELS:
+  🔴 Critical   Fix before continuing (data loss risk, cross-contamination)
+  🟡 Warning    Fix soon (blocking progress, accumulating debt)
+  🟢 Cleanup    Low urgency (orphan branches, old stashes)
+```
+
+---
+
+## Operation Doctor Fix
+
+> Triggered by `/team doctor fix`. Runs the full doctor scan, then interactively executes actions.
+
+### Prerequisites
+
+Same as Operation Doctor — config must exist, `gh` must be authenticated, must be in a git repo.
+
+### Step 1: Run Full Doctor Scan
+
+Execute the complete Operation Doctor flow (data collection → analysis → output). Display the full report.
+
+### Step 2: Interactive Execution
+
+After displaying the report, process the Action Plan items interactively. Group by severity:
+
+**🟢 Cleanup (auto-execute with summary):**
+
+Safe, reversible operations. Execute all at once without per-item confirmation:
+- `git branch -d {branch}` (only `-d`, never `-D` — fails safely if unmerged)
+- `git worktree remove {path}` (for prunable worktrees)
+
+Before executing, display:
+```
+🟢 AUTO-CLEANUP ({N} actions):
+   [5] Delete orphan branch mission/139: git branch -d mission/139-*
+   [6] Delete orphan branch develop: git branch -D develop
+   ...
+   Executing...
+```
+
+Execute each command. Report results:
+```
+   ✅ [5] Deleted mission/139-teamwork-skill-v3.1.0
+   ✅ [6] Deleted develop
+   ❌ [7] Failed: branch has unmerged changes (use -D to force)
+```
+
+**🟡 Warning (confirm each):**
+
+Use `AskUserQuestion` for each warning action:
+
+```
+question: "Action [N]: {description}"
+options:
+  - label: "Execute"
+    description: "{exact command}"
+  - label: "Skip"
+    description: "Leave as-is"
+  - label: "Skip all remaining"
+    description: "Stop fixing, keep remaining items"
+```
+
+For actions with multiple options (e.g., stash review — drop vs apply):
+```
+question: "Action [1]: stash@{0} contains v3.1.0 skill updates (12 files)"
+options:
+  - label: "Drop stash"
+    description: "git stash drop stash@{0}"
+  - label: "Apply to current branch"
+    description: "git stash pop"
+  - label: "Create new mission"
+    description: "/team-issue 'feat: apply stashed v3.1.0 updates'"
+  - label: "Skip"
+    description: "Leave stash as-is"
+```
+
+**Branch behind remote** — suggest the right teamwork command:
+```
+question: "Action [N]: {branch} is {M} commits behind origin/{branch}"
+options:
+  - label: "Pull latest"
+    description: "git pull --rebase origin {branch}"
+  - label: "Skip"
+    description: "Leave as-is"
+```
+
+**🔴 Critical (confirm each, explain risk):**
+
+Same as Warning but add risk context in the question:
+```
+question: "🔴 CRITICAL Action [N]: {description}\nRisk: {what could go wrong}"
+```
+
+Cross-contamination actions always show both options (discard vs preserve).
+
+### Step 3: Summary
+
+After all actions processed:
+
+```
+🏥 DOCTOR FIX COMPLETE
+══════════════════════════════════════════
+   ✅ Executed: {N} actions
+   ⏭️ Skipped:  {N} actions
+   ❌ Failed:   {N} actions
+══════════════════════════════════════════
+```
+
+If any failed → show the failed commands and suggest manual resolution.
+
+Then **STOP**.
+
+---
+
+## Operation Auto
+
+> Triggered by `/team auto` or `/team auto #N`. One-shot forward closure: claim an Issue → drive (execute all sub-tasks) → ship (push + PR) in a single command. Stops at PR creation — human merges.
+
+### Prerequisites
+
+```bash
+GH_USER=$(gh api user --jq '.login' 2>/dev/null)
+if [ -z "$GH_USER" ]; then
+  echo "ERROR: Cannot get GitHub user identity. Run 'gh auth login' first."
+  exit 1
+fi
+```
+
+```bash
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "No teamwork config found. Run /team init first."
+  # STOP
+}
+
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+```
+
+Check for worktree mode — auto doesn't support worktrees:
+```bash
+if [ -f .mission ]; then
+  echo "ERROR: You're in a worktree. Run /team auto from the main repo."
+  # STOP
+fi
+```
+
+Check for clean working tree — auto switches branches, so uncommitted changes would be lost:
+```bash
+if [ -n "$(git status --porcelain)" ]; then
+  echo "ERROR: Working tree has uncommitted changes. Commit or stash them first, or use /team wrap instead."
+  # STOP
+fi
+```
+
+Check for active Contract — if one exists, user should finish or abandon it first:
+```bash
+ls "$TEAMWORK_DIR"/active/MISSION-*.md 2>/dev/null
+```
+If active Contract exists → "You have an active mission. Finish it with `/team-drive` + `/team-ship`, or remove the Contract to abandon." → **STOP**
+
+### A1: Select Issue
+
+**If `$ARGUMENTS` contains `#N` or a number** (e.g., `/team auto #42`, `/team auto 42`):
+- Extract Issue number → proceed to A2
+
+**If `$ARGUMENTS` is just `auto`** (no number):
+- List the user's assigned open mission Issues:
+
+```bash
+gh issue list --label "$MISSION_LABEL" --state open --assignee "$GH_USER" --json number,title,labels --limit 10
+```
+
+- If none → "No missions assigned to you. Create one with `/team-issue` first." → **STOP**
+- Sort by priority (P0 first)
+- Display:
+
+```
+🤖 AUTO MODE — Select Issue
+══════════════════════════════════════════
+Your assigned missions:
+  🔴 1. #42 fix: camera permission on iOS Safari
+  🟠 2. #45 feat: add rate limiting
+  🟡 3. #47 docs: write API documentation
+══════════════════════════════════════════
+```
+
+- Use `AskUserQuestion` to pick one
+
+### A2: Validate Issue
+
+```bash
+ISSUE_DATA=$(gh issue view {issue} --json number,title,body,labels,milestone,assignees,state,url)
+```
+
+- If Issue not found → "Issue #{issue} not found." → **STOP**
+- If Issue is closed → "Issue #{issue} is already closed." → **STOP**
+- If Issue has no assignee → auto-assign to `$GH_USER`: `gh issue edit {issue} --add-assignee "$GH_USER"`
+- If Issue is assigned to someone else → warn "Issue #{issue} is assigned to someone else." Use `AskUserQuestion`: "Claim anyway?" / "Cancel". If cancel → **STOP**. If claim → also add `$GH_USER` as assignee.
+- If Issue is missing `$MISSION_LABEL` → warn "Issue #{issue} is not a mission Issue (missing `$MISSION_LABEL` label). Use `/team-issue fix #{issue}` first." → **STOP**
+
+Display the issue summary and announce auto mode:
+
+```
+🤖 AUTO ── #{issue} {title} ────────────────
+{priority_dot} {priority}   Size: {size}
+Milestone: {milestone or "—"}
+
+🎯 OBJECTIVE
+  {objective from Issue body}
+
+📋 SUB-TASKS
+  [ ] {task 1}
+  [ ] {task 2}
+
+⚡ AUTO PLAN
+  Phase 1: Claim → Contract + branch
+  Phase 2: Drive → execute all sub-tasks
+  Phase 3: Ship → push + PR
+  Stops at: PR created (you merge manually)
+────────────────────────────────────────────
+```
+
+Use `AskUserQuestion`: "Start auto?" / "Cancel"
+- If cancel → **STOP**
+
+### A3: Phase 1 — Claim (streamlined)
+
+Execute the claim flow without interactive confirmations (auto mode assumes defaults).
+
+#### Fetch & parse Issue
+
+Parse the Issue body — same logic as `/team-claim` Step 3. Extract:
+- Objective, Sub-tasks, Success Criteria, Context, Test Command
+- Milestone from `milestone.title`, fallback to `versions.current` config
+- Priority from labels
+
+#### Generate Mission Contract
+
+Create `$TEAMWORK_DIR/active/MISSION-{issue}.md` — same structure as `/team-claim` Step 4:
+
+```markdown
+---
+issue: {issue}
+url: {url}
+title: "{title}"
+assignee: {GH_USER}
+priority: {priority}
+labels: [{labels}]
+branch: {branch}
+milestone: "{milestone}"
+claimed: {ISO_TIMESTAMP}
+issue_content_hash: "$(bash ~/.claude/commands/scripts/tw-contract.sh hash "$TITLE" "$BODY")"
+---
+
+# MISSION-{issue}: {title}
+
+## Objective
+{from Issue body}
+
+## Sub-tasks
+{from Issue body}
+
+## Acceptance Criteria
+{from Issue body}
+
+## Context Files
+{AI-scanned: use Glob and Grep to find relevant project files}
+
+## Test Command
+{from Issue body or config project.test_command}
+
+## AI Notes
+(populated during drive execution)
+```
+
+**Context Files scanning** is the key AI value-add — scan the project to identify files that will need modification, related tests, and config files. Use `Glob` and `Grep` with keywords from the Issue.
+
+#### Create branch
+
+```bash
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$ISSUE_TITLE")
+bash ~/.claude/commands/scripts/tw-git.sh ensure-base
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
+```
+
+#### Post claim comment
+
+```bash
+gh issue comment {issue} --body "🤖 Auto-claimed by @${GH_USER} — running claim → drive → ship"
+```
+
+Non-fatal if comment fails.
+
+#### Announce Phase 1 complete
+
+```
+✅ PHASE 1: CLAIMED
+   Contract: $TEAMWORK_DIR/active/MISSION-{issue}.md
+   Branch:   {branch}
+   Proceeding to drive...
+────────────────────────────────────────────
+```
+
+### A4: Phase 2 — Drive (full protocol)
+
+**This is the core execution phase.** Follow the complete `/team-drive` protocol.
+
+Read `~/.claude/commands/team-drive.md` and execute its full procedure, **starting from Step 1** (Verify Branch). Skip Step 0 and Step 0b — Contract already exists and is fresh.
+
+Specifically:
+1. **Skip** Step 0 (Find Active Contract) — Contract already created in A3
+2. **Skip** Step 0b (Freshness Check) — Contract was just generated from latest Issue
+3. **Execute** Step 1 (Verify Branch) — confirm on correct branch
+4. **Execute** Step 2 (Display Mission Briefing)
+5. **Execute** Step 2b (Branch Safety Check) — confirm not on protected branch
+6. **Execute** the full drive execution loop — read code, validate sub-tasks, execute with team if needed, test, commit, update Contract checkboxes
+7. **Continue** until all sub-tasks are checked off
+
+The drive phase follows all `/team-drive` rules:
+- Sub-tasks are hypotheses — validate against actual code, rewrite if wrong
+- Execute with discipline: ripple check, self-adversarial review
+- Test after every change
+- Commit progress regularly (`bash ~/.claude/commands/scripts/tw-git.sh commit "..."`)
+- Update Contract checkboxes as tasks complete
+- If using Drive Mode (`/drive` skill), follow its full protocol (Phase T team assembly, wave decomposition, etc.)
+
+**On drive failure or blocker:**
+- If a sub-task is truly blocked → update Contract with blocker note in AI Notes
+- Skip the blocked task, continue with remaining tasks
+- At end of drive, if any tasks blocked → report blockers and ask: "Ship partial progress?" / "Stop here"
+- If "Stop here" → **STOP** (Contract and branch remain for manual continuation)
+
+#### Announce Phase 2 complete
+
+```
+✅ PHASE 2: DRIVEN
+   Sub-tasks: {done}/{total} complete
+   Commits:   {N} commits on {branch}
+   {If blocked tasks:} Blocked: {list}
+   Proceeding to ship...
+────────────────────────────────────────────
+```
+
+### A5: Phase 3 — Ship (streamlined)
+
+Execute the ship flow without interactive confirmations.
+
+#### Pre-flight checks
+
+1. **Verify branch**: confirm on mission branch
+2. **Verify sub-tasks**: all checkboxes checked (or user approved partial ship in A4)
+3. **Clean working tree**: if uncommitted changes exist, commit them:
+   ```bash
+   bash ~/.claude/commands/scripts/tw-git.sh commit "chore: pre-ship cleanup | Mission: #${ISSUE_NUMBER}"
+   ```
+4. **Run tests** (if configured):
+   ```bash
+   TEST_CMD=$(bash ~/.claude/commands/scripts/tw-config.sh project.test_command "" 2>/dev/null)
+   if [ -n "$TEST_CMD" ]; then
+     eval "$TEST_CMD"
+   fi
+   ```
+   - If tests fail → "Tests failing. Fix before shipping." → attempt to fix, re-run. If still failing after 3 attempts → **STOP** with clear error.
+
+#### Push
+
+```bash
+bash ~/.claude/commands/scripts/tw-git.sh push "$BRANCH"
+```
+
+If push fails → attempt rebase:
+```bash
+bash ~/.claude/commands/scripts/tw-git.sh rebase "$BASE_BRANCH"
+bash ~/.claude/commands/scripts/tw-git.sh push "$BRANCH"
+```
+If still fails → **STOP**
+
+#### Create PR
+
+```bash
+# Check for existing PR (exits 1 if no PR found — suppress with || true)
+EXISTING_PR=$(bash ~/.claude/commands/scripts/tw-pr.sh exists "$BRANCH" 2>/dev/null) || true
+if [ -n "$EXISTING_PR" ]; then
+  echo "PR already exists: $EXISTING_PR"
+  # Use existing PR number/url, skip creation
+fi
+```
+
+If no existing PR:
+```bash
+COMMIT_TYPE=$(bash ~/.claude/commands/scripts/tw-pr.sh commit-type "$ISSUE_TITLE")
+
+# Build PR body from Contract (same format as /team-ship Step 4b)
+PR_RESULT=$(bash ~/.claude/commands/scripts/tw-pr.sh create "$ISSUE_NUMBER" "${COMMIT_TYPE}: ${ISSUE_TITLE}" "$PR_BODY" "$BASE_BRANCH" "$BRANCH")
+PR_NUMBER=$(echo "$PR_RESULT" | cut -d' ' -f1)
+PR_URL=$(echo "$PR_RESULT" | cut -d' ' -f2)
+```
+
+PR body format:
+```markdown
+Closes #{issue}
+
+## Objective
+{from Contract}
+
+## Changes
+{completed sub-tasks as bullet list}
+
+## Acceptance Criteria
+{from Contract}
+
+## Test
+{test command} — {passing/skipped}
+
+## AI Notes
+{from Contract AI Notes section}
+```
+
+#### Post-ship cleanup
+
+```bash
+# Comment on Issue
+bash ~/.claude/commands/scripts/tw-pr.sh comment "$ISSUE_NUMBER" "📦 PR #${PR_NUMBER} created — ${PR_URL}"
+
+# Label transition: wip → review (on Issue)
+bash ~/.claude/commands/scripts/tw-label.sh transition "$ISSUE_NUMBER" wip review
+
+# Add review label to PR itself (matches /team-ship Step 4e)
+bash ~/.claude/commands/scripts/tw-label.sh pr-label "$PR_NUMBER" review
+```
+
+All non-fatal — warn on failure, continue.
+
+#### CI check (if configured)
+
+```bash
+CI_ENABLED=$(bash ~/.claude/commands/scripts/tw-config.sh quality.ci "" 2>/dev/null)
+if [ -n "$CI_ENABLED" ]; then
+  bash ~/.claude/commands/scripts/tw-pr.sh watch "$PR_NUMBER"
+fi
+```
+
+#### Remove Contract (AFTER CI — keep Contract if CI fails so user can resume with /team-drive)
+
+```bash
+bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISSION-${ISSUE_NUMBER}.md"
+```
+
+#### Request review (if configured)
+
+```bash
+REVIEW_REQUIRED=$(bash ~/.claude/commands/scripts/tw-config.sh quality.review_required "" 2>/dev/null)
+```
+If review required → find tech-lead from config → `bash ~/.claude/commands/scripts/tw-pr.sh add-reviewer "$PR_NUMBER" "$REVIEWER"`
+
+### A6: Final Output
+
+```
+🤖 AUTO COMPLETE ── #{issue} {title} ──────
+══════════════════════════════════════════
+
+✅ PHASE 1: CLAIMED
+   Branch: {branch}
+
+✅ PHASE 2: DRIVEN
+   Sub-tasks: {done}/{total}
+
+✅ PHASE 3: SHIPPED
+   🔀 PR: {pr_url}
+   {ci_icon} CI: {status}
+   Review: {requested / not required}
+   Labels: {current labels}
+
+══════════════════════════════════════════
+⏳ Waiting for human merge.
+After merge: /team-ship done #{issue}
+══════════════════════════════════════════
+```
+
+### Error Handling
+
+- Issue not found → **STOP** at A2
+- Issue closed → **STOP** at A2
+- Active Contract exists → **STOP** at prerequisites (user must finish or abandon)
+- Branch creation fails → **STOP** at A3
+- Drive blocked on all tasks → **STOP** at A4 with partial progress
+- Tests persistently fail → **STOP** at A5 with branch pushed (user can fix manually)
+- Push fails after rebase → **STOP** at A5
+- PR creation fails → **STOP** at A5 (branch is pushed, user can create PR manually)
+- Label/comment/review operations fail → warn, continue (non-fatal)
+
+---
+
+## Operation Wrap
+
+> Triggered by `/team wrap`. Retroactive closure: user changed code first, now needs to back-fill the teamwork flow (issue + PR + labels). Auto-detects code state and picks the right strategy.
+
+### W0: Prerequisites
+
+```bash
+GH_USER=$(gh api user --jq '.login' 2>/dev/null)
+if [ -z "$GH_USER" ]; then
+  echo "ERROR: Cannot get GitHub user identity. Run 'gh auth login' first."
+  exit 1
+fi
+```
+
+```bash
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "No teamwork config found. Run /team init first."
+  # STOP
+}
+
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+
+# Milestone for Issue creation (from config, if set)
+MILESTONE=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
+if [ -n "$MILESTONE" ]; then
+  MILESTONE=$(bash ~/.claude/commands/scripts/tw-git.sh milestone-resolve "$MILESTONE" 2>/dev/null)
+fi
+```
+
+Check for active Contract — if one exists, wrap is not the right tool:
+```bash
+ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
+```
+If active Contract exists → "You have an active mission. Use `/team-drive` and `/team-ship` instead." → **STOP**
+
+### W1: Detect Code State
+
+```bash
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Check for uncommitted changes
+UNCOMMITTED=$(git status --porcelain)
+
+# Check for unpushed commits on current branch
+# Must handle branches with no remote tracking (never pushed)
+if git rev-parse --verify "origin/${CURRENT_BRANCH}" >/dev/null 2>&1; then
+  UNPUSHED=$(git log "origin/${CURRENT_BRANCH}..HEAD" --oneline 2>/dev/null) || UNPUSHED=""
+  HAS_REMOTE_TRACKING=true
+else
+  # No remote tracking — ALL commits diverging from base are "unpushed"
+  UNPUSHED=$(git log "origin/${BASE_BRANCH}..HEAD" --oneline 2>/dev/null) || UNPUSHED=""
+  HAS_REMOTE_TRACKING=false
+fi
+
+# Check if current branch has commits pushed that diverge from base
+# Only meaningful if branch has remote tracking
+if [ "$HAS_REMOTE_TRACKING" = true ]; then
+  PUSHED_AHEAD=$(git log "origin/${BASE_BRANCH}..origin/${CURRENT_BRANCH}" --oneline 2>/dev/null) || PUSHED_AHEAD=""
+else
+  PUSHED_AHEAD=""
+fi
+```
+
+**State detection logic** (mutually exclusive, checked in this order):
+
+| Condition | State |
+|-----------|-------|
+| `UNCOMMITTED` is non-empty AND `UNPUSHED` is empty | **UNCOMMITTED** — changes not yet committed |
+| `UNPUSHED` is non-empty | **COMMITTED_NOT_PUSHED** — committed but not pushed |
+| `HAS_REMOTE_TRACKING` = true AND `PUSHED_AHEAD` is non-empty | **COMMITTED_PUSHED** — already pushed to remote |
+| None of the above | "No changes detected. Nothing to wrap." → **STOP** |
+
+Display detected state to user:
+
+```
+🔄 WRAP — Retroactive Closure
+══════════════════════════════════════════
+Branch:   {CURRENT_BRANCH}
+State:    {UNCOMMITTED / COMMITTED_NOT_PUSHED / COMMITTED_PUSHED}
+
+{State-specific description — see below}
+══════════════════════════════════════════
+```
+
+State descriptions:
+- **UNCOMMITTED**: "Uncommitted changes detected. Will stash → create issue → claim branch → apply → drive → ship."
+- **COMMITTED_NOT_PUSHED**: "Unpushed commits detected. Will create issue → claim branch → cherry-pick → reset base → drive → ship."
+- **COMMITTED_PUSHED**: "Changes already pushed to remote. Can only retroactively track (create issue + labels + close)."
+
+### W2: Gather Change Summary
+
+Regardless of state, analyze the changes to generate an issue description:
+
+**For UNCOMMITTED:**
+```bash
+git diff --stat
+git diff  # full diff for AI analysis
+```
+
+**For COMMITTED_NOT_PUSHED:**
+```bash
+git log "origin/${BASE_BRANCH}..HEAD" --oneline
+git diff "origin/${BASE_BRANCH}..HEAD" --stat
+git diff "origin/${BASE_BRANCH}..HEAD"  # full diff for AI analysis
+```
+
+**For COMMITTED_PUSHED:**
+```bash
+# If on base branch, analyze recent commits not yet tracked by teamwork
+git log "origin/${BASE_BRANCH}..HEAD" --oneline 2>/dev/null || \
+  git log --oneline -10  # fallback: show recent commits
+git diff "origin/${BASE_BRANCH}..HEAD" --stat 2>/dev/null || \
+  git diff HEAD~5..HEAD --stat  # fallback
+```
+
+AI analyzes the diff/commits to determine:
+1. **Title** — concise, prefixed with type (`fix:`, `feat:`, `refactor:`, etc.)
+2. **Priority** — P0/P1/P2/P3 (default P2)
+3. **Size** — S/M/L/XL (default M)
+4. **Objective** — 1-2 sentence summary
+5. **Success Criteria** — concrete checkboxes (based on what the code already does)
+
+### W3: Preview & Confirm
+
+```
+📋 WRAP PREVIEW
+════════════════════════════════════════
+Title:     {title}
+Priority:  {Pn}   Size: {size}
+Strategy:  {strategy name — see below}
+
+{For UNCOMMITTED:}
+  1. git stash
+  2. Create GitHub Issue with teamwork labels
+  3. /team-claim → mission branch from clean base
+  4. git stash pop on mission branch
+  5. /team-drive (verify + commit)
+  6. /team-ship (push + PR)
+
+{For COMMITTED_NOT_PUSHED:}
+  1. Create GitHub Issue with teamwork labels
+  2. Save commit SHAs: {sha1, sha2, ...}
+  3. /team-claim → mission branch from clean base
+  4. Cherry-pick commits onto mission branch
+  5. Reset {CURRENT_BRANCH} to origin/{CURRENT_BRANCH}
+  6. /team-drive (verify)
+  7. /team-ship (push + PR)
+
+{For COMMITTED_PUSHED:}
+  1. Create GitHub Issue with teamwork labels + status:done
+  2. Close Issue immediately (retroactive tracking only)
+  3. No PR — changes already in remote
+
+════════════════════════════════════════
+```
+
+Use `AskUserQuestion`:
+- "Proceed" → continue to W4
+- "Edit title/priority" → adjust and re-preview
+- "Cancel" → **STOP**
+
+### W4: Execute — Path A (UNCOMMITTED)
+
+#### A1: Stash changes
+
+```bash
+git stash push -m "team-wrap: pre-issue stash"
+```
+
+Verify stash succeeded:
+```bash
+# Working tree should be clean now
+[ -z "$(git status --porcelain)" ] || {
+  echo "ERROR: Stash failed — working tree still dirty"
+  # STOP
+}
+```
+
+#### A2: Create Issue
+
+Use the same logic as `/team-issue` Create Flow (Steps 2-6), but with the AI-generated title/body from W2. Specifically:
+
+```bash
+# Generate MC-format issue body (same structure as /team-issue Step 4)
+gh issue create \
+  --repo "$REPO" \
+  --title "{title}" \
+  --body "{formatted MC body}" \
+  --label "$MISSION_LABEL" \
+  --label "${STATUS_PREFIX}wip" \
+  --label "${PRIORITY_PREFIX}{Pn}" \
+  --label "size:{size}" \
+  --assignee "$GH_USER" \
+  ${MILESTONE:+--milestone "$MILESTONE"}
+```
+
+Extract `ISSUE_NUMBER` from output.
+
+#### A3: Claim (create mission branch from clean base)
+
+```bash
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$TITLE")
+bash ~/.claude/commands/scripts/tw-git.sh ensure-base
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
+```
+
+Generate Mission Contract at `$TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md` — same structure as `/team-claim` Step 4.
+
+#### A4: Apply stash on mission branch
+
+```bash
+git stash pop
+```
+
+If stash pop fails (conflict):
+- "Stash apply had conflicts. Resolve them, then continue with `/team-drive`."
+- Do NOT stop — the mission branch and contract are already set up. User can resolve and drive.
+
+#### A5: Hand off to drive + ship
+
+Output:
+```
+🔄 WRAPPED (stash → branch) ── #{ISSUE_NUMBER} {title}
+══════════════════════════════════════════
+Issue:     #{ISSUE_NUMBER}
+Branch:    {BRANCH}
+Contract:  $TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md
+Changes:   applied from stash
+
+Next steps:
+  /team-drive    Verify + commit changes
+  /team-ship     Push + create PR
+══════════════════════════════════════════
+```
+
+Then invoke `/team-drive` automatically. **Important**: since this is a wrap (code already written), team-drive should focus on **verifying and committing** the existing changes, not re-implementing sub-tasks. The Contract's AI Notes section should contain: `"Wrap mode: code already applied. Verify correctness, run tests, commit. Do not re-implement."`
+
+### W5: Execute — Path B (COMMITTED_NOT_PUSHED)
+
+#### B1: Save commit SHAs
+
+```bash
+# Capture commits that need to be moved to mission branch
+# Use origin/BASE_BRANCH as reference (consistent with W2 analysis diff)
+# This works for both tracked branches and untracked local branches
+COMMIT_SHAS=$(git log --reverse --format='%H' "origin/${BASE_BRANCH}..HEAD" 2>/dev/null)
+COMMIT_COUNT=$(echo "$COMMIT_SHAS" | wc -l | tr -d ' ')
+ORIGINAL_BRANCH="$CURRENT_BRANCH"
+```
+
+If mixed state (uncommitted + committed), commit uncommitted changes first:
+```bash
+if [ -n "$(git status --porcelain)" ]; then
+  git add -A
+  git commit -m "wip: uncommitted changes (pre-wrap)"
+  # Re-capture SHAs including new commit
+  COMMIT_SHAS=$(git log --reverse --format='%H' "origin/${BASE_BRANCH}..HEAD" 2>/dev/null)
+  COMMIT_COUNT=$(echo "$COMMIT_SHAS" | wc -l | tr -d ' ')
+fi
+```
+
+#### B2: Create Issue
+
+Same as Path A, Step A2.
+
+#### B3: Claim (create mission branch from clean base)
+
+```bash
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$TITLE")
+bash ~/.claude/commands/scripts/tw-git.sh ensure-base
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
+```
+
+Generate Mission Contract — same as Path A, Step A3.
+
+#### B4: Cherry-pick commits onto mission branch
+
+```bash
+# Now on mission branch (created from clean base)
+git cherry-pick $COMMIT_SHAS
+```
+
+If cherry-pick fails (conflict):
+- "Cherry-pick had conflicts. Resolve them, then `/team-drive` to continue."
+- Do NOT stop — mission branch and contract exist. User resolves and drives.
+
+#### B5: Reset original branch to origin
+
+**SAFETY — verify cherry-pick transferred all changes BEFORE any reset:**
+```bash
+# Cherry-pick creates NEW SHAs — cannot use git branch --contains with original SHAs.
+# Instead, verify the mission branch content matches by diffing the tree.
+DIFF_CHECK=$(git diff "$BRANCH" "$ORIGINAL_BRANCH" -- . 2>/dev/null)
+if [ -n "$DIFF_CHECK" ]; then
+  echo "ERROR: Mission branch content differs from original. Cherry-pick may be incomplete. Aborting reset."
+  # STOP — do NOT reset. User must investigate.
+fi
+```
+
+If `ORIGINAL_BRANCH` is the base branch (user committed directly on main/develop):
+- Use `AskUserQuestion`: "You committed on `{BASE_BRANCH}`. Reset it to `origin/{BASE_BRANCH}`? This removes your local commits (they're now on the mission branch)."
+- If user confirms → proceed with reset
+- If user declines → skip reset, warn: "Commits remain on both branches. Remove manually after PR merge."
+
+**Execute reset** (only after safety check passes and user confirms if on base branch):
+```bash
+git checkout "$ORIGINAL_BRANCH"
+if [ "$HAS_REMOTE_TRACKING" = true ]; then
+  git reset --hard "origin/${ORIGINAL_BRANCH}"
+else
+  # No remote tracking — reset to base branch origin (commits now live on mission branch)
+  git reset --hard "origin/${BASE_BRANCH}"
+fi
+# Return to mission branch
+git checkout "$BRANCH"
+```
+
+#### B6: Hand off to drive + ship
+
+Output:
+```
+🔄 WRAPPED (cherry-pick) ── #{ISSUE_NUMBER} {title}
+══════════════════════════════════════════
+Issue:     #{ISSUE_NUMBER}
+Branch:    {BRANCH}
+Commits:   {COMMIT_COUNT} cherry-picked from {ORIGINAL_BRANCH}
+Contract:  $TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md
+Reset:     {ORIGINAL_BRANCH} → origin/{ORIGINAL_BRANCH}
+
+Next steps:
+  /team-drive    Verify changes
+  /team-ship     Push + create PR
+══════════════════════════════════════════
+```
+
+Then invoke `/team-drive` automatically. Same wrap-mode note as Path A — team-drive verifies and commits, does not re-implement.
+
+### W6: Execute — Path C (COMMITTED_PUSHED)
+
+This path cannot create a PR (changes are already in remote). It only retroactively tracks the work.
+
+#### C1: Create Issue with done status
+
+```bash
+ISSUE_URL=$(gh issue create \
+  --repo "$REPO" \
+  --title "{title}" \
+  --body "{formatted MC body with note: 'Retroactively tracked — changes already pushed.'}" \
+  --label "$MISSION_LABEL" \
+  --label "${STATUS_PREFIX}done" \
+  --label "${PRIORITY_PREFIX}{Pn}" \
+  --label "size:{size}" \
+  --assignee "$GH_USER" \
+  ${MILESTONE:+--milestone "$MILESTONE"})
+```
+
+#### C2: Close Issue immediately
+
+```bash
+# gh issue create outputs a URL like https://github.com/owner/repo/issues/42
+ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
+# --comment flag does not exist on gh issue close — post comment separately
+gh issue comment "$ISSUE_NUMBER" --body "Retroactively closed by /team wrap — changes already pushed to ${CURRENT_BRANCH}."
+gh issue close "$ISSUE_NUMBER" --reason completed
+```
+
+#### C3: Output
+
+```
+🔄 WRAPPED (retroactive) ── #{ISSUE_NUMBER} {title}
+══════════════════════════════════════════
+Issue:     #{ISSUE_NUMBER} (closed)
+Branch:    {CURRENT_BRANCH} (already pushed)
+Labels:    {MISSION_LABEL}, {STATUS_PREFIX}done, {PRIORITY_PREFIX}{Pn}
+Note:      Tracked for history only — no PR created.
+══════════════════════════════════════════
 ```
 
 Then **STOP**.

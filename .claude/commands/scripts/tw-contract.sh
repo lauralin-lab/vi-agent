@@ -2,8 +2,6 @@
 # tw-contract.sh — Mission Contract operations for teamwork skills
 #
 # USAGE:
-#   bash tw-contract.sh teamwork-dir                      # Print detected teamwork directory
-#   bash tw-contract.sh find [ISSUE]                       # Locate contract file(s)
 #   bash tw-contract.sh read-field PATH FIELD              # Extract YAML frontmatter field
 #   bash tw-contract.sh hash TITLE BODY                    # Compute SHA256 hash
 #   bash tw-contract.sh check-freshness PATH ISSUE         # Compare hashes (0=fresh, 1=stale, 2=no-hash)
@@ -32,59 +30,9 @@ _teamwork_dir() {
 
 usage() {
   echo "Usage: tw-contract.sh <subcommand> [args...]" >&2
-  echo "Subcommands: teamwork-dir, find, read-field, hash, check-freshness," >&2
+  echo "Subcommands: read-field, hash, check-freshness," >&2
   echo "             toggle-task, sync-checkbox, delete" >&2
   exit 1
-}
-
-cmd_teamwork_dir() {
-  local dir
-  dir=$(_teamwork_dir)
-  if [ -z "$dir" ]; then
-    echo "ERROR: No teamwork config found" >&2
-    exit 3
-  fi
-  echo "$dir"
-}
-
-cmd_find() {
-  local issue="${1:-}"
-  local dir
-  dir=$(_teamwork_dir)
-  if [ -z "$dir" ]; then
-    echo "ERROR: No teamwork config found" >&2
-    exit 3
-  fi
-
-  if [ -n "$issue" ]; then
-    local path="$dir/active/MISSION-${issue}.md"
-    if [ -f "$path" ]; then
-      echo "$path"
-      return 0
-    else
-      echo "ERROR: Contract not found: $path" >&2
-      exit 3
-    fi
-  fi
-
-  # Find all contracts
-  local contracts
-  contracts=$(ls "$dir"/active/MISSION-*.md 2>/dev/null || true)
-
-  if [ -z "$contracts" ]; then
-    echo "ERROR: No active contracts found" >&2
-    exit 3
-  fi
-
-  local count
-  count=$(echo "$contracts" | wc -l | tr -d ' ')
-  if [ "$count" -gt 1 ]; then
-    echo "ERROR: Multiple active contracts found:" >&2
-    echo "$contracts" >&2
-    exit 1
-  fi
-
-  echo "$contracts"
 }
 
 cmd_read_field() {
@@ -261,8 +209,6 @@ SUBCOMMAND="${1:-}"
 shift || true
 
 case "$SUBCOMMAND" in
-  teamwork-dir)     cmd_teamwork_dir ;;
-  find)             cmd_find "$@" ;;
   read-field)       cmd_read_field "$@" ;;
   hash)             cmd_hash "$@" ;;
   check-freshness)  cmd_check_freshness "$@" ;;

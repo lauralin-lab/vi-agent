@@ -15,8 +15,11 @@ version: "3.0.0"
 |-------|--------|
 | (empty) | Full ship flow (push, PR, CI, cleanup) |
 | `done` | Post-merge cleanup (close Issue, update labels, clean worktree) |
+| `done help` | Show done operation usage |
 | `review` | AI code review on current PR |
+| `review help` | Show review operation usage |
 | `sync` | Rebase current branch on base branch |
+| `sync help` | Show sync operation usage |
 | `help` or `-h` | Show usage guide |
 
 ---
@@ -47,8 +50,11 @@ AFTER MERGE:
   /team-ship done closes the Issue, labels status:done, returns to base branch.
 ```
 
+- If `done help` → jump to **Operation Done Help**
 - If `done` → jump to **Operation Done**
+- If `review help` → jump to **Operation Review Help**
 - If `review` → jump to **Operation Review**
+- If `sync help` → jump to **Operation Sync Help**
 - If `sync` → jump to **Operation Sync**
 - If empty or anything else → continue to **Step 0: Full Ship Flow**
 
@@ -66,14 +72,10 @@ fi
 ```
 
 ```bash
-# Config (support both directory names)
-if [ -f .teamwork/config.yml ]; then
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-else
-  echo "NO_CONFIG"
-fi
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "No teamwork config found. Run /team init first."
+  # STOP
+}
 ```
 
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
@@ -81,10 +83,7 @@ fi
 Read `$TEAMWORK_DIR/config.yml` → extract project settings, conventions, quality preferences.
 
 ```bash
-# Read label prefixes from config
-STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
-[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
 ```
 
 ---
@@ -140,6 +139,32 @@ git checkout "$CONTRACT_BRANCH" 2>/dev/null || {
 }
 ```
 
+### 2a-bis: Branch Sync Check
+
+Check how far behind base and remote:
+
+```bash
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+
+# Fetch latest to get accurate counts
+git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
+git fetch origin "$(git branch --show-current)" --quiet 2>/dev/null || true
+
+BEHIND_BASE=$(git rev-list --count HEAD..origin/$BASE_BRANCH 2>/dev/null || echo "0")
+
+CURRENT_BRANCH=$(git branch --show-current)
+if git rev-parse --verify "origin/$CURRENT_BRANCH" >/dev/null 2>&1; then
+  BEHIND_REMOTE=$(git rev-list --count HEAD..origin/$CURRENT_BRANCH 2>/dev/null || echo "0")
+else
+  BEHIND_REMOTE="0"
+fi
+```
+
+- If `BEHIND_BASE` > 30 → 🔴 "Branch is {N} commits behind base. Rebase before shipping to avoid painful merge conflicts. Run `/team-ship sync` first." → **STOP**
+- If `BEHIND_BASE` > 10 → 🟡 "Branch is {N} commits behind base. Consider running `/team-ship sync` before shipping."
+- If `BEHIND_REMOTE` > 0 → 🟡 "Local branch is behind remote by {N} commits. Run `git pull --rebase` to sync before pushing."
+
 ### 2b: Verify all sub-tasks complete
 
 Check the Contract's sub-tasks section. Count `- [x]` vs `- [ ]`.
@@ -155,8 +180,7 @@ git status --porcelain
 
 - If there are uncommitted changes → warn: "You have uncommitted changes. Committing them now."
   ```bash
-  git add -A
-  git commit -m "chore: pre-ship cleanup | Mission: #{issue}"
+  bash ~/.claude/commands/scripts/tw-git.sh commit "chore: pre-ship cleanup | Mission: #${ISSUE_NUMBER}"
   ```
 
 ### 2d: Run tests
@@ -188,7 +212,7 @@ else
 fi
 ```
 
-- If any test command exits non-zero → "Tests are failing. Fix them before shipping." → **STOP**
+- If any test command exits non-zero → "Tests are failing. Fix them before shipping. Run /team-drive to fix, then retry /team-ship." → **STOP**
 
 ---
 
@@ -198,7 +222,7 @@ fi
 bash ~/.claude/commands/scripts/tw-git.sh push {branch}
 ```
 
-- If exit code 2 → push failed. Suggest `bash ~/.claude/commands/scripts/tw-git.sh rebase` then retry push.
+- If exit code 2 → push failed. Suggest `/team-ship sync` then retry push.
 - If push still fails → "Push failed. Resolve the issue manually." → **STOP**
 
 ---
@@ -214,7 +238,13 @@ EXISTING_PR=$(bash ~/.claude/commands/scripts/tw-pr.sh exists {branch}) && {
 }
 ```
 
-If a PR already exists for this branch → skip PR creation, use existing PR. Display: "PR already exists: {url}"
+If a PR already exists for this branch → skip PR creation, use existing PR.
+
+Display existing PR status:
+- CI status from PR statusCheckRollup
+- Review decision
+- Mergeable state
+Output: "PR #{number} already exists — CI: {status}, Review: {status}. Pushing will update it."
 
 ### 4b: Generate PR body
 
@@ -298,6 +328,7 @@ bash ~/.claude/commands/scripts/tw-pr.sh watch {pr}
 
 - If CI passes → "CI passed ✅"
 - If CI fails → "CI failed ❌. Check the PR for details: {pr-url}" (do NOT stop — the PR is already created, user can fix and push again)
+  "Fix the failures, commit, and push to {branch} — the PR will update automatically. Or run /team-drive to fix in mission mode."
 
 If CI is not enabled → skip this step.
 
@@ -425,12 +456,29 @@ If `.mission` file exists (worktree mode):
   cd {original_repo_path}
   bash ~/.claude/commands/scripts/tw-git.sh worktree-remove "$WORKTREE_PATH"
   ```
-- If no: keep worktree, warn "Worktree kept. Remove manually with `git worktree remove {path}`."
+- If no: `cd {original_repo_path}` first (must leave worktree for D6), then warn "Worktree kept. Remove manually with `git worktree remove {path}`."
 
 ### D6: Return to base branch
 
 ```bash
-bash ~/.claude/commands/scripts/tw-git.sh ensure-base
+# Check for uncommitted changes BEFORE switching (exclude untracked-only)
+DIRTY=$(git status --porcelain 2>/dev/null | grep -v '^??')
+if [ -n "$DIRTY" ]; then
+  STASH_MSG="team-ship-done: stashed from $(git branch --show-current) before cleanup"
+  git stash push -u -m "$STASH_MSG" || {
+    echo "ERROR: git stash failed. Commit or discard changes manually before cleanup."
+    # STOP — do not proceed to checkout, risk losing changes
+  }
+  echo "⚠️ Stashed uncommitted changes. Recover with: git stash pop"
+fi
+
+bash ~/.claude/commands/scripts/tw-git.sh ensure-base || {
+  echo "ERROR: Could not switch to base branch."
+  if [ -n "$DIRTY" ]; then
+    echo "Your changes are saved in stash. Recover with: git stash pop"
+  fi
+  # STOP
+}
 ```
 
 ### D7: Clean up Contract
@@ -534,6 +582,96 @@ bash ~/.claude/commands/scripts/tw-git.sh rebase "$BASE_BRANCH"
 
 - If exit 0 → "Branch `{branch}` rebased on latest $BASE_BRANCH."
 - If exit 2 → "Rebase conflicts detected. Resolve them, then `git rebase --continue`." → **STOP** (do not abort automatically)
+
+---
+
+## Operation Done Help
+
+> Triggered by `/team-ship done help`.
+
+Output the following and **STOP**:
+
+```
+/team-ship done — Post-Merge Cleanup
+═══════════════════════════════════════════
+
+USAGE:
+  /team-ship done           Auto-detect Issue from Contract/branch
+  /team-ship done #42       Specify Issue number explicitly
+
+WHAT IT DOES:
+  1. Verify PR is merged (fails if PR still open)
+  2. Close Issue (if not auto-closed by "Closes #N")
+  3. Update labels: status:review → status:done
+  4. Clean up worktree (if in worktree mode)
+  5. Return to base branch
+  6. Remove local Contract
+
+WHEN TO USE:
+  After your PR has been merged on GitHub.
+  Usually the last step: /team-drive → /team-ship → (merge) → /team-ship done
+
+TROUBLESHOOTING:
+  "No merged PR found" → PR must be merged first. Check GitHub.
+  "Cannot determine Issue" → Specify explicitly: /team-ship done #42
+```
+
+---
+
+## Operation Review Help
+
+> Triggered by `/team-ship review help`.
+
+Output the following and **STOP**:
+
+```
+/team-ship review — AI Code Review
+═══════════════════════════════════════════
+
+USAGE:
+  /team-ship review         Review PR for current branch
+  /team-ship review #43     Review specific PR number
+
+WHAT IT DOES:
+  1. Find open PR for current branch
+  2. Fetch full diff
+  3. Read all changed files for context
+  4. AI review: correctness, security, architecture, quality, performance
+  5. Choose action: approve / request changes / comment only
+  6. Publish review to GitHub
+
+WHEN TO USE:
+  Before merging a PR, or when a teammate asks for review.
+```
+
+---
+
+## Operation Sync Help
+
+> Triggered by `/team-ship sync help`.
+
+Output the following and **STOP**:
+
+```
+/team-ship sync — Rebase on Base Branch
+═══════════════════════════════════════════
+
+USAGE:
+  /team-ship sync           Rebase current branch on latest base
+
+WHAT IT DOES:
+  1. Verify you're on a mission branch (not base)
+  2. Fetch latest base branch from remote
+  3. Rebase your branch on top of latest base
+
+WHEN TO USE:
+  When /team doctor shows your branch is behind base or remote.
+  Before /team-ship if branch has drifted.
+
+TROUBLESHOOTING:
+  "Rebase conflicts" → Resolve conflicts, then: git rebase --continue
+  Already on base branch → Nothing to sync.
+```
 
 ---
 

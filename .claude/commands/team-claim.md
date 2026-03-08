@@ -1,6 +1,6 @@
 ---
 description: "Claim Issue → Contract → Branch. Try: /team-claim help"
-version: "3.0.1"
+version: "3.2.1"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -55,13 +55,10 @@ fi
 
 ```bash
 # Config (support both directory names)
-if [ -f .teamwork/config.yml ]; then
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-else
-  echo "NO_CONFIG"
-fi
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "No teamwork config found. Run /team init first."
+  # STOP
+}
 ```
 
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
@@ -69,15 +66,12 @@ fi
 Read `$TEAMWORK_DIR/config.yml` → extract team roster, conventions, project settings.
 
 ```bash
-# Read mission label from config — try github.mc_label (teamspace schema) then mc_label (teamwork schema)
-MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh github.mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh mc_label "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL=$(bash ~/.claude/commands/scripts/tw-config.sh labels.mission "" 2>/dev/null)
-[ -z "$MISSION_LABEL" ] && MISSION_LABEL="mission"
+eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
+# Now MISSION_LABEL, STATUS_PREFIX, PRIORITY_PREFIX are set
 ```
 
 Verify `GH_USER` is in the team roster (check both `team:` and `members:` sections).
-If not → "You ({GH_USER}) are not in the team roster. Run `/team` to join — it will ask your role and add you." → **STOP**
+If not → "You ({GH_USER}) are not in the team roster. Run `/team init` to re-initialize and add yourself." → **STOP**
 
 ---
 
@@ -98,7 +92,7 @@ fi
 ```
 
 **If worktree DISABLED (default):** If any Contract exists → read it, display the active mission info.
-- "You already have an active mission: #{issue} — {title}. Complete it with `/team-ship` first, or remove `$TEAMWORK_DIR/active/MISSION-{issue}.md` to abandon."
+- "You already have an active mission: #{issue} — {title}. Complete it with `/team-ship` first. To abandon: `rm $TEAMWORK_DIR/active/MISSION-{issue}.md` (you can re-claim the Issue later with `/team-claim`)."
 - **STOP** (enforce one-at-a-time rule)
 
 **If worktree ENABLED:** Allow multiple active Contracts. Each mission gets its own worktree directory, so parallel work is safe.
@@ -194,7 +188,7 @@ labels: [{labels}]
 branch: mission/{issue}-{slug}-{user}
 milestone: "{milestone — from Issue JSON, falls back to config versions.current, or 'none'}"
 claimed: {ISO_TIMESTAMP}
-issue_content_hash: "{SHA256 of title + body at claim time}"
+issue_content_hash: "$(bash ~/.claude/commands/scripts/tw-contract.sh hash "$TITLE" "$BODY")"
 ---
 
 # MISSION-{issue}: {title}
@@ -244,7 +238,7 @@ bash ~/.claude/commands/scripts/tw-git.sh ensure-base
 Generate branch name and create branch:
 ```bash
 # Slugify the title: lowercase, replace spaces with hyphens, remove special chars, truncate
-SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 30)
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$ISSUE_TITLE")
 
 # Create branch from config pattern (handles pattern substitution + existing branch detection)
 BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
@@ -314,5 +308,8 @@ Contract:  $TEAMWORK_DIR/active/MISSION-{issue}.md
 - Issue not found → "Issue #{issue} not found. Check the number." → **STOP**
 - Issue already assigned to someone else → warn but allow claiming (team member may be handing off)
 - Issue is closed → "Issue #{issue} is already closed." → **STOP**
-- Branch already exists → "Branch {name} already exists. Switching to it." → `git checkout {branch}`
+- Branch already exists:
+  - Check if corresponding Issue is still OPEN (via `gh issue view {issue} --json state --jq '.state'`)
+  - If Issue is CLOSED → warn: "⚠ Branch exists but Issue #{issue} is closed. This is an orphan branch. Run `/team doctor fix` to clean up, then `/team-claim` again." → **STOP**
+  - If Issue is OPEN → "Branch {name} already exists. Switching to it." → `git checkout {branch}`
 - Network errors → "GitHub API error. Check your connection and `gh auth status`." → **STOP**

@@ -7,16 +7,18 @@
 #   bash tw-git.sh current                             # Print current branch name
 #   bash tw-git.sh protect-check                       # Exit 3 if on protected branch
 #   bash tw-git.sh push [BRANCH]                       # Push with -u (default: current branch)
-#   bash tw-git.sh fetch BRANCH [BRANCH2...]           # Fetch specified branches
 #   bash tw-git.sh rebase TARGET                        # Fetch + rebase on target
-#   bash tw-git.sh merge-to TARGET                     # Fetch base + merge into target (dual-branch)
 #   bash tw-git.sh tag VERSION                          # Check exists, create, push, verify
 #   bash tw-git.sh commit MSG [FILES...]               # Stage files + commit (-A if no files)
 #   bash tw-git.sh worktree-add BRANCH PATH            # Create worktree
 #   bash tw-git.sh worktree-remove PATH                # Remove worktree safely
 #   bash tw-git.sh log-since [BASE]                     # Show commits + diff stat since base
 #   bash tw-git.sh cut-release VERSION                  # Cut rc/VERSION from base branch
-#   bash tw-git.sh cherry-pick COMMIT                   # Cherry-pick commit to base branch
+#   bash tw-git.sh slugify TITLE                         # Slugify title for branch names
+#   bash tw-git.sh find-rc                               # Find active RC branch (exit 1=none, 3=multiple)
+#   bash tw-git.sh next-version PREFIX                   # Derive next patch version from tags
+#   bash tw-git.sh list-merged-branches                  # Local mission/* branches with merged PRs
+#   bash tw-git.sh milestone-resolve NAME                # Resolve short milestone name to full title
 #
 # EXIT CODES:
 #   0 — success
@@ -61,8 +63,10 @@ _branch_pattern() {
 
 usage() {
   echo "Usage: tw-git.sh <subcommand> [args...]" >&2
-  echo "Subcommands: ensure-base, create-branch, current, protect-check, push, fetch," >&2
-  echo "             rebase, merge-to, tag, commit, worktree-add, worktree-remove, log-since" >&2
+  echo "Subcommands: ensure-base, create-branch, current, protect-check, push," >&2
+  echo "             rebase, tag, commit, worktree-add, worktree-remove, log-since," >&2
+  echo "             cut-release, slugify, find-rc, next-version," >&2
+  echo "             list-merged-branches, milestone-resolve" >&2
   exit 1
 }
 
@@ -143,16 +147,6 @@ cmd_push() {
   fi
 }
 
-cmd_fetch() {
-  if [ $# -eq 0 ]; then
-    echo "ERROR: fetch requires at least one branch name" >&2
-    exit 1
-  fi
-  for branch in "$@"; do
-    git fetch origin "$branch" 2>/dev/null || echo "WARNING: Could not fetch $branch" >&2
-  done
-}
-
 cmd_rebase() {
   local target="${1:-}"
   [ -z "$target" ] && target=$(_base_branch)
@@ -164,35 +158,6 @@ cmd_rebase() {
     echo "Rebased on origin/$target"
   else
     echo "Rebase failed. Resolve conflicts, then: git rebase --continue" >&2
-    exit 2
-  fi
-}
-
-cmd_merge_to() {
-  local target="${1:-}"
-  if [ -z "$target" ]; then
-    echo "ERROR: merge-to requires TARGET branch" >&2
-    exit 1
-  fi
-
-  local base
-  base=$(_base_branch)
-
-  git fetch origin "$base" "$target" 2>/dev/null || {
-    echo "WARNING: Could not fetch, working with local refs" >&2
-  }
-  git checkout "$target" || {
-    echo "ERROR: Could not checkout $target" >&2
-    exit 2
-  }
-  git pull origin "$target" 2>/dev/null || {
-    echo "WARNING: Could not pull $target, working with local copy" >&2
-  }
-  if git merge "origin/$base" --no-edit; then
-    git push origin "$target"
-    echo "Merged $base → $target"
-  else
-    echo "Merge conflict: $base → $target. Resolve manually." >&2
     exit 2
   fi
 }
@@ -249,7 +214,13 @@ cmd_worktree_add() {
     echo "ERROR: worktree-add requires BRANCH and PATH" >&2
     exit 1
   fi
-  git worktree add -b "$branch" "$path"
+  # Use existing branch if it exists (create-branch may have already created it),
+  # otherwise create it with -b
+  if git show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+    git worktree add "$path" "$branch"
+  else
+    git worktree add -b "$branch" "$path"
+  fi
   echo "$path"
 }
 
@@ -317,26 +288,106 @@ cmd_cut_release() {
   echo "$rc_branch"
 }
 
-cmd_cherry_pick() {
-  local commit="${1:-}"
-  if [ -z "$commit" ]; then
-    echo "ERROR: cherry-pick requires COMMIT hash" >&2
+cmd_slugify() {
+  local title="${1:-}"
+  if [ -z "$title" ]; then
+    echo "ERROR: slugify requires TITLE" >&2
+    exit 1
+  fi
+  local slug
+  slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' \
+    | sed 's/--*/-/g; s/^-//; s/-$//' | head -c 30 | sed 's/-$//')
+  if [ -z "$slug" ]; then
+    echo "ERROR: slugify produced empty result from title" >&2
+    exit 1
+  fi
+  echo "$slug"
+}
+
+cmd_find_rc() {
+  local branches
+  branches=$(git ls-remote --heads origin 'rc/*' 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||') || true
+
+  if [ -z "$branches" ]; then
+    echo "NONE"
     exit 1
   fi
 
-  local base
-  base=$(_base_branch)
+  local count
+  count=$(echo "$branches" | wc -l | tr -d ' ')
+  if [ "$count" -gt 1 ]; then
+    echo "MULTIPLE" >&2
+    echo "$branches" >&2
+    exit 3
+  fi
 
-  git checkout "$base" 2>/dev/null || {
-    echo "ERROR: Could not checkout $base" >&2
-    exit 2
-  }
-  git pull origin "$base" 2>/dev/null || true
-  if git cherry-pick "$commit"; then
-    echo "Cherry-picked $commit to $base"
+  echo "$branches"
+}
+
+cmd_next_version() {
+  local prefix="${1:-}"
+  if [ -z "$prefix" ]; then
+    echo "ERROR: next-version requires PREFIX (e.g., V0.1)" >&2
+    exit 1
+  fi
+
+  git fetch --tags origin 2>/dev/null || true
+
+  # Find latest clean version tag matching PREFIX.N (exclude pre-release suffixes)
+  local last_tag
+  last_tag=$(git tag -l "${prefix}.*" --sort=-v:refname \
+    | grep -E "^$(echo "$prefix" | sed 's/[.[\*^$()+?{|\\]/\\&/g')\.[0-9]+$" \
+    | head -1) || true
+
+  if [ -z "$last_tag" ]; then
+    echo "${prefix}.0"
   else
-    echo "Cherry-pick failed. Resolve conflicts, then: git cherry-pick --continue" >&2
-    exit 2
+    local patch prefix_part
+    patch=$(echo "$last_tag" | awk -F. '{print $NF}')
+    prefix_part=$(echo "$last_tag" | sed 's/\.[0-9]*$//')
+    echo "${prefix_part}.$((patch + 1))"
+  fi
+}
+
+cmd_list_merged_branches() {
+  local branches
+  branches=$(git branch --list 'mission/*' | sed 's/^[* ]*//' | tr -d ' ') || true
+
+  if [ -z "$branches" ]; then
+    exit 0
+  fi
+
+  while IFS= read -r branch; do
+    [ -z "$branch" ] && continue
+    local merged_pr
+    merged_pr=$(gh pr list --head "$branch" --state merged --json number --jq '.[0].number' 2>/dev/null) || true
+    if [ -n "$merged_pr" ]; then
+      printf '%s\t#%s\n' "$branch" "$merged_pr"
+    fi
+  done <<< "$branches"
+}
+
+cmd_milestone_resolve() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    echo "ERROR: milestone-resolve requires NAME" >&2
+    exit 1
+  fi
+
+  local repo
+  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null) || {
+    echo "$name"
+    exit 0
+  }
+
+  local full
+  full=$(gh api "repos/$repo/milestones" \
+    --jq ".[] | select(.title | startswith(\"$name\")) | .title" 2>/dev/null | head -1) || true
+
+  if [ -n "$full" ]; then
+    echo "$full"
+  else
+    echo "$name"
   fi
 }
 
@@ -349,16 +400,18 @@ case "$SUBCOMMAND" in
   create-branch)    cmd_create_branch "$@" ;;
   current)          cmd_current ;;
   protect-check)    cmd_protect_check ;;
-  push)             cmd_push "$@" ;;
-  fetch)            cmd_fetch "$@" ;;
-  rebase)           cmd_rebase "$@" ;;
-  merge-to)         cmd_merge_to "$@" ;;
-  tag)              cmd_tag "$@" ;;
-  commit)           cmd_commit "$@" ;;
-  worktree-add)     cmd_worktree_add "$@" ;;
-  worktree-remove)  cmd_worktree_remove "$@" ;;
-  log-since)        cmd_log_since "$@" ;;
-  cut-release)      cmd_cut_release "$@" ;;
-  cherry-pick)      cmd_cherry_pick "$@" ;;
-  *)                usage ;;
+  push)                 cmd_push "$@" ;;
+  rebase)               cmd_rebase "$@" ;;
+  tag)                  cmd_tag "$@" ;;
+  commit)               cmd_commit "$@" ;;
+  worktree-add)         cmd_worktree_add "$@" ;;
+  worktree-remove)      cmd_worktree_remove "$@" ;;
+  log-since)            cmd_log_since "$@" ;;
+  cut-release)          cmd_cut_release "$@" ;;
+  slugify)              cmd_slugify "$@" ;;
+  find-rc)              cmd_find_rc ;;
+  next-version)         cmd_next_version "$@" ;;
+  list-merged-branches) cmd_list_merged_branches ;;
+  milestone-resolve)    cmd_milestone_resolve "$@" ;;
+  *)                    usage ;;
 esac

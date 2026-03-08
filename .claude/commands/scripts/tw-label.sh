@@ -28,8 +28,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TW_CONFIG="$SCRIPT_DIR/tw-config.sh"
 
-# Read status prefix from config
-STATUS_PREFIX=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
+# Read label prefixes from config (unified fallback chain)
+eval "$(bash "$TW_CONFIG" resolve-labels 2>/dev/null)"
 [ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
 
 # All known status values

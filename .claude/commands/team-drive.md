@@ -50,13 +50,7 @@ if [ -f .mission ]; then
 fi
 
 # Detect config directory (in worktree, may need to check parent repo)
-if [ -f .teamwork/config.yml ]; then
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-else
-  echo "NO_CONFIG"
-fi
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || echo "NO_CONFIG"
 ```
 
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
@@ -96,7 +90,7 @@ FRESHNESS=$(bash ~/.claude/commands/scripts/tw-contract.sh check-freshness "$CON
 
 - Exit 0 + "FRESH" → Issue unchanged, continue
 - Exit 0 + "NETWORK_ERROR" → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
-- Exit 2 + "NO_HASH" → pre-v2.3.0 Contract, skip check, continue
+- Exit 2 + "NO_HASH" → legacy Contract without hash, skip check, continue
 - Exit 1 + "STALE" → Issue modified since claim:
 
 If `FRESHNESS` is `STALE`:
@@ -131,7 +125,13 @@ CURRENT_BRANCH=$(git branch --show-current)
 
 Compare with Contract's `branch` field.
 - If on wrong branch → `git checkout {contract.branch}`
-- If branch doesn't exist locally → "Branch {branch} not found. It may have been deleted. Re-run `/team-claim #{issue}` to recreate." → **STOP**
+- If branch doesn't exist locally → display the following and **STOP**:
+  ```
+  Branch {branch} not found locally. Options:
+    1. Restore from remote: git checkout -b {branch} origin/{branch}
+    2. Re-claim the mission: /team-claim #{issue}
+    Re-claiming will regenerate the Contract from the Issue. Committed changes are preserved on remote if pushed.
+  ```
 
 ---
 
@@ -161,6 +161,39 @@ Progress:  {progress_bar}  {done}/{total}
 ```
 
 If all sub-tasks are already checked → "All sub-tasks complete. Run `/team-ship` to deliver." → **STOP**
+
+---
+
+## Step 2a: Branch Readiness Check
+
+Before starting work, check branch sync status:
+
+```bash
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Check how far behind base
+BEHIND_BASE=$(git rev-list --count HEAD..origin/$BASE_BRANCH 2>/dev/null || echo "0")
+
+# Check how far behind own remote
+if git rev-parse --verify "origin/$CURRENT_BRANCH" >/dev/null 2>&1; then
+  BEHIND_REMOTE=$(git rev-list --count HEAD..origin/$CURRENT_BRANCH 2>/dev/null || echo "0")
+  AHEAD_REMOTE=$(git rev-list --count origin/$CURRENT_BRANCH..HEAD 2>/dev/null || echo "0")
+else
+  BEHIND_REMOTE="0"
+  AHEAD_REMOTE="0"
+fi
+```
+
+Display branch readiness:
+
+- If `BEHIND_BASE` > 20 → 🔴 "Branch is {N} commits behind base. Rebase strongly recommended before starting work. Run `/team-ship sync` to rebase."
+- If `BEHIND_BASE` > 0 and ≤ 20 → 🟡 "Branch is {N} commits behind base. Consider running `/team-ship sync` before driving."
+- If `BEHIND_REMOTE` > 0 → 🟡 "Local branch is {N} commits behind remote. Run `git pull --rebase` to sync."
+- If all zero → no output needed (clean state)
+
+This is informational only — do NOT stop. Warn and continue. The user may choose to sync or not.
 
 ---
 
