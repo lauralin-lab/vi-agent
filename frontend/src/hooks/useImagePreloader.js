@@ -1,54 +1,114 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Global image preload cache.
- * Uses `new Image()` to warm the browser's HTTP cache.
- * Once loaded, the browser serves it from disk/memory cache on subsequent requests.
+ * Image cache with two strategies:
+ * 1. Cache API + blob URL (best: persistent, instant render)
+ * 2. Fallback: new Image() to warm HTTP cache (works everywhere)
+ *
+ * GCS signed URLs change on every API call, so we normalize the URL
+ * (strip query params) as the cache key to avoid duplicate fetches.
  */
-const loadedUrls = new Set();
-const loadingUrls = new Set();
 
-/** Preload a single image URL into browser cache */
-function preloadImage(url) {
-  if (!url || loadedUrls.has(url) || loadingUrls.has(url)) return;
-  loadingUrls.add(url);
-  const img = new Image();
-  img.onload = () => {
-    loadedUrls.add(url);
-    loadingUrls.delete(url);
-  };
-  img.onerror = () => {
-    loadingUrls.delete(url);
-  };
-  img.src = url;
+const CACHE_NAME = 'vi-image-cache-v1';
+const isCacheApiAvailable = typeof caches !== 'undefined';
+
+// In-memory: normalizedUrl → blobUrl
+const blobUrlMap = new Map();
+// Track in-flight operations
+const pendingOps = new Set();
+
+/** Normalize URL: strip query params for stable cache key */
+function getCacheKey(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    return u.origin + u.pathname;
+  } catch {
+    return url;
+  }
 }
 
-/** Check if an image URL is already cached */
+/** Get cached blob URL, or null */
+export function getCachedUrl(url) {
+  if (!url) return null;
+  return blobUrlMap.get(getCacheKey(url)) || null;
+}
+
+/** Check if cached */
 export function isImageCached(url) {
-  return loadedUrls.has(url);
+  if (!url) return false;
+  return blobUrlMap.has(getCacheKey(url));
+}
+
+/** Warm a single image into cache */
+async function warmImage(url) {
+  if (!url) return;
+  const key = getCacheKey(url);
+  if (blobUrlMap.has(key) || pendingOps.has(key)) return;
+  pendingOps.add(key);
+
+  try {
+    // Strategy 1: Cache API + blob URL (persistent)
+    if (isCacheApiAvailable) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        let resp = await cache.match(key);
+
+        if (!resp) {
+          resp = await fetch(url, { mode: 'cors' });
+          if (resp.ok) {
+            try { await cache.put(key, resp.clone()); } catch { /* storage full */ }
+          } else {
+            resp = null;
+          }
+        }
+
+        if (resp) {
+          const blob = await resp.blob();
+          if (blob.size > 0) {
+            blobUrlMap.set(key, URL.createObjectURL(blob));
+            pendingOps.delete(key);
+            return; // success
+          }
+        }
+      } catch {
+        // Cache API failed, fall through to Image() fallback
+      }
+    }
+
+    // Strategy 2: new Image() to warm browser HTTP cache
+    await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => { blobUrlMap.set(key, url); resolve(); }; // store original URL as "cached"
+      img.onerror = resolve;
+      img.src = url;
+    });
+  } catch {
+    // Silent fail
+  } finally {
+    pendingOps.delete(key);
+  }
 }
 
 /**
- * Hook: preload an array of image URLs in the background.
- * Call this in HistoryView after fetching sessions to warm the cache.
+ * Hook: preload array of image URLs.
+ * No subscriber pattern — just warms cache in background.
  */
 export function useImagePreloader(urls) {
-  const prevRef = useRef([]);
+  const prevRef = useRef('');
 
   useEffect(() => {
     if (!urls || urls.length === 0) return;
-    // Only preload new URLs not already queued
-    const newUrls = urls.filter(u => u && !loadedUrls.has(u));
-    if (newUrls.length === 0) return;
-    // Avoid redundant work on same array
-    const key = newUrls.join(',');
-    const prevKey = prevRef.current.join(',');
-    if (key === prevKey) return;
-    prevRef.current = newUrls;
 
-    // Stagger preloads to avoid blocking the main thread
+    const newUrls = urls.filter(u => u && !blobUrlMap.has(getCacheKey(u)) && !pendingOps.has(getCacheKey(u)));
+    if (newUrls.length === 0) return;
+
+    const sig = newUrls.map(getCacheKey).join(',');
+    if (sig === prevRef.current) return;
+    prevRef.current = sig;
+
     newUrls.forEach((url, i) => {
-      setTimeout(() => preloadImage(url), i * 50);
+      setTimeout(() => warmImage(url), i * 30);
     });
   }, [urls]);
 }
