@@ -1,12 +1,80 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { User } from 'lucide-react';
 import { isVideoReady, onVideoReady, getVideoElement } from '../utils/videoPreloader';
+
+const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const DURATION = '1.4s';
 
 export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAuthenticated }) {
     const [expanded, setExpanded] = useState(true);
     const [videoVisible, setVideoVisible] = useState(isVideoReady());
     const videoContainerRef = useRef(null);
+    const containerRef = useRef(null);
+    const contentRef = useRef(null);
+    const isFirstRender = useRef(true);
+
+    // FLIP height animation: measure auto → animate from current → settle to auto
+    const animateCollapse = useCallback(() => {
+        const el = containerRef.current;
+        const contentEl = contentRef.current;
+        if (!el || !contentEl) return;
+
+        // 1. Capture current rendered height
+        const fromHeight = el.getBoundingClientRect().height;
+
+        // 2. Apply target styles instantly to measure
+        el.style.transition = 'none';
+        contentEl.style.transition = 'none';
+        el.style.height = 'auto';
+        el.style.borderRadius = '48px';
+        el.style.margin = '6px 6px 12px 6px';
+        contentEl.style.paddingTop = '106px';
+        contentEl.style.paddingBottom = '22px';
+
+        // 3. Read target height (browser calculates auto)
+        const toHeight = el.getBoundingClientRect().height;
+
+        // 4. Snap back to start
+        el.style.height = `${fromHeight}px`;
+        el.style.borderRadius = '0px';
+        el.style.margin = '0';
+        contentEl.style.paddingTop = '45vh';
+        contentEl.style.paddingBottom = '48px';
+
+        // 5. Force reflow so browser registers the "from" state
+        el.getBoundingClientRect();
+
+        // 6. Animate to target
+        const t = `height ${DURATION} ${EASE}, border-radius ${DURATION} ${EASE}, margin ${DURATION} ${EASE}`;
+        el.style.transition = t;
+        contentEl.style.transition = `padding-top ${DURATION} ${EASE}, padding-bottom ${DURATION} ${EASE}`;
+
+        el.style.height = `${toHeight}px`;
+        el.style.borderRadius = '48px';
+        el.style.margin = '6px 6px 12px 6px';
+        contentEl.style.paddingTop = '106px';
+        contentEl.style.paddingBottom = '22px';
+
+        // 7. After animation ends, switch height to auto for flexibility
+        const tid = setTimeout(() => {
+            el.style.transition = 'none';
+            el.style.height = 'auto';
+        }, 1450);
+
+        return () => clearTimeout(tid);
+    }, []);
+
+    // Drive collapse animation when expanded changes
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+        if (!expanded) {
+            return animateCollapse();
+        }
+    }, [expanded, animateCollapse]);
 
     // Attach the shared persistent video element to our container
     useEffect(() => {
@@ -14,10 +82,8 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
         const container = videoContainerRef.current;
         if (container) {
             container.appendChild(video);
-            // Browsers pause videos removed from DOM — resume after re-attach
             video.play().catch(() => {});
         }
-        // On unmount: detach but don't destroy — keeps buffered & playing
         return () => { video.remove(); };
     }, []);
 
@@ -29,7 +95,7 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
         });
     }, [videoVisible]);
 
-    // Collapse when video becomes visible (separate effect to avoid sync setState)
+    // Collapse when video becomes visible
     useEffect(() => {
         if (videoVisible) queueMicrotask(() => setExpanded(false));
     }, [videoVisible]);
@@ -45,32 +111,15 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
     const greeting = firstName ? `Hi ${firstName},` : 'Hi there,';
 
     return (
-        <motion.div
-            initial={{
-                marginTop: 0,
-                marginLeft: 0,
-                marginRight: 0,
-                marginBottom: 0,
-                borderRadius: 0,
-                height: '100vh',
-            }}
-            animate={{
-                marginTop: expanded ? 0 : 6,
-                marginLeft: expanded ? 0 : 6,
-                marginRight: expanded ? 0 : 6,
-                marginBottom: expanded ? 0 : 12,
-                borderRadius: expanded ? 0 : 48,
-                height: expanded ? '100vh' : 'auto',
-            }}
-            transition={{
-                type: 'spring',
-                stiffness: 60,
-                damping: 18,
-            }}
+        <div
+            ref={containerRef}
             className="relative overflow-hidden"
             style={{
+                height: '100vh',
+                borderRadius: 0,
+                margin: 0,
                 background: '#0f1628',
-                willChange: 'height, border-radius',
+                willChange: 'height, border-radius, margin',
             }}
         >
             {/* ═══ Shimmer placeholder — visible while video buffers ═══ */}
@@ -93,29 +142,23 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
             />
 
             {/* ═══ Glass border ═══ */}
-            <motion.div
+            <div
                 className="absolute inset-0 pointer-events-none"
-                initial={{ borderRadius: 0 }}
-                animate={{ borderRadius: expanded ? 0 : 48 }}
-                transition={{ type: 'spring', stiffness: 60, damping: 18 }}
                 style={{
+                    borderRadius: 'inherit',
                     border: '1px solid rgba(255, 255, 255, 0.06)',
                     boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(255, 255, 255, 0.02)',
                 }}
             />
 
             {/* ═══ Content ═══ */}
-            <motion.div
+            <div
+                ref={contentRef}
                 className="relative px-6 flex flex-col items-start text-left"
-                initial={{ paddingTop: '45vh', paddingBottom: 48 }}
-                animate={{
-                    paddingTop: expanded ? '45vh' : 106,
-                    paddingBottom: expanded ? 48 : 22,
-                }}
-                transition={{
-                    type: 'spring',
-                    stiffness: 60,
-                    damping: 18,
+                style={{
+                    paddingTop: '45vh',
+                    paddingBottom: 48,
+                    willChange: 'padding-top, padding-bottom',
                 }}
             >
                 <motion.p
@@ -153,7 +196,7 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
                         )}
                     </motion.button>
                 )}
-            </motion.div>
-        </motion.div>
+            </div>
+        </div>
     );
 }
