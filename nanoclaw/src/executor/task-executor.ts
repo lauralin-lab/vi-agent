@@ -5,6 +5,7 @@ import { executeSkill } from '../skills/skill-executor.js';
 import { syncToCloud } from '../fs/cloud-sync.js';
 import { readFileOrNull } from '../fs/user-fs.js';
 import { config } from '../config.js';
+import { triggerMemoryUpdate } from './memory-hook.js';
 import { requestContext } from '../channels/request-context.js';
 import { getSessionCardState } from '../persistence/card-store.js';
 import type { ExecRequest } from '../channels/types.js';
@@ -67,6 +68,11 @@ export async function executeTask(request: ExecRequest): Promise<void> {
       console.error('[task-executor] post-task sync failed:', err);
     });
 
+    // Post-task memory hook: summarize → diary → promote to MEMORY.md
+    triggerMemoryUpdate(request.prompt, result).catch((err) => {
+      console.warn('[task-executor] memory hook failed (non-blocking):', err);
+    });
+
     console.log(`[task-executor] completed task ${request.taskId} (${Date.now() - startTime}ms)`);
   } catch (err) {
     console.error(`[task-executor] failed task ${request.taskId}:`, err);
@@ -123,16 +129,17 @@ async function collectChangedFiles(sessionId: string, taskId: string): Promise<s
   const files: string[] = [];
   // Always sync the session result file
   files.push(join('sessions', sessionId, `${taskId}.json`));
-  // Sync memory dirs that skills commonly write to
-  for (const dir of ['memory/identity', 'memory/semantic', 'memory/episodic']) {
-    try {
-      const entries = await readdir(join(config.userDataDir, dir));
-      for (const entry of entries) {
-        files.push(join(dir, entry));
+  // Sync MEMORY.md and diary files
+  files.push('MEMORY.md');
+  try {
+    const entries = await readdir(join(config.userDataDir, 'memory'));
+    for (const entry of entries) {
+      if (entry.endsWith('.md')) {
+        files.push(join('memory', entry));
       }
-    } catch {
-      // directory may not exist
     }
+  } catch {
+    // directory may not exist
   }
   return files;
 }

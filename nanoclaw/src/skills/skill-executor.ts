@@ -5,7 +5,7 @@ import { normalize, resolve } from 'node:path';
 import { config } from '../config.js';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { readUserFile, writeUserFile, listUserDir } from '../fs/user-fs.js';
-import { updateMemory, appendMemory } from '../tools/memory-update.js';
+import { writeMemory, readMemory, appendDiary } from '../tools/memory-update.js';
 import { oauthCall } from '../tools/oauth-call.js';
 import type { ExecRequest, CardOp } from '../channels/types.js';
 import type { LoadedSkill } from './types.js';
@@ -152,28 +152,23 @@ const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: 'memory_update',
     description:
-      'Update user memory. Use this when you learn new preferences, facts, or daily events about the user.',
+      'Update user memory. PROACTIVELY call this whenever you learn something new about the user — names, preferences, facts, corrections, decisions. Do NOT wait for the user to say "remember this". Two layers: long_term (permanent profile) and diary (today\'s notes).',
     input_schema: {
       type: 'object' as const,
       properties: {
-        category: {
+        layer: {
           type: 'string',
-          enum: ['identity', 'semantic', 'episodic'],
+          enum: ['long_term', 'diary'],
           description:
-            'Memory layer: identity (who they are), semantic (knowledge/preferences), episodic (daily events)',
+            'long_term = confirmed facts/preferences → written to MEMORY.md (user-visible profile). diary = session notes/events → written to today\'s daily log.',
         },
-        filename: {
+        content: {
           type: 'string',
-          description: 'Filename (e.g. "preferences.md", "2026-03-04.md")',
-        },
-        content: { type: 'string', description: 'Content to write' },
-        mode: {
-          type: 'string',
-          enum: ['replace', 'append'],
-          description: 'Replace entire file or append to existing',
+          description:
+            'Content to write. For long_term: output the COMPLETE updated MEMORY.md (read current first with file_read). For diary: a single entry to append (## HH:MM — topic + bullets).',
         },
       },
-      required: ['category', 'filename', 'content'],
+      required: ['layer', 'content'],
     },
   },
   {
@@ -382,16 +377,15 @@ async function executeTool(
         return entries.join('\n') || '(empty directory)';
       }
       case 'memory_update': {
-        const category = input.category as 'identity' | 'semantic' | 'episodic';
-        const filename = input.filename as string;
+        const layer = input.layer as 'long_term' | 'diary';
         const content = input.content as string;
-        const mode = (input.mode as string) || 'replace';
-        if (mode === 'append') {
-          await appendMemory(category, filename, content);
+        if (layer === 'long_term') {
+          await writeMemory(content);
+          return 'MEMORY.md updated';
         } else {
-          await updateMemory(category, filename, content);
+          await appendDiary(content);
+          return 'Diary entry appended';
         }
-        return `Memory updated: ${category}/${filename}`;
       }
       case 'oauth_call': {
         const result = await oauthCall(
@@ -584,6 +578,62 @@ export async function executeSkill(
   }
 
   systemParts.push(skill.promptContent);
+
+  // Inject current MEMORY.md so Claude has user context + memory instructions
+  let currentMemory = '';
+  try {
+    currentMemory = await readMemory();
+  } catch { /* no memory yet */ }
+
+  systemParts.push(`\n---\n\n## Memory System
+
+You have a two-layer memory system. Use it PROACTIVELY — don't wait for the user to say "remember this".
+
+### Layer 1: MEMORY.md (long-term profile, user-visible)
+${currentMemory ? `Current content:\n\`\`\`\n${currentMemory}\n\`\`\`` : '(empty — no memories yet)'}
+
+**When to update:** You learn the user's name, preferences, corrections, important decisions, aesthetic taste, people they mention, or any fact they'd expect you to remember next time.
+
+**How to update:** Call memory_update with layer="long_term". You must output the COMPLETE updated file (read current with file_read first if needed). Format:
+
+\`\`\`
+# 关于我
+
+## 基本信息
+- 称呼：{name}
+- 语言：{language}
+
+## 偏好
+- {preference}
+
+## 审美风格
+- {style preference}
+\`\`\`
+
+Rules:
+- Write from user's perspective (first person: 我/I)
+- Record confirmed facts only, not guesses
+- If info conflicts with existing, update the old entry (latest wins)
+- Do NOT delete existing correct info
+- Sections appear only when there's content — no empty sections
+- Stay under 2000 characters
+
+### Layer 2: Diary (daily notes, internal)
+Call memory_update with layer="diary" to log session details, one-time events, or low-confidence observations.
+
+### What to remember proactively:
+- User corrections ("不要用 npm，用 pnpm") → MUST record immediately
+- Names, relationships ("我老婆叫小李")
+- Preferences that affect future interactions ("回复用中文")
+- Important dates/deadlines
+- Aesthetic/style preferences
+- Key decisions
+
+### What NOT to record:
+- One-time query results
+- Sensitive credentials (passwords, tokens)
+- Temporary states ("今天很累")
+`);
 
   // Add template registry context so the AI knows available templates
   systemParts.push(`\n---\n\nAvailable card templates for publish_card tool:

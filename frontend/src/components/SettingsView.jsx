@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Loader2, Edit3, Trash2, Save, X } from 'lucide-react';
+import { ChevronLeft, Loader2, Edit3, Save, X } from 'lucide-react';
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
 import { IOS_SPRING } from '../constants';
@@ -37,27 +37,6 @@ function SkillRow({ skill, onToggle, isLast }) {
           style={{ width: 20, height: 20, left: isEnabled ? 24 : 4, boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
       </button>
     </div>
-  );
-}
-
-// ── Memory Row (clickable) ──
-function MemoryRow({ file, onClick, isLast }) {
-  return (
-    <button
-      onClick={() => onClick(file)}
-      className="w-full text-left px-4 py-3 active:bg-black/[0.02] transition-colors flex items-center gap-2"
-      style={{ borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.06)' }}
-    >
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold truncate" style={{ fontSize: 15, color: '#000' }}>
-          {file.filename?.replace(/\.md$/, '').replace(/[-_]/g, ' ') || file.filename}
-        </p>
-        {file.preview && (
-          <p className="truncate mt-0.5" style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)' }}>{file.preview}</p>
-        )}
-      </div>
-      <ChevronRight size={14} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.15)' }} className="shrink-0" />
-    </button>
   );
 }
 
@@ -134,15 +113,12 @@ export default function SettingsView({ onBack, livekit }) {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [showAllSkills, setShowAllSkills] = useState(false);
 
-  // ── Memory state ──
-  const [memoryFiles, setMemoryFiles] = useState([]);
+  // ── Memory state (MEMORY.md only) ──
+  const [memoryContent, setMemoryContent] = useState('');
   const [memoryLoading, setMemoryLoading] = useState(true);
-  const [viewingMemory, setViewingMemory] = useState(null); // full memory file data
-  const [editingMemory, setEditingMemory] = useState(null);
+  const [editingMemory, setEditingMemory] = useState(false);
   const [editContent, setEditContent] = useState('');
-  const [editFilename, setEditFilename] = useState('');
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(null);
 
   // ── Connections state ──
   const [connStatuses, setConnStatuses] = useState({});
@@ -165,14 +141,14 @@ export default function SettingsView({ onBack, livekit }) {
     }
   }, []);
 
-  // ── Load memory ──
+  // ── Load MEMORY.md only ──
   const loadMemory = useCallback(async () => {
     try {
-      const data = await api.listMemory(null);
-      setMemoryFiles(Array.isArray(data) ? data : []);
+      const data = await api.getMemory('MEMORY.md');
+      setMemoryContent(data?.content || '');
     } catch (e) {
-      console.error('Failed to load memories:', e);
-      setMemoryFiles([]);
+      console.error('Failed to load MEMORY.md:', e);
+      setMemoryContent('');
     } finally {
       setMemoryLoading(false);
     }
@@ -226,44 +202,24 @@ export default function SettingsView({ onBack, livekit }) {
     }
   }, []);
 
-  // ── Memory click → view detail ──
-  const handleMemoryClick = useCallback(async (file) => {
-    try {
-      const data = await api.getMemory(file.filename);
-      setViewingMemory(data);
-    } catch (e) {
-      console.error('Failed to load memory:', e);
-    }
-  }, []);
+  // ── Memory edit ──
+  const handleMemoryEdit = useCallback(() => {
+    setEditContent(memoryContent);
+    setEditingMemory(true);
+  }, [memoryContent]);
 
   const handleMemorySave = useCallback(async () => {
-    const fname = editFilename.trim();
-    if (!fname || !editContent.trim()) return;
-    const filename = fname.endsWith('.md') ? fname : fname + '.md';
     setSaving(true);
     try {
-      await api.upsertMemory(filename, editContent);
-      setEditingMemory(null);
-      setViewingMemory(null);
-      await loadMemory();
+      await api.upsertMemory('MEMORY.md', editContent, 'long_term');
+      setMemoryContent(editContent);
+      setEditingMemory(false);
     } catch (e) {
-      console.error('Failed to save memory:', e);
+      console.error('Failed to save MEMORY.md:', e);
     } finally {
       setSaving(false);
     }
-  }, [editFilename, editContent, loadMemory]);
-
-  const confirmDelete = useCallback(async () => {
-    if (!deleting) return;
-    try {
-      await api.deleteMemory(deleting);
-      setDeleting(null);
-      if (viewingMemory?.filename === deleting) setViewingMemory(null);
-      await loadMemory();
-    } catch (e) {
-      console.error('Failed to delete memory:', e);
-    }
-  }, [deleting, viewingMemory, loadMemory]);
+  }, [editContent]);
 
   // ── Connection handlers ──
   const handleConnect = useCallback(async (provider) => {
@@ -297,11 +253,6 @@ export default function SettingsView({ onBack, livekit }) {
   // ── Derived ──
   const visibleSkills = showAllSkills ? skills : skills.slice(0, MAX_SKILLS_PREVIEW);
   const hasMoreSkills = skills.length > MAX_SKILLS_PREVIEW;
-  const sortedMemory = [...memoryFiles].sort((a, b) => {
-    const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-    const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-    return tb - ta;
-  });
   const isLoading = skillsLoading && memoryLoading && connLoading;
 
   // ═══ Memory Edit sub-page ═══
@@ -311,12 +262,12 @@ export default function SettingsView({ onBack, livekit }) {
         className="w-full h-full flex flex-col" style={{ background: '#F2F2F7', color: '#000' }}>
         <div className="shrink-0 flex items-center gap-3 px-5 pt-[env(safe-area-inset-top,20px)] pb-3"
           style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <button onClick={() => setEditingMemory(null)} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
+          <button onClick={() => setEditingMemory(false)} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
             <X size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
           </button>
-          <span className="font-semibold flex-1 truncate" style={{ fontSize: 16 }}>{editingMemory.filename}</span>
+          <span className="font-semibold flex-1 truncate" style={{ fontSize: 16 }}>Edit Memory</span>
           <button onClick={handleMemorySave}
-            disabled={saving || !editFilename.trim() || !editContent.trim()}
+            disabled={saving}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold disabled:opacity-40 active:scale-95 transition-all"
             style={{ fontSize: 13, background: '#000', color: '#fff' }}>
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
@@ -324,82 +275,12 @@ export default function SettingsView({ onBack, livekit }) {
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-            placeholder="Write your memory content..."
+            placeholder="Your memory profile will appear here after chatting..."
             className="w-full px-4 py-3 focus:outline-none resize-none"
-            style={{ minHeight: 300, fontSize: 16, background: '#fff', borderRadius: 20,
+            style={{ minHeight: 400, fontSize: 16, background: '#fff', borderRadius: 20,
               border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
-              fontFamily: 'ui-monospace, SFMono-Regular, monospace' }} />
+              fontFamily: 'ui-monospace, SFMono-Regular, monospace', lineHeight: 1.6 }} />
         </div>
-      </motion.div>
-    );
-  }
-
-  // ═══ Memory View sub-page ═══
-  if (viewingMemory) {
-    return (
-      <motion.div key="mem-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: 20 }} transition={IOS_SPRING}
-        className="w-full h-full flex flex-col" style={{ background: '#F2F2F7', color: '#000' }}>
-        <div className="safe-area-top shrink-0 flex items-center gap-3 px-5 pt-5 pb-3"
-          style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <button onClick={() => setViewingMemory(null)} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
-            <ChevronLeft size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
-          </button>
-          <div className="flex-1 min-w-0">
-            <span className="font-semibold truncate block" style={{ fontSize: 16 }}>{viewingMemory.filename}</span>
-            <span className="font-medium" style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)' }}>
-              {(viewingMemory.layer || 'semantic').charAt(0).toUpperCase() + (viewingMemory.layer || 'semantic').slice(1)}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => {
-              setEditingMemory({ filename: viewingMemory.filename });
-              setEditContent(viewingMemory.content);
-              setEditFilename(viewingMemory.filename);
-            }} className="p-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
-              <Edit3 size={16} style={{ color: 'rgba(0,0,0,0.3)' }} />
-            </button>
-            <button onClick={() => setDeleting(viewingMemory.filename)}
-              className="p-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
-              <Trash2 size={16} style={{ color: 'rgba(0,0,0,0.3)' }} />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div style={{ background: '#fff', borderRadius: 24, padding: '20px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
-            fontSize: 16, lineHeight: 1.6 }}>
-            {renderMarkdown(viewingMemory.content)}
-          </div>
-        </div>
-
-        {/* Delete confirmation */}
-        <AnimatePresence>
-          {deleting && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[60] flex items-end justify-center"
-              style={{ background: 'rgba(0,0,0,0.25)' }} onClick={() => setDeleting(null)}>
-              <motion.div initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }} transition={IOS_SPRING}
-                onClick={e => e.stopPropagation()}
-                className="w-full max-w-sm mx-4 mb-8 overflow-hidden"
-                style={{ borderRadius: 20, background: '#fff', boxShadow: '0 -4px 40px rgba(0,0,0,0.12)' }}>
-                <div className="p-5 text-center">
-                  <p className="font-semibold mb-1" style={{ fontSize: 16 }}>Delete {deleting}?</p>
-                  <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>This action cannot be undone</p>
-                </div>
-                <div className="flex" style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                  <button onClick={() => setDeleting(null)}
-                    className="flex-1 py-3.5 font-medium hover:bg-black/[0.02] transition-colors"
-                    style={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }}>Cancel</button>
-                  <div style={{ width: 1, background: 'rgba(0,0,0,0.06)' }} />
-                  <button onClick={confirmDelete}
-                    className="flex-1 py-3.5 font-semibold hover:bg-black/[0.02] transition-colors"
-                    style={{ fontSize: 14, color: '#000' }}>Delete</button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
     );
   }
@@ -448,17 +329,29 @@ export default function SettingsView({ onBack, livekit }) {
             )}
 
             {/* ═══ Memory Section ═══ */}
-            {sortedMemory.length > 0 && (
-              <div className="mb-6">
-                <SectionHeader label="Memory" />
-                <GroupedCard delay={0.06}>
-                  {sortedMemory.map((file, idx) => (
-                    <MemoryRow key={file.id || file.filename} file={file}
-                      onClick={handleMemoryClick} isLast={idx === sortedMemory.length - 1} />
-                  ))}
-                </GroupedCard>
-              </div>
-            )}
+            <div className="mb-6">
+              <SectionHeader label="Memory" />
+              <GroupedCard delay={0.06}>
+                {memoryContent ? (
+                  <div className="px-4 py-3">
+                    <div style={{ fontSize: 15, lineHeight: 1.6, color: '#000' }}>
+                      {renderMarkdown(memoryContent)}
+                    </div>
+                    <button onClick={handleMemoryEdit}
+                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium active:scale-95 transition-all"
+                      style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', background: 'rgba(0,0,0,0.04)' }}>
+                      <Edit3 size={12} /> Edit
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-4 py-6 text-center">
+                    <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.35)' }}>
+                      After chatting with AI, it will automatically remember your preferences and important info.
+                    </p>
+                  </div>
+                )}
+              </GroupedCard>
+            </div>
 
             {/* ═══ Connections Section ═══ */}
             <div className="mb-6">
