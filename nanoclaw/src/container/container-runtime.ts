@@ -67,24 +67,27 @@ export function ensureContainerRuntimeRunning(): void {
   }
 }
 
-/** Kill orphaned NanoClaw agent containers from previous runs. */
+/** Kill orphaned NanoClaw agent containers from previous runs.
+ *  Only targets containers spawned by the container-runner (prefix: vi-agent-test- or vi-agent-exec-).
+ *  Never touches compose-managed containers (vi-agent-szj-*, vi-agent-xxl-*, etc.). */
 export function cleanupOrphans(): void {
   try {
+    // Only match agent execution containers, not compose service containers
     const output = execSync(
-      `${CONTAINER_RUNTIME_BIN} ps --filter name=vi-agent- --format '{{.Names}}'`,
+      `${CONTAINER_RUNTIME_BIN} ps -a --filter name=vi-agent-test- --filter name=vi-agent-exec- --format '{{.Names}}'`,
       { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' },
     );
     const orphans = output.trim().split('\n').filter(Boolean);
     for (const name of orphans) {
       try {
-        execSync(stopContainer(name), { stdio: 'pipe' });
+        execSync(`${CONTAINER_RUNTIME_BIN} rm -f ${name}`, { stdio: 'pipe' });
       } catch {
-        /* already stopped */
+        /* already removed */
       }
     }
     if (orphans.length > 0) {
       console.log(
-        `[container-runtime] stopped ${orphans.length} orphaned containers: ${orphans.join(', ')}`,
+        `[container-runtime] cleaned up ${orphans.length} orphaned containers`,
       );
     }
   } catch {
