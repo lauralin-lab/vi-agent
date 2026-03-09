@@ -10,6 +10,7 @@ import { startContextCompiler } from './context/context-compiler.js';
 import { syncFromCloud } from './fs/cloud-sync.js';
 import { getStoreStats } from './persistence/card-store.js';
 import { loadPackages } from './packages/package-loader.js';
+import { loadTemplateRegistry } from './packages/template-registry.js';
 import { config } from './config.js';
 import { createDashboardRouter } from './dashboard-routes.js';
 
@@ -60,8 +61,9 @@ async function startContainerMode(): Promise<void> {
     console.warn('[nanoclaw] Continuing startup for context compiler and dashboard...');
   }
 
-  // 3. Load experience packages
+  // 3. Load experience packages + template registry
   await loadPackages(config.packagesDir);
+  await loadTemplateRegistry(config.packagesDir);
 
   // 4. Sync user files from remote storage
   if (process.env.USER_ID) {

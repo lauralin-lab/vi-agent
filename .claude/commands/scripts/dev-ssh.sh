@@ -111,7 +111,14 @@ cmd_deploy() {
   load_config
   calc_ports
 
-  local services=("$@")
+  local DOCKER_BUILD_EXTRA=""
+  local services=()
+  for arg in "$@"; do
+    case "$arg" in
+      --no-cache) DOCKER_BUILD_EXTRA="--no-cache" ;;
+      *) services+=("$arg") ;;
+    esac
+  done
   if [ ${#services[@]} -eq 0 ]; then
     services=(api-server frontend nanoclaw vi-realtime)
   fi
@@ -186,14 +193,14 @@ cmd_deploy() {
           rm -rf api-server/shared_skills/document-scanner api-server/shared_skills/recipe-analyzer api-server/shared_skills/style-advisor 2>/dev/null
           cp -r nanoclaw/data/shared/skills/* api-server/shared_skills/ 2>/dev/null || true
           cd api-server
-          docker build -t collov/vi-agent-api-server:$IMAGE_TAG .
+          docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-api-server:$IMAGE_TAG .
         " 2>&1
         ;;
       frontend)
         ssh_cmd "
           cd '$WORK_DIR/src/frontend'
           set -a; source '$WORK_DIR/.env' 2>/dev/null; set +a
-          docker build \
+          docker build $DOCKER_BUILD_EXTRA \
             --build-arg VITE_API_URL= \
             --build-arg VITE_FIREBASE_API_KEY=\${VITE_FIREBASE_API_KEY:-} \
             --build-arg VITE_FIREBASE_AUTH_DOMAIN=\${VITE_FIREBASE_AUTH_DOMAIN:-} \
@@ -208,13 +215,13 @@ cmd_deploy() {
       nanoclaw)
         ssh_cmd "
           cd '$WORK_DIR/src/nanoclaw'
-          docker build -t collov/vi-agent-nanoclaw:$IMAGE_TAG .
+          docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-nanoclaw:$IMAGE_TAG .
         " 2>&1
         ;;
       vi-realtime)
         ssh_cmd "
           cd '$WORK_DIR/src/realtime'
-          docker build -t collov/vi-agent-realtime:$IMAGE_TAG .
+          docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-realtime:$IMAGE_TAG .
         " 2>&1
         ;;
       *)
@@ -231,7 +238,7 @@ cmd_deploy() {
 
   # Step 4: Recreate containers
   echo "STEP=restart"
-  ssh_cmd "cd '$WORK_DIR' && docker compose up -d --force-recreate ${services[*]}" 2>&1
+  ssh_cmd "cd '$WORK_DIR' && docker compose up -d --build --force-recreate ${services[*]}" 2>&1
 
   # Step 5: Health check
   echo "STEP=health"
