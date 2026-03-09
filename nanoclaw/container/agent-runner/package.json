@@ -1,0 +1,19 @@
+{
+  "name": "@vi-agent/agent-runner",
+  "version": "0.1.0",
+  "description": "VI Agent container-side runner — receives prompts, emits CARD_OP markers",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

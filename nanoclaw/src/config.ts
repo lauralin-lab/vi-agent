@@ -46,4 +46,8 @@ export const config = {
 
   // Dashboard
   dashboardEnabled: optional('DASHBOARD', 'false') === 'true',
+
+  // Container execution mode (v5.2)
+  containerMode: optional('CONTAINER_MODE', 'false') === 'true',
+  agentContainerImage: optional('AGENT_CONTAINER_IMAGE', 'nanoclaw-agent:latest'),
 } as const;

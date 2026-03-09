@@ -344,6 +344,44 @@ export interface PackageManifest {
     estimated_time: string;
     estimated_cost: string;
   };
+
+  /**
+   * App mode — transforms the frontend when this package is active.
+   * Optional: packages without app_mode use default app behavior.
+   * See docs/system_v5.2.md §1.4 for full specification.
+   */
+  app_mode?: AppMode;
+}
+
+/**
+ * App transformation config for experience packages.
+ * Declares how the frontend should change when a package is activated.
+ * All fields optional — only specified fields override defaults.
+ */
+export interface AppMode {
+  camera?: {
+    overlay?: string;       // overlay type: "scan-frame", "food-detect", etc.
+    resolution?: 'standard' | 'high';
+    flash?: 'auto' | 'on' | 'off';
+    guides?: boolean;       // show alignment guides
+    facing?: 'front' | 'back';
+  };
+  shutter?: {
+    label?: string;         // button text: "Scan", "Log Meal", etc.
+    icon?: string;          // emoji icon
+    style?: string;         // visual style hint: "document", "health", "creative"
+  };
+  layout?: string;          // "canvas-first" | "result-first" | "dashboard"
+  hide?: string[];          // UI elements to hide: ["chat-input", "gallery-btn"]
+  show?: string[];          // UI elements to show: ["scan-history", "daily-total"]
+  persistent_widget?: {
+    template: string;       // card template ID for pinned widget
+    position: 'top' | 'bottom';
+    data_source?: string;   // path to data file for widget content
+  };
+  theme?: {
+    accent?: string;        // hex color: "#2563eb"
+  };
 }
 
 // ---------------------------------------------------------------------------

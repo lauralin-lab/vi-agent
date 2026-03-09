@@ -1,17 +1,21 @@
 import { Router, json, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import { readdir, readFile, writeFile, mkdir, unlink, stat } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, unlink, stat, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import Redis from 'ioredis';
 import { getRedis, getSubscriber } from './redis-client.js';
 import { getAllManifests } from './skills/skill-loader.js';
 import { getAllTemplates } from './packages/template-registry.js';
 import { getStoreStats, getSessionCardState } from './persistence/card-store.js';
-import { getPoolStatus } from './pool/process-pool.js';
-import { getQueueDepths } from './pool/queue-router.js';
+import { listPackages, getAllPackages, getPackage } from './packages/package-loader.js';
 import { getActiveUserIds } from './channels/active-users.js';
 import { channels, type ExecRequest } from './channels/types.js';
 import { config } from './config.js';
+
+// Pool mode imports — these are always available since we keep the old files
+// for backward compatibility. In container mode they just won't be used at runtime.
+import { getPoolStatus } from './pool/process-pool.js';
+import { getQueueDepths } from './pool/queue-router.js';
 
 const startedAt = Date.now();
 
@@ -25,7 +29,7 @@ export function createDashboardRouter(): Router {
 
   router.get('/api/dashboard/health', async (_req: Request, res: Response) => {
     try {
-      const queueDepths = await getQueueDepths();
+      const queueDepths = getQueueDepths ? await getQueueDepths() : null;
       // Count persisted sessions from filesystem
       let persistedSessionCount = 0;
       try {
@@ -43,13 +47,15 @@ export function createDashboardRouter(): Router {
       res.json({
         status: 'ok',
         service: 'nanoclaw',
+        mode: config.containerMode ? 'container' : 'legacy',
         userId: config.userId,
         uptime: Math.floor((Date.now() - startedAt) / 1000),
-        pool: getPoolStatus(),
+        pool: getPoolStatus ? getPoolStatus() : null,
         queues: queueDepths,
         cardStore: getStoreStats(),
         activeUsers: getActiveUserIds(),
         persistedSessions: persistedSessionCount,
+        packages: listPackages().length,
       });
     } catch (err) {
       res.status(500).json({
@@ -481,6 +487,222 @@ export function createDashboardRouter(): Router {
       res.json(JSON.parse(raw));
     } catch {
       res.status(404).json({ error: 'Task result not found' });
+    }
+  });
+
+  // =====================================================================
+  // Package Gallery — list and inspect experience packages (T8)
+  // =====================================================================
+
+  /** List all loaded packages with their manifests */
+  router.get('/api/dashboard/packages', (_req: Request, res: Response) => {
+    try {
+      const pkgs = getAllPackages();
+      res.json({
+        packages: pkgs.map((p) => ({
+          id: p.manifest.id,
+          name: p.manifest.name,
+          version: p.manifest.version,
+          description: p.manifest.description,
+          icon: p.manifest.icon,
+          category: p.manifest.category,
+          hasAppMode: !!p.manifest.app_mode,
+          templateCount: p.templates.length,
+          toolCount: p.toolDefinitions.length,
+          hasSkillPrompt: !!p.skillPrompt,
+          resolvedPath: p.resolvedPath,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  /** Get full details of a specific package */
+  router.get('/api/dashboard/packages/:packageId', (req: Request, res: Response) => {
+    const packageId = req.params.packageId as string;
+    const pkg = getPackage(packageId);
+    if (!pkg) {
+      res.status(404).json({ error: `Package "${packageId}" not found` });
+      return;
+    }
+
+    res.json({
+      manifest: pkg.manifest,
+      skillPrompt: pkg.skillPrompt,
+      templates: pkg.templates,
+      toolDefinitions: pkg.toolDefinitions,
+      resolvedPath: pkg.resolvedPath,
+    });
+  });
+
+  /** List examples for a package (from packages/{id}/examples/) */
+  router.get('/api/dashboard/packages/:packageId/examples', async (req: Request, res: Response) => {
+    const packageId = req.params.packageId as string;
+    const pkg = getPackage(packageId);
+    if (!pkg) {
+      res.status(404).json({ error: `Package "${packageId}" not found` });
+      return;
+    }
+
+    const examplesDir = join(pkg.resolvedPath, 'examples');
+    try {
+      await access(examplesDir);
+      const files = await readdir(examplesDir);
+      const examples = await Promise.all(
+        files.filter((f) => f.endsWith('.json')).map(async (f) => {
+          try {
+            const raw = await readFile(join(examplesDir, f), 'utf-8');
+            return { filename: f, ...JSON.parse(raw) };
+          } catch {
+            return { filename: f, error: 'failed to parse' };
+          }
+        }),
+      );
+      res.json({ packageId, examples });
+    } catch {
+      res.json({ packageId, examples: [] });
+    }
+  });
+
+  // =====================================================================
+  // Live Tester — execute a package skill interactively (T8)
+  // =====================================================================
+
+  /** Send a test execution request for a specific package */
+  router.post('/api/dashboard/packages/:packageId/test', async (req: Request, res: Response) => {
+    try {
+      const packageId = req.params.packageId as string;
+      const pkg = getPackage(packageId);
+      if (!pkg) {
+        res.status(404).json({ error: `Package "${packageId}" not found` });
+        return;
+      }
+
+      const { prompt, mediaUrls, uid: requestUid } = req.body as {
+        prompt?: string;
+        mediaUrls?: string[];
+        uid?: string;
+      };
+
+      if (!prompt || !prompt.trim()) {
+        res.status(400).json({ error: 'prompt is required' });
+        return;
+      }
+
+      const uid = requestUid || config.userId;
+      const taskId = `test-${packageId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const sessionId = `test-session-${packageId}-${new Date().toISOString().slice(0, 10)}`;
+
+      const execRequest: ExecRequest = {
+        taskId,
+        sessionId,
+        prompt: prompt.trim(),
+        skillSlug: packageId,
+        mediaUrls: mediaUrls || undefined,
+        ts: Date.now(),
+        userId: uid,
+      };
+
+      const redis = getRedis();
+      await redis.publish(channels.exec(uid), JSON.stringify(execRequest));
+
+      res.json({
+        status: 'sent',
+        taskId,
+        sessionId,
+        packageId,
+        uid,
+        message: `Test execution started. Subscribe to SSE at /api/dashboard/sse?uid=${uid} to watch results.`,
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // =====================================================================
+  // Save as Example — capture a test run result as a package example (T9)
+  // =====================================================================
+
+  /** Save a completed test run as an example for a package */
+  router.post('/api/dashboard/packages/:packageId/examples', async (req: Request, res: Response) => {
+    try {
+      const packageId = req.params.packageId as string;
+      const pkg = getPackage(packageId);
+      if (!pkg) {
+        res.status(404).json({ error: `Package "${packageId}" not found` });
+        return;
+      }
+
+      const { name, description, prompt, mediaUrls, cardState, result } = req.body as {
+        name?: string;
+        description?: string;
+        prompt?: string;
+        mediaUrls?: string[];
+        cardState?: unknown;
+        result?: unknown;
+      };
+
+      if (!name) {
+        res.status(400).json({ error: 'name is required' });
+        return;
+      }
+
+      // Build example JSON
+      const example = {
+        id: `example-${Date.now()}-${randomUUID().slice(0, 8)}`,
+        name: name.trim(),
+        description: description?.trim() || '',
+        prompt: prompt?.trim() || '',
+        mediaUrls: mediaUrls || [],
+        cardState: cardState || null,
+        result: result || null,
+        savedAt: new Date().toISOString(),
+        savedBy: 'dashboard',
+      };
+
+      // Save to packages/{id}/examples/
+      const examplesDir = join(pkg.resolvedPath, 'examples');
+      await mkdir(examplesDir, { recursive: true });
+
+      const filename = `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.json`;
+      const filePath = join(examplesDir, filename);
+
+      await writeFile(filePath, JSON.stringify(example, null, 2), 'utf-8');
+
+      res.json({
+        status: 'saved',
+        packageId,
+        filename,
+        exampleId: example.id,
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  /** Delete an example */
+  router.delete('/api/dashboard/packages/:packageId/examples/:filename', async (req: Request, res: Response) => {
+    const packageId = req.params.packageId as string;
+    const filename = req.params.filename as string;
+    const pkg = getPackage(packageId);
+    if (!pkg) {
+      res.status(404).json({ error: `Package "${packageId}" not found` });
+      return;
+    }
+
+    const filePath = join(pkg.resolvedPath, 'examples', filename);
+    try {
+      await unlink(filePath);
+      res.json({ status: 'deleted', packageId, filename });
+    } catch {
+      res.status(404).json({ error: 'Example not found' });
     }
   });
 

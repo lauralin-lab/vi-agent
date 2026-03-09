@@ -128,6 +128,14 @@ async function tryLoadPackage(
     return null;
   }
 
+  // 1b. Validate app_mode if present
+  if (manifest.app_mode) {
+    const warnings = validateAppMode(manifest.app_mode, manifest.id);
+    for (const w of warnings) {
+      console.warn(`[package-loader] ${manifest.id}: ${w}`);
+    }
+  }
+
   // 2. Load skill prompt (from manifest.skill.prompt or default skill.md)
   const skillPromptFile = manifest.skill?.prompt ?? 'skill.md';
   let skillPrompt = '';
@@ -183,6 +191,55 @@ async function loadBundledTemplates(pkgDir: string): Promise<TemplateDefinition[
   }
 
   return defs;
+}
+
+/**
+ * Validate app_mode fields from a package manifest.
+ * Returns array of warning messages (empty = valid).
+ */
+function validateAppMode(
+  appMode: NonNullable<PackageManifest['app_mode']>,
+  packageId: string,
+): string[] {
+  const warnings: string[] = [];
+
+  // Validate camera settings
+  if (appMode.camera) {
+    if (appMode.camera.resolution && !['standard', 'high'].includes(appMode.camera.resolution)) {
+      warnings.push(`app_mode.camera.resolution must be "standard" or "high", got "${appMode.camera.resolution}"`);
+    }
+    if (appMode.camera.flash && !['auto', 'on', 'off'].includes(appMode.camera.flash)) {
+      warnings.push(`app_mode.camera.flash must be "auto", "on", or "off", got "${appMode.camera.flash}"`);
+    }
+    if (appMode.camera.facing && !['front', 'back'].includes(appMode.camera.facing)) {
+      warnings.push(`app_mode.camera.facing must be "front" or "back", got "${appMode.camera.facing}"`);
+    }
+  }
+
+  // Validate layout
+  const validLayouts = ['canvas-first', 'result-first', 'dashboard'];
+  if (appMode.layout && !validLayouts.includes(appMode.layout)) {
+    warnings.push(`app_mode.layout must be one of ${validLayouts.join(', ')}, got "${appMode.layout}"`);
+  }
+
+  // Validate persistent_widget
+  if (appMode.persistent_widget) {
+    if (!appMode.persistent_widget.template) {
+      warnings.push('app_mode.persistent_widget.template is required');
+    }
+    if (!['top', 'bottom'].includes(appMode.persistent_widget.position)) {
+      warnings.push(`app_mode.persistent_widget.position must be "top" or "bottom", got "${appMode.persistent_widget.position}"`);
+    }
+  }
+
+  // Validate theme
+  if (appMode.theme?.accent) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(appMode.theme.accent)) {
+      warnings.push(`app_mode.theme.accent must be a hex color like "#2563eb", got "${appMode.theme.accent}"`);
+    }
+  }
+
+  return warnings;
 }
 
 async function loadToolDefinitions(pkgDir: string): Promise<ToolDefinition[]> {

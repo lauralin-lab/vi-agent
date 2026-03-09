@@ -4,16 +4,26 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { connectRedis, disconnectRedis } from './redis-client.js';
-import { startExecHandler } from './channels/exec-handler.js';
 import { startFramesConsumer } from './channels/frames-consumer.js';
 import { startMediaConsumer } from './channels/media-consumer.js';
 import { startContextCompiler } from './context/context-compiler.js';
 import { syncFromCloud } from './fs/cloud-sync.js';
-import { startPool, stopPool, getPoolStatus } from './pool/process-pool.js';
-import { getQueueDepths } from './pool/queue-router.js';
 import { getStoreStats } from './persistence/card-store.js';
+import { loadPackages } from './packages/package-loader.js';
 import { config } from './config.js';
 import { createDashboardRouter } from './dashboard-routes.js';
+
+// Container mode imports (v5.2)
+import { startExecChannel, stopExecChannel, getUserQueue } from './container/exec-channel.js';
+import {
+  ensureContainerRuntimeRunning,
+  cleanupOrphans,
+} from './container/container-runtime.js';
+
+// Legacy mode imports (pre-v5.2, kept for backward compat)
+import { startExecHandler } from './channels/exec-handler.js';
+import { startPool, stopPool, getPoolStatus } from './pool/process-pool.js';
+import { getQueueDepths } from './pool/queue-router.js';
 
 // ---------------------------------------------------------------------------
 // CLI flag parsing
@@ -21,6 +31,7 @@ import { createDashboardRouter } from './dashboard-routes.js';
 
 const args = process.argv.slice(2);
 const isPoolMode = args.includes('--pool');
+const isContainerMode = args.includes('--container') || config.containerMode;
 const poolConcurrency = (() => {
   const idx = args.indexOf('--concurrency');
   if (idx !== -1 && args[idx + 1]) {
@@ -31,7 +42,65 @@ const poolConcurrency = (() => {
 })();
 
 // ---------------------------------------------------------------------------
-// Single-user mode (legacy: one NanoClaw per user)
+// Container mode (V5.2: container-isolated agent execution)
+// ---------------------------------------------------------------------------
+
+async function startContainerMode(): Promise<void> {
+  console.log(`[nanoclaw] starting container execution mode`);
+
+  // 1. Connect to Redis
+  await connectRedis();
+
+  // 2. Verify Docker runtime
+  try {
+    ensureContainerRuntimeRunning();
+    cleanupOrphans();
+  } catch (err) {
+    console.warn('[nanoclaw] Docker runtime not available — container execution will fail at runtime');
+    console.warn('[nanoclaw] Continuing startup for context compiler and dashboard...');
+  }
+
+  // 3. Load experience packages
+  await loadPackages(config.packagesDir);
+
+  // 4. Sync user files from remote storage
+  if (process.env.USER_ID) {
+    await syncFromCloud(config.userId);
+  } else {
+    console.log('[nanoclaw] no USER_ID configured — skipping startup sync');
+  }
+
+  // 5. Start container execution channel (replaces exec-handler + process-pool)
+  await startExecChannel();
+
+  // 6. Start context-related channel subscriptions
+  await startFramesConsumer();
+  await startMediaConsumer();
+
+  // 7. Start context compiler loop (30s interval)
+  await startContextCompiler();
+
+  // 8. Health endpoint + dashboard
+  const app = express();
+  app.get('/health', (_req, res) => {
+    const queue = getUserQueue();
+    res.json({
+      status: 'ok',
+      service: 'nanoclaw',
+      mode: 'container',
+      userId: config.userId,
+      queue: queue.getStatus(),
+      cardStore: getStoreStats(),
+    });
+  });
+  mountDashboard(app);
+  listenWithHttps(app);
+
+  console.log('[nanoclaw] container execution mode ready');
+}
+
+// ---------------------------------------------------------------------------
+// Single-user mode (legacy: one NanoClaw per user, in-process execution)
 // ---------------------------------------------------------------------------
 
 async function startSingleUser(): Promise<void> {
@@ -169,7 +238,9 @@ function listenWithHttps(app: express.Express): void {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  if (isPoolMode) {
+  if (isContainerMode) {
+    await startContainerMode();
+  } else if (isPoolMode) {
     await startPoolMode();
   } else {
     await startSingleUser();
@@ -179,7 +250,9 @@ async function main(): Promise<void> {
 // Graceful shutdown
 async function shutdown(): Promise<void> {
   console.log('[nanoclaw] shutting down...');
-  if (isPoolMode) {
+  if (isContainerMode) {
+    await stopExecChannel();
+  } else if (isPoolMode) {
     await stopPool();
   }
   await disconnectRedis();
