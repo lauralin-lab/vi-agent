@@ -92,6 +92,13 @@ jobs:
           build-args: |
             ${{ matrix.service == 'frontend' && 'VITE_API_URL=' || '' }}
             ${{ matrix.service == 'frontend' && 'VITE_LIVEKIT_URL=' || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_API_KEY={0}', secrets.VITE_FIREBASE_API_KEY) || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_AUTH_DOMAIN={0}', secrets.VITE_FIREBASE_AUTH_DOMAIN) || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_PROJECT_ID={0}', secrets.VITE_FIREBASE_PROJECT_ID) || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_STORAGE_BUCKET={0}', secrets.VITE_FIREBASE_STORAGE_BUCKET) || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_MESSAGING_SENDER_ID={0}', secrets.VITE_FIREBASE_MESSAGING_SENDER_ID) || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_APP_ID={0}', secrets.VITE_FIREBASE_APP_ID) || '' }}
+            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_PACKAGE_NAME={0}', secrets.VITE_FIREBASE_PACKAGE_NAME) || '' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
@@ -140,6 +147,14 @@ jobs:
             export ENV="${ENV}"
             export IMAGE_TAG="${{ needs.prepare.outputs.image_tag }}"
             bash "${APP_DIR}/pull-env.sh"
+
+            # Ensure Firebase SA file is readable by container processes
+            if [ -f "${APP_DIR}/firebase/sa.json" ]; then
+              chmod 644 "${APP_DIR}/firebase/sa.json"
+              echo "Firebase SA file ready."
+            else
+              echo "WARNING: No Firebase SA file at ${APP_DIR}/firebase/sa.json"
+            fi
 
             # Select compose file
             COMPOSE_FILE="docker-compose.${ENV}.yml"

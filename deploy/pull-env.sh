@@ -29,6 +29,8 @@ if [ "$ENV" = "prod" ]; then
     ["vi-agent-prod-livekit-api-secret"]="LIVEKIT_API_SECRET"
     ["vi-agent-prod-google-api-key"]="GOOGLE_API_KEY"
     ["vi-agent-prod-anthropic-api-key"]="ANTHROPIC_API_KEY"
+    ["vi-agent-prod-firebase-enabled"]="FIREBASE_ENABLED"
+    ["vi-agent-prod-firebase-projects"]="FIREBASE_PROJECTS"
   )
 elif [ "$ENV" = "staging" ]; then
   SECRET_MAP=(
@@ -41,6 +43,8 @@ elif [ "$ENV" = "staging" ]; then
     ["vi-agent-staging-livekit-api-secret"]="LIVEKIT_API_SECRET"
     ["vi-agent-staging-google-api-key"]="GOOGLE_API_KEY"
     ["vi-agent-staging-anthropic-api-key"]="ANTHROPIC_API_KEY"
+    ["vi-agent-staging-firebase-enabled"]="FIREBASE_ENABLED"
+    ["vi-agent-staging-firebase-projects"]="FIREBASE_PROJECTS"
   )
 fi
 

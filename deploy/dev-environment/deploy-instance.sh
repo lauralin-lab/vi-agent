@@ -218,6 +218,19 @@ EOF
   chmod 600 "$INSTANCE_DIR/.env"
   echo "API keys updated from environment."
 
+  # --- Setup Firebase SA file (shared → instance, readable by container) ---
+  SHARED_SA="$BASE_DIR/firebase/sa.json"
+  INSTANCE_SA_DIR="$INSTANCE_DIR/firebase"
+  if [ -f "$SHARED_SA" ]; then
+    mkdir -p "$INSTANCE_SA_DIR"
+    cp "$SHARED_SA" "$INSTANCE_SA_DIR/sa.json"
+    chmod 644 "$INSTANCE_SA_DIR/sa.json"
+    echo "Firebase SA copied to instance (644 for container read access)."
+  else
+    mkdir -p "$INSTANCE_SA_DIR"
+    echo "WARNING: No Firebase SA at $SHARED_SA — Firebase auth will be disabled."
+  fi
+
   # --- Generate docker-compose.yml from template ---
   local TEMPLATE_FILE="$TEMPLATE_DIR/docker-compose.instance-image.yml.tpl"
   if [ ! -f "$TEMPLATE_FILE" ]; then

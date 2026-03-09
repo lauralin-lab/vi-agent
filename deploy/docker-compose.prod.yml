@@ -27,9 +27,12 @@ services:
       - API_BASE_URL=${API_BASE_URL:-http://localhost:8000}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
       - USER_DATA_DIR=/data/users
     volumes:
       - api_user_data:/data/users
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
