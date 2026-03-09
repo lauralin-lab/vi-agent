@@ -151,28 +151,3 @@ class ToolsMixin:
         logger.info(f"[dispatch_to_nanoclaw] Dispatching: {prompt[:100]}")
         return await self._dispatch_via_nanoclaw(prompt)
 
-    @function_tool
-    async def update_memory(self, context: RunContext, memory_update: str):
-        """Updates important memory (agent name, user name, profile, facts, requests, preferences). Use this to record information the user explicitly wants remembered OR information critical for future conversations. MUST be called when user says 'remember this', 'you must know', etc."""
-        logger.info(f"[update_memory] Saving: {memory_update[:100]}")
-        try:
-            http = await self._get_http_session()
-            resp = await http.post(
-                f"{self._api_base}/api/internal/memories",
-                json={
-                    "vi_user_id": self._vi_user_id,
-                    "content": memory_update,
-                    "type": "long_term",
-                    "source": "agent",
-                },
-            )
-            if resp.status == 200:
-                logger.info(f"[memory] Saved memory update for user {self._vi_user_id}")
-                return {"ok": True, "message": "Memory saved successfully"}
-            else:
-                body = await resp.text()
-                logger.warning(f"[memory] Memory save failed ({resp.status}): {body}")
-                return {"ok": False, "error": f"Memory save failed: {resp.status}"}
-        except Exception as e:
-            logger.warning(f"[memory] Error saving memory: {e}")
-            return {"ok": False, "error": str(e)}

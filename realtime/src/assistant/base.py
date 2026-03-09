@@ -125,7 +125,6 @@ PAGE_PROMPTS = {
         "## Home Mode\n"
         "- Help with navigation and memory management\n"
         "- Answer task history queries\n"
-        "- Use update_memory for explicit memory saves\n"
     ),
 }
 
@@ -549,17 +548,6 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         if self._keyframe_sampler_task and not self._keyframe_sampler_task.done():
             self._keyframe_sampler_task.cancel()
 
-        # Trigger memory update before shutdown
-        if self._agent_session and self.user_identity:
-            try:
-                logger.info("[shutdown] Prompting agent to update memory before ending session...")
-                await asyncio.sleep(1.5)
-                self._agent_session.generate_reply(user_input="[SYSTEM: Session ending. If there's anything important from this conversation to remember (user preferences, facts, requests, or information user explicitly asked to remember), call update_memory now. Skip information already recorded in your previous calls of update_memory. If nothing important to remember, skip this step.]")
-                logger.info("[shutdown] Memory update prompt sent")
-                await asyncio.sleep(2)
-            except Exception as e:
-                logger.warning(f"[shutdown] Failed to trigger memory update: {e}")
-
         # Say goodbye to the user (best-effort, single attempt)
         if self._agent_session and self.user_identity:
             try:
@@ -576,34 +564,8 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         except Exception as e:
             logger.warning(f"[shutdown] Failed to persist conversation timeline: {e}")
 
-        # Trigger session-end memory extraction (only if user actually spoke)
-        has_user_msg = any(e.get("type") == "user" for e in self._conversation_timeline)
-        try:
-            if self._conversation_timeline and self._vi_user_id and has_user_msg:
-                summary_parts = []
-                for entry in self._conversation_timeline[:20]:
-                    role = entry.get("type", "unknown")
-                    text = entry.get("content", "")[:200]
-                    summary_parts.append(f"{role}: {text}")
-                summary = "\n".join(summary_parts)
-
-                session_id = self._conversation_session_id or self._current_session_id or ""
-                http = await self._get_http_session()
-                resp = await http.post(
-                    f"{self._api_base}/api/internal/memories/session-end",
-                    json={
-                        "session_id": session_id,
-                        "vi_user_id": self._vi_user_id,
-                        "summary": summary[:3000],
-                    },
-                )
-                if resp.status == 200:
-                    logger.info("[shutdown] Session-end memory extraction triggered")
-                else:
-                    body = await resp.text()
-                    logger.debug(f"[shutdown] Session-end memory failed ({resp.status}): {body}")
-        except Exception as e:
-            logger.warning(f"[shutdown] Failed to trigger session-end memory: {e}")
+        # Memory is handled exclusively by NanoClaw memory-hook (diary + promote)
+        # LiveKit voice chat does not write memory — only NanoClaw tasks do
 
         # Cache Gemini session resumption token for faster next-session connect
         try:
