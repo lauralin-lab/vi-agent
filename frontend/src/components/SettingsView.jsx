@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Loader2, Edit3, Save, X } from 'lucide-react';
+import { ChevronLeft, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
-import { renderMarkdown } from '../utils/markdown';
 import { IOS_SPRING } from '../constants';
+import MemoryContent from './MemoryView';
 
 const MAX_SKILLS_PREVIEW = 5;
 
@@ -113,13 +113,6 @@ export default function SettingsView({ onBack, livekit }) {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [showAllSkills, setShowAllSkills] = useState(false);
 
-  // ── Memory state (MEMORY.md only) ──
-  const [memoryContent, setMemoryContent] = useState('');
-  const [memoryLoading, setMemoryLoading] = useState(true);
-  const [editingMemory, setEditingMemory] = useState(false);
-  const [editContent, setEditContent] = useState('');
-  const [saving, setSaving] = useState(false);
-
   // ── Connections state ──
   const [connStatuses, setConnStatuses] = useState({});
   const [connLoading, setConnLoading] = useState(true);
@@ -138,19 +131,6 @@ export default function SettingsView({ onBack, livekit }) {
       setSkills([]);
     } finally {
       setSkillsLoading(false);
-    }
-  }, []);
-
-  // ── Load MEMORY.md only ──
-  const loadMemory = useCallback(async () => {
-    try {
-      const data = await api.getMemory('MEMORY.md');
-      setMemoryContent(data?.content || '');
-    } catch (e) {
-      console.error('Failed to load MEMORY.md:', e);
-      setMemoryContent('');
-    } finally {
-      setMemoryLoading(false);
     }
   }, []);
 
@@ -174,14 +154,8 @@ export default function SettingsView({ onBack, livekit }) {
 
   useEffect(() => {
     loadSkills();
-    loadMemory();
     loadConnections();
-  }, [loadSkills, loadMemory, loadConnections]);
-
-  useEffect(() => {
-    if (!livekit?.memoryUpdatedAt) return;
-    loadMemory();
-  }, [livekit?.memoryUpdatedAt, loadMemory]);
+  }, [loadSkills, loadConnections]);
 
   // ── Skill toggle ──
   const handleToggle = useCallback(async (skill) => {
@@ -201,25 +175,6 @@ export default function SettingsView({ onBack, livekit }) {
       setSkills(prev => prev.map(s => s.slug === slug ? { ...s, enabled: isEnabled } : s));
     }
   }, []);
-
-  // ── Memory edit ──
-  const handleMemoryEdit = useCallback(() => {
-    setEditContent(memoryContent);
-    setEditingMemory(true);
-  }, [memoryContent]);
-
-  const handleMemorySave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await api.upsertMemory('MEMORY.md', editContent, 'long_term');
-      setMemoryContent(editContent);
-      setEditingMemory(false);
-    } catch (e) {
-      console.error('Failed to save MEMORY.md:', e);
-    } finally {
-      setSaving(false);
-    }
-  }, [editContent]);
 
   // ── Connection handlers ──
   const handleConnect = useCallback(async (provider) => {
@@ -253,37 +208,7 @@ export default function SettingsView({ onBack, livekit }) {
   // ── Derived ──
   const visibleSkills = showAllSkills ? skills : skills.slice(0, MAX_SKILLS_PREVIEW);
   const hasMoreSkills = skills.length > MAX_SKILLS_PREVIEW;
-  const isLoading = skillsLoading && memoryLoading && connLoading;
-
-  // ═══ Memory Edit sub-page ═══
-  if (editingMemory) {
-    return (
-      <motion.div key="mem-edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="w-full h-full flex flex-col" style={{ background: '#F2F2F7', color: '#000' }}>
-        <div className="shrink-0 flex items-center gap-3 px-5 pt-[env(safe-area-inset-top,20px)] pb-3"
-          style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <button onClick={() => setEditingMemory(false)} className="p-1.5 -ml-1.5 rounded-full hover:bg-black/[0.04] transition-colors">
-            <X size={20} style={{ color: 'rgba(0,0,0,0.4)' }} />
-          </button>
-          <span className="font-semibold flex-1 truncate" style={{ fontSize: 16 }}>Edit Memory</span>
-          <button onClick={handleMemorySave}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold disabled:opacity-40 active:scale-95 transition-all"
-            style={{ fontSize: 13, background: '#000', color: '#fff' }}>
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-            placeholder="Your memory profile will appear here after chatting..."
-            className="w-full px-4 py-3 focus:outline-none resize-none"
-            style={{ minHeight: 400, fontSize: 16, background: '#fff', borderRadius: 20,
-              border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
-              fontFamily: 'ui-monospace, SFMono-Regular, monospace', lineHeight: 1.6 }} />
-        </div>
-      </motion.div>
-    );
-  }
+  const isLoading = skillsLoading && connLoading;
 
   // ═══ Main Profile page ═══
   return (
@@ -328,29 +253,10 @@ export default function SettingsView({ onBack, livekit }) {
               </div>
             )}
 
-            {/* ═══ Memory Section ═══ */}
+            {/* ═══ Memory Section (card UI) ═══ */}
             <div className="mb-6">
               <SectionHeader label="Memory" />
-              <GroupedCard delay={0.06}>
-                {memoryContent ? (
-                  <div className="px-4 py-3">
-                    <div style={{ fontSize: 15, lineHeight: 1.6, color: '#000' }}>
-                      {renderMarkdown(memoryContent)}
-                    </div>
-                    <button onClick={handleMemoryEdit}
-                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium active:scale-95 transition-all"
-                      style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', background: 'rgba(0,0,0,0.04)' }}>
-                      <Edit3 size={12} /> Edit
-                    </button>
-                  </div>
-                ) : (
-                  <div className="px-4 py-6 text-center">
-                    <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.35)' }}>
-                      After chatting with AI, it will automatically remember your preferences and important info.
-                    </p>
-                  </div>
-                )}
-              </GroupedCard>
+              <MemoryContent livekit={livekit} />
             </div>
 
             {/* ═══ Connections Section ═══ */}
