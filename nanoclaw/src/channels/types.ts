@@ -315,7 +315,15 @@ export interface PackageManifest {
     intention_level: string;
   };
 
-  skill: {
+  instruction: {
+    file: string;
+    model: string;
+    max_turns: number;
+    max_tokens: number;
+  };
+
+  /** @deprecated Use `instruction` instead. */
+  skill?: {
     prompt: string;
     model: string;
     max_turns: number;

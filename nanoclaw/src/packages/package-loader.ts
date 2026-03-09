@@ -7,7 +7,7 @@ import type { PackageManifest, TemplateDefinition } from '../channels/types.js';
 //
 // Each package lives in packages/{package-id}/ and contains:
 //   manifest.json           — PackageManifest definition
-//   skill.md                — Skill prompt content
+//   instruction.md          — AI instruction prompt
 //   templates/*.json        — Bundled template schemas
 //   tools/tools.json        — Custom tool definitions (optional)
 //
@@ -18,7 +18,9 @@ import type { PackageManifest, TemplateDefinition } from '../channels/types.js';
 /** A fully loaded experience package */
 export interface LoadedPackage {
   manifest: PackageManifest;
-  /** Skill prompt content (from skill.md) */
+  /** Instruction prompt content (from instruction.md) */
+  instructionPrompt: string;
+  /** @deprecated Use instructionPrompt instead. */
   skillPrompt: string;
   /** Bundled template definitions */
   templates: TemplateDefinition[];
@@ -136,26 +138,37 @@ async function tryLoadPackage(
     }
   }
 
-  // 2. Load skill prompt (from manifest.skill.prompt or default skill.md)
-  const skillPromptFile = manifest.skill?.prompt ?? 'skill.md';
-  let skillPrompt = '';
+  // 2. Migrate: if only `skill` exists, populate `instruction` from it
+  if (!manifest.instruction && manifest.skill) {
+    manifest.instruction = {
+      file: manifest.skill.prompt ?? 'instruction.md',
+      model: manifest.skill.model,
+      max_turns: manifest.skill.max_turns,
+      max_tokens: manifest.skill.max_tokens,
+    };
+  }
+
+  // 3. Load instruction prompt
+  const instructionFile = manifest.instruction?.file ?? 'instruction.md';
+  let instructionPrompt = '';
   try {
-    skillPrompt = await readFile(join(pkgDir, skillPromptFile), 'utf-8');
+    instructionPrompt = await readFile(join(pkgDir, instructionFile), 'utf-8');
   } catch {
     console.warn(
-      `[package-loader] ${manifest.id}: skill prompt "${skillPromptFile}" not found, using empty prompt`,
+      `[package-loader] ${manifest.id}: instruction prompt "${instructionFile}" not found, using empty prompt`,
     );
   }
 
-  // 3. Load bundled templates
+  // 4. Load bundled templates
   const templates = await loadBundledTemplates(pkgDir);
 
-  // 4. Load tool definitions
+  // 5. Load tool definitions
   const toolDefinitions = await loadToolDefinitions(pkgDir);
 
   return {
     manifest,
-    skillPrompt,
+    instructionPrompt,
+    skillPrompt: instructionPrompt, // deprecated alias
     templates,
     toolDefinitions,
     resolvedPath: pkgDir,

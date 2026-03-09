@@ -12,8 +12,8 @@
     "intention_level": "L1"
   },
 
-  "skill": {
-    "prompt": "skill.md",
+  "instruction": {
+    "file": "instruction.md",
     "model": "claude-sonnet-4-6",
     "max_turns": 5,
     "max_tokens": 8192
