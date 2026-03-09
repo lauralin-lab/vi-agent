@@ -5,6 +5,9 @@ import { api } from '../services/api';
 import { parseMemoryMarkdown, serializeMemoryCards } from '../utils/memory-parser';
 import { IOS_SPRING } from '../constants';
 
+const DELETE_LABELS = { zh: '删除？', ja: '削除？', ko: '삭제?', fr: 'Supprimer ?', es: '¿Eliminar?', de: 'Löschen?' };
+const getDeleteLabel = () => DELETE_LABELS[navigator.language?.slice(0, 2).toLowerCase()] || 'Delete?';
+
 // ── Memory Cards (dynamic card UI parsed from MEMORY.md) ──
 // Used standalone AND embedded in SettingsView profile page.
 
@@ -203,6 +206,7 @@ function SectionCard({ section, sectionIdx, onEditItem, onDeleteItem, onAddItem 
 // ── Single Memory Item ──
 function MemoryItem({ value, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [editValue, setEditValue] = useState(value);
   const inputRef = useRef(null);
 
@@ -272,13 +276,31 @@ function MemoryItem({ value, onEdit, onDelete }) {
       >
         {value}
       </span>
-      <button
-        onClick={onDelete}
-        className="p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-        style={{ color: 'rgba(255,59,48,0.6)' }}
-      >
-        <Trash2 size={13} />
-      </button>
+      {confirming ? (
+        <div className="flex items-center gap-1 shrink-0">
+          <span style={{ fontSize: 12, color: 'rgba(255,59,48,0.7)' }}>
+            {getDeleteLabel()}
+          </span>
+          <button onClick={() => { onDelete(); setConfirming(false); }}
+            className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
+            style={{ color: 'rgba(255,59,48,0.7)' }}>
+            <Check size={13} />
+          </button>
+          <button onClick={() => setConfirming(false)}
+            className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
+            style={{ color: 'rgba(0,0,0,0.3)' }}>
+            <X size={13} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: 'rgba(255,59,48,0.6)' }}
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
     </motion.div>
   );
 }
