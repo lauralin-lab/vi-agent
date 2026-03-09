@@ -21,7 +21,7 @@ const startedAt = Date.now();
 
 export function createDashboardRouter(): Router {
   const router = Router();
-  router.use(json());
+  router.use(json({ limit: '20mb' }));
 
   // =====================================================================
   // Health / Stats API (existing)
@@ -703,6 +703,161 @@ export function createDashboardRouter(): Router {
       res.json({ status: 'deleted', packageId, filename });
     } catch {
       res.status(404).json({ error: 'Example not found' });
+    }
+  });
+
+  // =====================================================================
+  // APIs — list API providers derived from package manifests
+  // =====================================================================
+
+  router.get('/api/dashboard/apis', (_req: Request, res: Response) => {
+    try {
+      const pkgs = getAllPackages();
+      const providerMap = new Map<string, {
+        provider: string;
+        envVar?: string;
+        required: boolean;
+        packages: string[];
+        configured: boolean;
+      }>();
+
+      for (const pkg of pkgs) {
+        const manifest = pkg.manifest as unknown as Record<string, unknown>;
+        const apis = (manifest.apis || manifest.api_keys || []) as Array<{
+          provider: string;
+          envVar?: string;
+          env_var?: string;
+          required?: boolean;
+        }>;
+
+        for (const api of apis) {
+          const key = api.provider;
+          const envVar = api.envVar || api.env_var;
+          if (!providerMap.has(key)) {
+            providerMap.set(key, {
+              provider: key,
+              envVar,
+              required: api.required ?? false,
+              packages: [],
+              configured: envVar ? !!process.env[envVar] : false,
+            });
+          }
+          providerMap.get(key)!.packages.push(
+            (manifest.id as string) || (manifest.name as string) || 'unknown',
+          );
+        }
+      }
+
+      // Also scan environment for common AI API keys
+      const commonKeys = [
+        { provider: 'OpenAI', envVar: 'OPENAI_API_KEY' },
+        { provider: 'Anthropic', envVar: 'ANTHROPIC_API_KEY' },
+        { provider: 'Google AI', envVar: 'GOOGLE_API_KEY' },
+        { provider: 'Google AI (alt)', envVar: 'GEMINI_API_KEY' },
+      ];
+      for (const k of commonKeys) {
+        if (!providerMap.has(k.provider)) {
+          providerMap.set(k.provider, {
+            provider: k.provider,
+            envVar: k.envVar,
+            required: false,
+            packages: [],
+            configured: !!process.env[k.envVar],
+          });
+        }
+      }
+
+      res.json({ apis: Array.from(providerMap.values()) });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  router.put('/api/dashboard/apis/keys', (req: Request, res: Response) => {
+    try {
+      const { envVar, value } = req.body as { envVar: string; value: string };
+      if (!envVar || !value) {
+        res.status(400).json({ error: 'envVar and value are required' });
+        return;
+      }
+      process.env[envVar] = value;
+      res.json({ status: 'set', envVar });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // =====================================================================
+  // File Upload — proxy to API server's GCS presigned URL flow
+  // Falls back to local storage if API server is unavailable.
+  // =====================================================================
+
+  router.post('/api/dashboard/upload', async (req: Request, res: Response) => {
+    try {
+      const { dataUrl, filename } = req.body as { dataUrl: string; filename?: string };
+      if (!dataUrl || !dataUrl.startsWith('data:')) {
+        res.status(400).json({ error: 'dataUrl is required (data:... format)' });
+        return;
+      }
+
+      // Parse data URL
+      const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        res.status(400).json({ error: 'Invalid data URL format' });
+        return;
+      }
+
+      const mimeType = matches[1];
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+      const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'bin';
+
+      // Try GCS via API server presigned URL
+      try {
+        const uid = config.userId;
+        const presignUrl = `${config.apiServerUrl}/api/upload/presign?ext=${ext}&size=${buffer.length}&vi_user_id=${encodeURIComponent(uid)}`;
+        const presignRes = await fetch(presignUrl, {
+          headers: { 'X-Internal-Token': config.internalApiToken },
+        });
+
+        if (presignRes.ok) {
+          const { presigned_url, public_url, content_type } = await presignRes.json() as {
+            presigned_url: string;
+            public_url: string;
+            content_type: string;
+          };
+
+          // Upload to GCS
+          const uploadRes = await fetch(presigned_url, {
+            method: 'PUT',
+            headers: { 'Content-Type': content_type },
+            body: buffer,
+          });
+
+          if (uploadRes.ok) {
+            res.json({ url: public_url, mimeType, size: buffer.length });
+            return;
+          }
+        }
+      } catch {
+        // GCS upload failed, fall back to local
+      }
+
+      // Fallback: save locally
+      const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const finalFilename = filename || `upload-${fileId}.${ext}`;
+      const uploadsDir = join(config.userDataDir, 'uploads');
+      await mkdir(uploadsDir, { recursive: true });
+      await writeFile(join(uploadsDir, finalFilename), buffer);
+      res.json({ url: `/uploads/${finalFilename}`, mimeType, size: buffer.length });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 

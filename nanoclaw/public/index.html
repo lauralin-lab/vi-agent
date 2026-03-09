@@ -19,6 +19,18 @@
       <a class="nav-link" data-page="chat">
         <span class="icon">&#9993;</span> Chat
       </a>
+      <a class="nav-link" data-page="packages">
+        <span class="icon">&#128230;</span> Packages
+      </a>
+      <a class="nav-link" data-page="skills">
+        <span class="icon">&#9881;</span> Skills
+      </a>
+      <a class="nav-link" data-page="templates">
+        <span class="icon">&#9638;</span> Templates
+      </a>
+      <a class="nav-link" data-page="apis">
+        <span class="icon">&#128279;</span> APIs
+      </a>
     </nav>
     <div class="sidebar-footer">
       <span class="status-dot live"></span> Connected
@@ -144,6 +156,100 @@
     <!-- ════════════════════════════════════════════════════════ -->
     <!-- CHAT PAGE                                               -->
     <!-- ════════════════════════════════════════════════════════ -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- PACKAGES PAGE                                          -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-packages">
+      <div class="pkg-layout">
+        <!-- Package List -->
+        <div class="pkg-sidebar">
+          <div class="pkg-sidebar-header">
+            <span>Packages</span>
+            <button class="btn-sm" id="pkg-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="pkg-sidebar-filter">
+            <input type="text" id="pkg-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="pkg-sidebar-list" id="pkg-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <!-- Package Detail -->
+        <div class="pkg-main" id="pkg-main">
+          <div class="pkg-empty">Select a package to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- SKILLS PAGE                                             -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-skills">
+      <div class="skill-layout">
+        <div class="skill-sidebar">
+          <div class="skill-sidebar-header">
+            <span>Skills</span>
+            <button class="btn-sm" id="skill-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="skill-sidebar-filter">
+            <input type="text" id="skill-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="skill-sidebar-list" id="skill-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="skill-main" id="skill-main">
+          <div class="skill-empty">Select a skill to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- TEMPLATES PAGE                                          -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-templates">
+      <div class="tpl-layout">
+        <div class="tpl-sidebar">
+          <div class="tpl-sidebar-header">
+            <span>Templates</span>
+            <button class="btn-sm" id="tpl-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="tpl-sidebar-filter">
+            <input type="text" id="tpl-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="tpl-sidebar-list" id="tpl-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="tpl-main" id="tpl-main">
+          <div class="tpl-empty">Select a template to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- APIs PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-apis">
+      <div class="api-layout">
+        <div class="api-sidebar">
+          <div class="api-sidebar-header">
+            <span>API Providers</span>
+            <button class="btn-sm" id="api-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="api-sidebar-list" id="api-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="api-main" id="api-main">
+          <div class="api-empty">Select an API provider to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- CHAT PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
     <section class="page" id="page-chat">
       <div class="chat-layout">
         <!-- Session Sidebar -->
@@ -190,15 +296,18 @@
           </div>
 
           <!-- Input Area -->
-          <div class="chat-input-area">
+          <div class="chat-input-area" id="chat-input-area">
             <div class="skill-picker" id="skill-picker" style="display:none">
               <div class="skill-picker-header">Select a skill</div>
               <div class="skill-picker-list" id="skill-picker-list"></div>
             </div>
+            <div class="chat-upload-preview" id="chat-upload-preview" style="display:none"></div>
             <div class="chat-input-row">
+              <button class="btn-icon chat-add-btn" id="chat-add-btn" title="Attach files">+</button>
               <input type="text" id="chat-input" placeholder="Type a message... Use @ to mention a skill" autocomplete="off">
               <button class="btn btn-primary" id="chat-send">Send</button>
             </div>
+            <input type="file" id="chat-file-input" multiple accept="image/*,video/*,.pdf,.txt,.json,.csv" style="display:none">
             <div class="chat-skill-tag" id="chat-skill-tag" style="display:none">
               <span id="chat-skill-name"></span>
               <button class="chat-skill-remove" id="chat-skill-remove">&times;</button>

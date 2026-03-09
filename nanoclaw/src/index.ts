@@ -194,6 +194,9 @@ function mountDashboard(app: express.Express): void {
 
   app.use(createDashboardRouter());
   app.use(express.static(publicDir));
+  // Serve uploaded files from user data dir
+  const uploadsDir = join(config.userDataDir, 'uploads');
+  app.use('/uploads', express.static(uploadsDir));
   console.log('[nanoclaw] dashboard enabled at /');
 }
 
