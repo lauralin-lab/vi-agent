@@ -155,7 +155,7 @@ jobs:
 
   # Branch protection summary
   ci-summary:
-    name: CI Summary
+    name: quality
     needs: [api-server, nanoclaw, frontend, realtime]
     runs-on: ubuntu-latest
     if: always()

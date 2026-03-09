@@ -10,6 +10,7 @@ import useSound from '../hooks/useSound';
 import { getShortTitle } from '../utils/text';
 import PersistentHtmlRenderer from './PersistentHtmlRenderer';
 import ModuleRenderer, { extractModuleTitle } from './modules/ModuleRenderer';
+import { StreamingContext } from './modules/StreamingContext';
 import { IFRAME_DESIGN_CSS } from './iframeDesignSystem';
 import { IntentionCardStrip } from './IntentionCard';
 import { resolveTemplate } from './TemplateEngine';
@@ -108,7 +109,7 @@ function extractFromHtml(html) {
 // ═══════════════════════════════════════════════════════════
 
 // ── StaticHtmlBlock: completed block rendered as a plain iframe ──
-function StaticHtmlBlock({ block, onAction }) {
+function StaticHtmlBlock({ block, onAction, isStreaming }) {
   const iframeRef = useRef(null);
   const [iframeHeight, setIframeHeight] = useState(300);
 
@@ -172,6 +173,18 @@ function StaticHtmlBlock({ block, onAction }) {
 
   return (
     <div className="rounded-xl overflow-hidden relative">
+      <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10">
+        {isStreaming ? (
+          <motion.div
+            className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
+            animate={{ x: ['-100%', '100%'] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
+            style={{ width: '40%', willChange: 'transform' }}
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+        )}
+      </div>
       <iframe
         ref={iframeRef}
         srcDoc={wrappedHtml}
@@ -190,16 +203,18 @@ function ActiveHtmlBlock({ block, onAction, streamingChunks }) {
 
   return (
     <div className="rounded-xl overflow-hidden relative">
-      {isStreaming && (
-        <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/5 overflow-hidden z-10">
+      <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10">
+        {isStreaming ? (
           <motion.div
             className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
             animate={{ x: ['-100%', '100%'] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
             style={{ width: '40%', willChange: 'transform' }}
           />
-        </div>
-      )}
+        ) : (
+          <div className="h-full w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+        )}
+      </div>
       <PersistentHtmlRenderer
         streamingChunks={streamingChunks}
         isStreaming={isStreaming}
@@ -232,7 +247,7 @@ function HtmlBlock({ block, onAction, isActive, streamingChunks, isPlaceholder }
   if (isActive && streamingChunks) {
     return <ActiveHtmlBlock block={block} onAction={onAction} streamingChunks={streamingChunks} />;
   }
-  return <StaticHtmlBlock block={block} onAction={onAction} />;
+  return <StaticHtmlBlock block={block} onAction={onAction} isStreaming={block.status !== 'done'} />;
 }
 
 // ── ImageBlock ──
@@ -339,11 +354,13 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
       )}
 
       {isModule ? (
-        <ModuleRenderer
-          module_type={block.module_type}
-          data={block.data}
-          onAction={onAction}
-        />
+        <StreamingContext.Provider value={!isDone}>
+          <ModuleRenderer
+            module_type={block.module_type}
+            data={block.data}
+            onAction={onAction}
+          />
+        </StreamingContext.Provider>
       ) : block.type === 'image' ? (
         <ImageBlock block={block} />
       ) : (

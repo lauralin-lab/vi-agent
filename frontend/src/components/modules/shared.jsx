@@ -9,6 +9,7 @@
  */
 
 import { motion } from 'framer-motion';
+import { useIsStreaming } from './StreamingContext';
 
 // ── Glass Card ──
 // Primary container for module content (light theme — rendered on white background)
@@ -257,7 +258,24 @@ export function WeatherIcon({ condition, size = 32 }) {
 }
 
 // ── Gradient Accent Bar ──
+// Automatically animates when inside a streaming block (via StreamingContext)
 export function AccentBar({ className = '' }) {
+  const isStreaming = useIsStreaming();
+
+  if (isStreaming) {
+    return (
+      <div className={`h-[2px] rounded-full overflow-hidden ${className}`}>
+        <div
+          className="h-full w-full rounded-full"
+          style={{
+            background: 'linear-gradient(90deg, transparent, rgba(168,85,247,0.5), rgba(59,130,246,0.45), transparent)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.8s ease-in-out infinite',
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div
       className={`h-[2px] rounded-full bg-gradient-to-r from-purple-500/40 via-blue-500/25 to-transparent ${className}`}

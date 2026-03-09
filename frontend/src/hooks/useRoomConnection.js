@@ -163,14 +163,24 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     });
 
     // Handle remote audio tracks (agent voice output)
+    // Track restart listeners for cleanup
+    const trackRestartListeners = new Map();
+
     newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track.kind === Track.Kind.Audio && participant.identity.startsWith('agent-')) {
         ensureAudioContext();
         newRoom.startAudio().catch(e => console.warn('[LiveKit] startAudio failed:', e));
 
+        // Deduplicate: if this publication.sid already has an audio element, skip
+        const audioId = `agent-audio-${participant.identity}-${publication.sid}`;
+        if (document.getElementById(audioId)) {
+          console.log('[LiveKit] Audio element already exists for', audioId, '— skipping');
+          return;
+        }
+
         try {
           const audioEl = track.attach();
-          audioEl.id = `agent-audio-${participant.identity}-${publication.sid}`;
+          audioEl.id = audioId;
           audioEl.style.display = 'none';
           document.body.appendChild(audioEl);
 
@@ -188,7 +198,14 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
             });
           };
           tryPlay();
+
+          // Clean up any previous listener for this track before adding new one
+          const prevListener = trackRestartListeners.get(track.sid);
+          if (prevListener) {
+            track.off('Restarted', prevListener);
+          }
           track.on('Restarted', tryPlay);
+          trackRestartListeners.set(track.sid, tryPlay);
         } catch (e) {
           console.warn('[LiveKit] Failed to attach agent audio track:', e.message);
         }
@@ -196,6 +213,12 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     });
     newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track.kind === Track.Kind.Audio && participant.identity.startsWith('agent-')) {
+        // Clean up Restarted listener
+        const listener = trackRestartListeners.get(track.sid);
+        if (listener) {
+          track.off('Restarted', listener);
+          trackRestartListeners.delete(track.sid);
+        }
         const elements = track.detach();
         elements.forEach(el => { el.pause(); el.srcObject = null; el.remove(); });
       }
