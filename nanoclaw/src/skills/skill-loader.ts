@@ -29,7 +29,8 @@ export async function loadSkill(slug: string): Promise<LoadedSkill | null> {
 }
 
 /**
- * Get all available skill manifests (both user and shared).
+ * Get all available skill manifests (user skills + shared skills only).
+ * Experience packages are loaded separately via package-loader.ts.
  */
 export async function getAllManifests(): Promise<SkillManifest[]> {
   const manifests: SkillManifest[] = [];
@@ -41,9 +42,6 @@ export async function getAllManifests(): Promise<SkillManifest[]> {
 
   // Shared skills
   await collectManifests(config.sharedSkillsDir, manifests, seen);
-
-  // Experience packages (V5)
-  await collectManifests(config.packagesDir, manifests, seen);
 
   return manifests;
 }
@@ -61,11 +59,19 @@ async function tryLoadFromPath(
 
   try {
     const manifestPath = join(dirPath, 'manifest.json');
+    const instructionMdPath = join(dirPath, 'instruction.md');
     const skillMdPath = join(dirPath, 'skill.md');
 
-    const [manifestRaw, promptContent] = await Promise.all([
+    // Prefer instruction.md, fall back to legacy skill.md
+    let promptContent: string;
+    try {
+      promptContent = await readFile(instructionMdPath, 'utf-8');
+    } catch {
+      promptContent = await readFile(skillMdPath, 'utf-8');
+    }
+
+    const [manifestRaw] = await Promise.all([
       readFile(manifestPath, 'utf-8'),
-      readFile(skillMdPath, 'utf-8'),
     ]);
 
     const manifest: SkillManifest = JSON.parse(manifestRaw);

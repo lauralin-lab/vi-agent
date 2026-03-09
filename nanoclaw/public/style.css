@@ -1927,3 +1927,83 @@ tr:hover td { background: var(--bg-hover); }
   border-radius: 8px;
   background: transparent;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   TEMPLATE THUMBNAIL GALLERY
+   ══════════════════════════════════════════════════════════════ */
+
+.tpl-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 4px;
+}
+
+.tpl-thumb {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.tpl-thumb:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.tpl-thumb.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tpl-thumb-preview {
+  height: 140px;
+  overflow: hidden;
+  background: #12141c;
+  position: relative;
+  pointer-events: none;
+}
+
+.tpl-thumb-iframe {
+  width: 200%;
+  height: 280px;
+  border: none;
+  transform: scale(0.5);
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+.tpl-thumb-info {
+  padding: 8px 10px;
+}
+
+.tpl-thumb-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tpl-thumb-meta {
+  margin-top: 4px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SKILLS CATEGORY LABELS
+   ══════════════════════════════════════════════════════════════ */
+
+.skill-category-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  padding: 8px 12px 4px;
+  font-weight: 600;
+}

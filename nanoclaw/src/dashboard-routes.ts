@@ -66,7 +66,7 @@ export function createDashboardRouter(): Router {
   });
 
   // =====================================================================
-  // Skills API (existing)
+  // Skills API — returns user/shared skill manifests (NOT packages)
   // =====================================================================
 
   router.get('/api/dashboard/skills', async (_req: Request, res: Response) => {
@@ -78,6 +78,29 @@ export function createDashboardRouter(): Router {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  });
+
+  // =====================================================================
+  // Native Skills API — built-in tools from skill-executor.ts
+  // =====================================================================
+
+  router.get('/api/dashboard/native-skills', (_req: Request, res: Response) => {
+    const nativeTools = [
+      { name: 'file_read', icon: '📖', category: 'filesystem', description: 'Read a file from the user workspace' },
+      { name: 'file_write', icon: '✏️', category: 'filesystem', description: 'Write content to a file in the user workspace' },
+      { name: 'file_list', icon: '📂', category: 'filesystem', description: 'List files in a user workspace directory' },
+      { name: 'file_edit', icon: '🔧', category: 'filesystem', description: 'Replace a string in a file' },
+      { name: 'memory_update', icon: '🧠', category: 'memory', description: 'Update user memory (long-term profile or daily diary)' },
+      { name: 'publish_card', icon: '🃏', category: 'cards', description: 'Publish a structured card to the session canvas' },
+      { name: 'update_card', icon: '🔄', category: 'cards', description: 'Update an existing card\'s data' },
+      { name: 'append_to_card', icon: '➕', category: 'cards', description: 'Append items to an array slot in a card' },
+      { name: 'oauth_call', icon: '🔑', category: 'integration', description: 'Make an OAuth-authenticated API call (Google, Notion, Slack)' },
+      { name: 'web_search', icon: '🔍', category: 'web', description: 'Search the internet for results' },
+      { name: 'web_fetch', icon: '🌐', category: 'web', description: 'Fetch content from a URL' },
+      { name: 'bash', icon: '💻', category: 'system', description: 'Execute a shell command sandboxed to workspace' },
+      { name: 'search', icon: '🔎', category: 'filesystem', description: 'Grep-like content search within workspace' },
+    ];
+    res.json({ tools: nativeTools });
   });
 
   // =====================================================================
@@ -509,7 +532,7 @@ export function createDashboardRouter(): Router {
           hasAppMode: !!p.manifest.app_mode,
           templateCount: p.templates.length,
           toolCount: p.toolDefinitions.length,
-          hasSkillPrompt: !!p.skillPrompt,
+          hasInstructionPrompt: !!p.instructionPrompt,
           resolvedPath: p.resolvedPath,
         })),
       });
@@ -531,7 +554,7 @@ export function createDashboardRouter(): Router {
 
     res.json({
       manifest: pkg.manifest,
-      skillPrompt: pkg.skillPrompt,
+      instructionPrompt: pkg.instructionPrompt,
       templates: pkg.templates,
       toolDefinitions: pkg.toolDefinitions,
       resolvedPath: pkg.resolvedPath,

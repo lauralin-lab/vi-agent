@@ -1,0 +1,39 @@
+{
+  "id": "recipe-analyzer",
+  "version": "1.0.0",
+  "name": "Recipe Analyzer",
+  "description": "Analyze food photos to identify dishes, estimate nutritional info, and suggest recipes",
+  "icon": "🍳",
+  "category": "food",
+
+  "trigger": {
+    "visual_cues": ["food", "meal", "plate", "dish", "snack", "cooking", "recipe", "ingredient"],
+    "voice_keywords": ["recipe", "cook", "meal", "dish", "ingredient", "food"],
+    "intention_level": "L1"
+  },
+
+  "instruction": {
+    "file": "instruction.md",
+    "model": "claude-sonnet-4-6",
+    "max_turns": 5,
+    "max_tokens": 8192
+  },
+
+  "templates": {
+    "bundled": [],
+    "shared": ["thinking-process", "nutrition-card", "image-analysis"]
+  },
+
+  "tools": {
+    "bundled": [],
+    "builtin": ["memory_update", "publish_result"]
+  },
+
+  "apis": {},
+
+  "output": {
+    "card_sequence": ["thinking-process", "nutrition-card"],
+    "estimated_time": "10-20s",
+    "estimated_cost": "$0.02-0.05"
+  }
+}

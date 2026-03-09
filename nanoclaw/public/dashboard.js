@@ -188,31 +188,38 @@
       '</tbody></table>';
   }
 
-  // ── Skills ──
+  // ── Native Skills (overview grid) ──
   async function fetchSkills() {
     try {
-      const res = await fetch('/api/dashboard/skills');
+      const res = await fetch('/api/dashboard/native-skills');
       const data = await res.json();
-      skillsList = data.skills || [];
-      renderSkillsGrid(skillsList);
+      const tools = data.tools || [];
+      renderSkillsGrid(tools);
     } catch (err) {
       $('skills-grid').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
     }
+    // Also populate skillsList from packages for chat skill picker
+    try {
+      const res = await fetch('/api/dashboard/packages');
+      const data = await res.json();
+      skillsList = (data.packages || []).map(p => ({
+        name: p.name, slug: p.id, icon: p.icon || '📦', description: p.description || '', category: p.category || ''
+      }));
+    } catch { /* ignore */ }
   }
 
-  function renderSkillsGrid(skills) {
-    if (skills.length === 0) {
-      $('skills-grid').innerHTML = '<div class="loading">No skills loaded</div>';
+  function renderSkillsGrid(tools) {
+    if (tools.length === 0) {
+      $('skills-grid').innerHTML = '<div class="loading">No native skills</div>';
       return;
     }
-    $('skills-grid').innerHTML = skills.map(s =>
+    $('skills-grid').innerHTML = tools.map(t =>
       '<div class="skill-card">' +
-      '<div class="skill-card-icon">' + (s.icon || '') + '</div>' +
+      '<div class="skill-card-icon">' + (t.icon || '⚙️') + '</div>' +
       '<div class="skill-card-info">' +
-      '<div class="skill-card-name">' + escapeHtml(s.name) + '</div>' +
+      '<div class="skill-card-name">' + escapeHtml(t.name) + '</div>' +
       '<div class="skill-card-meta">' +
-      '<code>' + escapeHtml(formatSkillTag(s.slug)) + '</code>' +
-      '<span class="badge badge-blue">' + escapeHtml(s.category || '-') + '</span>' +
+      '<span class="badge badge-blue">' + escapeHtml(t.category || '-') + '</span>' +
       '</div>' +
       '</div>' +
       '</div>'
@@ -423,7 +430,7 @@
   let multiSSE = null;
   let chatTaskId = null;
   let selectedSkill = null;
-  let skillsList = [];
+  let skillsList = []; // populated from packages for chat skill picker
   let chatCards = {};
   let currentSessionId = null;
 
@@ -934,7 +941,7 @@
     if (!e.data) return;
     if (e.data.type === 'card-embed-ready') {
       // Find the iframe that sent this message and send it the card data
-      document.querySelectorAll('.chat-card-iframe').forEach(function(iframe) {
+      document.querySelectorAll('.chat-card-iframe, .tpl-thumb-iframe').forEach(function(iframe) {
         if (iframe.contentWindow === e.source && iframe.dataset.card) {
           try {
             const card = JSON.parse(iframe.dataset.card);
@@ -1375,9 +1382,9 @@
       '<div class="pkg-info-value">' + escapeHtml(m.description || 'No description') + '</div></div>';
 
     // Instruction
-    if (pkg.skillPrompt) {
+    if (pkg.instructionPrompt) {
       html += '<div class="pkg-info-section"><div class="pkg-info-label">Instruction Prompt</div>' +
-        '<div class="pkg-info-code">' + escapeHtml(pkg.skillPrompt.slice(0, 2000)) + '</div></div>';
+        '<div class="pkg-info-code">' + escapeHtml(pkg.instructionPrompt.slice(0, 2000)) + '</div></div>';
     }
 
     // Templates
@@ -1597,13 +1604,13 @@
   // ══════════════════════════════════════════════════════════════
 
   let skillsTabList = [];
-  let selectedSkillSlug = null;
+  let selectedSkillName = null;
 
   async function loadSkillsList() {
     try {
-      const res = await fetch('/api/dashboard/skills');
+      const res = await fetch('/api/dashboard/native-skills');
       const data = await res.json();
-      skillsTabList = data.skills || [];
+      skillsTabList = data.tools || [];
       renderSkillsTabList();
     } catch (err) {
       $('skill-list').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
@@ -1616,117 +1623,68 @@
     if (filter) {
       const q = filter.toLowerCase();
       filtered = skillsTabList.filter(s =>
-        s.name.toLowerCase().includes(q) || s.slug.toLowerCase().includes(q)
+        s.name.toLowerCase().includes(q) || (s.category || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q)
       );
     }
     if (filtered.length === 0) {
-      container.innerHTML = '<div class="loading">No skills found</div>';
+      container.innerHTML = '<div class="loading">No native skills found</div>';
       return;
     }
-    container.innerHTML = filtered.map(s =>
-      '<div class="pkg-item' + (selectedSkillSlug === s.slug ? ' active' : '') + '" data-slug="' + escapeHtml(s.slug) + '">' +
-      '<span class="pkg-item-icon">' + (s.icon || '⚙️') + '</span>' +
-      '<div class="pkg-item-info">' +
-      '<div class="pkg-item-name">' + escapeHtml(s.name) + '</div>' +
-      '<div class="pkg-item-desc">' + escapeHtml(s.description || '') + '</div>' +
-      '<div class="pkg-item-meta">' +
-      '<span class="badge badge-blue">' + escapeHtml(s.category || '-') + '</span>' +
-      (s.version ? ' <span class="badge badge-green">v' + escapeHtml(s.version) + '</span>' : '') +
-      '</div></div></div>'
-    ).join('');
+
+    // Group by category
+    const groups = {};
+    for (const tool of filtered) {
+      const cat = tool.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(tool);
+    }
+
+    let html = '';
+    for (const [cat, tools] of Object.entries(groups)) {
+      html += '<div class="skill-category-label">' + escapeHtml(cat) + '</div>';
+      html += tools.map(t =>
+        '<div class="pkg-item' + (selectedSkillName === t.name ? ' active' : '') + '" data-name="' + escapeHtml(t.name) + '">' +
+        '<span class="pkg-item-icon">' + (t.icon || '⚙️') + '</span>' +
+        '<div class="pkg-item-info">' +
+        '<div class="pkg-item-name">' + escapeHtml(t.name) + '</div>' +
+        '<div class="pkg-item-desc">' + escapeHtml(t.description || '') + '</div>' +
+        '</div></div>'
+      ).join('');
+    }
+    container.innerHTML = html;
 
     container.querySelectorAll('.pkg-item').forEach(item => {
-      item.addEventListener('click', () => selectSkillTab(item.dataset.slug));
+      item.addEventListener('click', () => selectSkillTab(item.dataset.name));
     });
   }
 
   $('skill-filter-input').addEventListener('input', (e) => renderSkillsTabList(e.target.value));
   $('skill-refresh-btn').addEventListener('click', loadSkillsList);
 
-  function selectSkillTab(slug) {
-    selectedSkillSlug = slug;
+  function selectSkillTab(name) {
+    selectedSkillName = name;
     renderSkillsTabList($('skill-filter-input').value);
-    const skill = skillsTabList.find(s => s.slug === slug);
-    if (!skill) return;
-    renderSkillDetail(skill);
+    const tool = skillsTabList.find(t => t.name === name);
+    if (!tool) return;
+    renderSkillDetail(tool);
   }
 
-  function renderSkillDetail(skill) {
+  function renderSkillDetail(tool) {
     const main = $('skill-main');
-    let html = '<div class="skill-detail">' +
+    main.innerHTML = '<div class="skill-detail">' +
       '<div class="skill-detail-header">' +
-      '<span style="font-size:32px">' + (skill.icon || '⚙️') + '</span>' +
+      '<span style="font-size:32px">' + (tool.icon || '⚙️') + '</span>' +
       '<div>' +
-      '<h3>' + escapeHtml(skill.name) + '</h3>' +
+      '<h3>' + escapeHtml(tool.name) + '</h3>' +
       '<div style="margin-top:4px">' +
-      '<code style="font-size:11px;color:var(--text-dim)">' + escapeHtml(skill.slug) + '</code> ' +
-      '<span class="badge badge-blue">' + escapeHtml(skill.category || '-') + '</span> ' +
-      (skill.version ? '<span class="badge badge-green">v' + escapeHtml(skill.version) + '</span>' : '') +
-      '</div></div></div>';
-
-    // Description
-    html += '<div class="skill-section"><div class="skill-section-title">Description</div>' +
-      '<div class="skill-section-body">' + escapeHtml(skill.description || 'No description') + '</div></div>';
-
-    // Model
-    if (skill.model) {
-      html += '<div class="skill-section"><div class="skill-section-title">Model</div>' +
-        '<div class="skill-section-body"><code>' + escapeHtml(skill.model) + '</code></div></div>';
-    }
-
-    // Requirements
-    if (skill.requirements) {
-      html += '<div class="skill-section"><div class="skill-section-title">Requirements</div><div class="skill-section-body">';
-      if (skill.requirements.oauth) html += '<div><strong>OAuth:</strong> ' + skill.requirements.oauth.map(o => '<span class="badge badge-purple">' + escapeHtml(o) + '</span>').join(' ') + '</div>';
-      if (skill.requirements.tools) html += '<div style="margin-top:4px"><strong>Tools:</strong> ' + skill.requirements.tools.map(t => '<code>' + escapeHtml(t) + '</code>').join(', ') + '</div>';
-      if (skill.requirements.input_types) html += '<div style="margin-top:4px"><strong>Input Types:</strong> ' + skill.requirements.input_types.join(', ') + '</div>';
-      html += '</div></div>';
-    }
-
-    // Thinking
-    if (skill.thinking) {
-      html += '<div class="skill-section"><div class="skill-section-title">Thinking Steps</div><div class="skill-section-body">';
-      if (skill.thinking.title) html += '<div><strong>Title:</strong> ' + escapeHtml(skill.thinking.title) + '</div>';
-      if (skill.thinking.steps) {
-        html += skill.thinking.steps.map(s =>
-          '<div style="margin-top:4px;padding:6px 8px;background:var(--bg);border-radius:6px">' +
-          '<strong>' + escapeHtml(s.label) + '</strong>' +
-          (s.content ? '<div style="color:var(--text-dim);font-size:12px;margin-top:2px">' + escapeHtml(s.content) + '</div>' : '') +
-          '</div>'
-        ).join('');
-      }
-      html += '</div></div>';
-    }
-
-    // Output
-    if (skill.output) {
-      html += '<div class="skill-section"><div class="skill-section-title">Output</div><div class="skill-section-body">';
-      if (skill.output.template) html += '<div><strong>Template:</strong> <code>' + escapeHtml(skill.output.template) + '</code></div>';
-      if (skill.output.auto_publish !== undefined) html += '<div><strong>Auto-publish:</strong> ' + (skill.output.auto_publish ? 'Yes' : 'No') + '</div>';
-      html += '</div></div>';
-    }
-
-    // UI
-    if (skill.ui) {
-      html += '<div class="skill-section"><div class="skill-section-title">UI Config</div><div class="skill-section-body">';
-      if (skill.ui.card_color) html += '<div><strong>Card Color:</strong> <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:' + escapeHtml(skill.ui.card_color) + ';vertical-align:middle"></span> ' + escapeHtml(skill.ui.card_color) + '</div>';
-      if (skill.ui.preview_template) html += '<div><strong>Preview Template:</strong> <code>' + escapeHtml(skill.ui.preview_template) + '</code></div>';
-      html += '</div></div>';
-    }
-
-    // Tags
-    if (skill.tags && skill.tags.length > 0) {
-      html += '<div class="skill-section"><div class="skill-section-title">Tags</div><div class="skill-section-body">' +
-        skill.tags.map(t => '<span class="badge badge-blue" style="margin-right:4px">' + escapeHtml(t) + '</span>').join('') +
-        '</div></div>';
-    }
-
-    // Full manifest
-    html += '<div class="skill-section"><div class="skill-section-title">Manifest (JSON)</div>' +
-      '<div class="json-view">' + escapeHtml(JSON.stringify(skill, null, 2)) + '</div></div>';
-
-    html += '</div>';
-    main.innerHTML = html;
+      '<span class="badge badge-blue">' + escapeHtml(tool.category || '-') + '</span> ' +
+      '<span class="badge badge-green">native</span>' +
+      '</div></div></div>' +
+      '<div class="skill-section"><div class="skill-section-title">Description</div>' +
+      '<div class="skill-section-body">' + escapeHtml(tool.description || 'No description') + '</div></div>' +
+      '<div class="skill-section"><div class="skill-section-title">Type</div>' +
+      '<div class="skill-section-body">Built-in NanoClaw tool — available to all experience packages during execution.</div></div>' +
+      '</div>';
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -1747,33 +1705,75 @@
     }
   }
 
+  // Sample data generators for template thumbnails
+  function generateSampleData(tpl) {
+    var id = tpl.$id || '';
+    var slots = tpl.slots || {};
+    var data = {};
+
+    // Template-specific sample data for good previews
+    var samples = {
+      'nutrition-card': { food_name: 'Grilled Salmon', calories: 367, protein_g: 34, carbs_g: 0, fat_g: 22, serving_size: '6 oz fillet', health_score: 9, recommendation: 'Excellent protein source' },
+      'shopping-list': { title: 'Grocery List', categories: [{ name: 'Produce', items: ['Avocados', 'Spinach', 'Tomatoes'] }, { name: 'Dairy', items: ['Greek Yogurt', 'Milk'] }] },
+      'comparison-table': { title: 'Phone Comparison', items: [{ name: 'iPhone 16', pros: ['Great camera', 'Smooth UI'], cons: ['Expensive'] }, { name: 'Pixel 9', pros: ['Best AI', 'Clean Android'], cons: ['Less apps'] }] },
+      'hero-image': { title: 'Mountain Sunset', description: 'A beautiful sunset over the Rocky Mountains with golden light filtering through clouds.' },
+      'image-analysis': { title: 'Scene Analysis', description: 'A bustling city street with pedestrians and colorful storefronts.', detected_objects: [{ label: 'Person', confidence: 0.95 }, { label: 'Car', confidence: 0.88 }], tags: ['urban', 'street', 'daytime'] },
+      'calendar-event': { title: 'Team Standup', date: '2025-03-15', time: '10:00 AM', location: 'Zoom', description: 'Daily team sync meeting' },
+      'map-pins': { title: 'Nearby Coffee Shops', pins: [{ name: 'Blue Bottle', lat: 37.78, lng: -122.41 }, { name: 'Stumptown', lat: 37.77, lng: -122.42 }] },
+      'quiz': { title: 'Quick Quiz', questions: [{ question: 'What is the capital of France?', options: ['London', 'Paris', 'Berlin', 'Madrid'], answer: 1 }] },
+      'conversation': { title: 'Chat Log', messages: [{ role: 'user', content: 'Hello!' }, { role: 'assistant', content: 'Hi there!' }] },
+      'thinking-process': { title: 'Analyzing...', steps: [{ label: 'Reading input', status: 'done' }, { label: 'Processing', status: 'active' }] },
+    };
+
+    if (samples[id]) return samples[id];
+
+    // Generic fallback: generate from slots
+    for (var name in slots) {
+      var slot = slots[name];
+      if (slot.type === 'string') data[name] = 'Sample ' + name;
+      else if (slot.type === 'number') data[name] = 42;
+      else if (slot.type === 'boolean') data[name] = true;
+      else if (slot.type === 'array') data[name] = ['Item 1', 'Item 2'];
+      else data[name] = null;
+    }
+    return data;
+  }
+
   function renderTemplatesTabList(filter) {
     const container = $('tpl-list');
     let filtered = templatesTabList;
     if (filter) {
       const q = filter.toLowerCase();
       filtered = templatesTabList.filter(t =>
-        (t.$id || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q)
+        (t.$id || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q) ||
+        (t.category || '').toLowerCase().includes(q)
       );
     }
     if (filtered.length === 0) {
       container.innerHTML = '<div class="loading">No templates found</div>';
       return;
     }
-    container.innerHTML = filtered.map(t =>
-      '<div class="pkg-item' + (selectedTemplateId === t.$id ? ' active' : '') + '" data-id="' + escapeHtml(t.$id) + '">' +
-      '<span class="pkg-item-icon">' + (t.renderer === 'html' ? '🌐' : '⚛️') + '</span>' +
-      '<div class="pkg-item-info">' +
-      '<div class="pkg-item-name">' + escapeHtml(t.$id) + '</div>' +
-      '<div class="pkg-item-desc">' + escapeHtml(t.description || '') + '</div>' +
-      '<div class="pkg-item-meta">' +
-      '<span class="badge badge-blue">' + escapeHtml(t.category || '-') + '</span>' +
-      (t.streamable ? ' <span class="badge badge-green">streamable</span>' : '') +
-      (t.source ? ' <span class="badge badge-purple" style="font-size:9px">' + escapeHtml(t.source) + '</span>' : '') +
-      '</div></div></div>'
-    ).join('');
 
-    container.querySelectorAll('.pkg-item').forEach(item => {
+    // Render as thumbnail gallery grid
+    container.innerHTML = '<div class="tpl-gallery">' + filtered.map(t => {
+      var iframeId = 'tpl-thumb-' + (t.$id || '').replace(/[^a-z0-9]/gi, '-');
+      var sampleData = generateSampleData(t);
+      var card = { cardId: 'thumb-' + t.$id, template: t.$id, data: sampleData, status: 'finalized' };
+      return '<div class="tpl-thumb' + (selectedTemplateId === t.$id ? ' active' : '') + '" data-id="' + escapeHtml(t.$id) + '">' +
+        '<div class="tpl-thumb-preview">' +
+        '<iframe id="' + iframeId + '" class="tpl-thumb-iframe" src="/card-embed.html" ' +
+        'data-card="' + escapeHtml(JSON.stringify(card)) + '" ' +
+        'scrolling="no"></iframe>' +
+        '</div>' +
+        '<div class="tpl-thumb-info">' +
+        '<div class="tpl-thumb-name">' + escapeHtml(t.$id) + '</div>' +
+        '<div class="tpl-thumb-meta">' +
+        '<span class="badge badge-blue" style="font-size:9px">' + escapeHtml(t.category || '-') + '</span>' +
+        (t.streamable ? ' <span class="badge badge-green" style="font-size:9px">stream</span>' : '') +
+        '</div></div></div>';
+    }).join('') + '</div>';
+
+    container.querySelectorAll('.tpl-thumb').forEach(item => {
       item.addEventListener('click', () => selectTemplateTab(item.dataset.id));
     });
   }
