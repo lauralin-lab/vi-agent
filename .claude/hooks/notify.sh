@@ -104,10 +104,14 @@ case "$HOOK_EVENT" in
 esac
 
 # ── macOS notification banner ──
-ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
-ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
-
-osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
+# Use terminal-notifier (click → activates iTerm2) with osascript fallback
+if command -v terminal-notifier &>/dev/null; then
+  terminal-notifier -title "$PROJECT" -message "$SUMMARY" -activate com.googlecode.iterm2
+else
+  ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
+  ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
+  osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
+fi
 
 # ── Play bundled sound — only for events requiring user intervention ──
 if [ "$NEEDS_VOICE" = "true" ] && [ -f "$SOUND_FILE" ]; then

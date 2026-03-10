@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "3.7.1"
+version: "3.8.0"
 ---
 
 # /team — Init + Dashboard (Teamwork v3)
@@ -56,9 +56,9 @@ Read `skill_version` from config for the header:
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=""
 if [ -n "$TEAMWORK_DIR" ]; then
-  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.7.1" 2>/dev/null)
+  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.0" 2>/dev/null)
 else
-  SKILL_VERSION="3.7.1"
+  SKILL_VERSION="3.8.0"
 fi
 ```
 
@@ -134,9 +134,9 @@ Read `skill_version` from config for the header:
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=""
 if [ -n "$TEAMWORK_DIR" ]; then
-  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.7.1" 2>/dev/null)
+  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.0" 2>/dev/null)
 else
-  SKILL_VERSION="3.7.1"
+  SKILL_VERSION="3.8.0"
 fi
 ```
 
@@ -401,9 +401,10 @@ Two layers of config — shared team settings vs personal preferences.
   ┌──────────────────────────────────────────────────────┐
   │ git config --local teamwork.worktree true/false      │
   │ Terminal tab title hook (~/.zshrc or equivalent)     │
+  │ Desktop notification hook (~/.claude/notify.sh)     │
   │                                                      │
   │ Stored locally — each member configures once         │
-  │ /team init asks worktree + tab title preferences     │
+  │ /team init asks worktree + tab title + notification  │
   └──────────────────────────────────────────────────────┘
 ```
 
@@ -414,7 +415,7 @@ Two layers of config — shared team settings vs personal preferences.
     `/team config`          View current config + how to edit
     `/team init`            Re-run setup (merge mode: preserves existing,
                             upgrades version, adds missing sections,
-                            asks worktree + tab title preferences)
+                            asks worktree + tab title + notification)
 
   Edit `config.yml` directly — changes take effect immediately.
   No re-init needed for day-to-day config changes.
@@ -916,8 +917,8 @@ Preserve all existing content. Only update `skill_version` and append missing to
 
 ```bash
 # Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 3.7.1/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.7.1/" $TEAMWORK_DIR/config.yml
+sed -i '' "s/^skill_version:.*/skill_version: 3.8.0/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.8.0/" $TEAMWORK_DIR/config.yml
 
 # Update schema_version if present
 if grep -q "^schema_version:" $TEAMWORK_DIR/config.yml; then
@@ -1215,6 +1216,171 @@ If `CONFIGURED` → skip silently.
 
 **Note:** Tab colors use iTerm2 proprietary escape sequences (`\e]6;1;bg;...`). On non-iTerm2 terminals, the color sequences are silently ignored — the tab title still works.
 
+**Step 5c — Desktop notifications (macOS, one-time, per-user):**
+
+Claude Code can send macOS desktop notifications when it needs your attention (permission prompts, questions, task complete). Clicking the notification activates your terminal app.
+
+```bash
+# Check if notify.sh hook already exists
+ls ~/.claude/notify.sh 2>/dev/null && echo "CONFIGURED" || echo "NOT_CONFIGURED"
+```
+
+If `CONFIGURED` → skip silently.
+
+If `NOT_CONFIGURED`, use `AskUserQuestion`:
+
+```
+question: "Claude Code 可以在需要你操作时弹出 macOS 桌面通知（如权限确认、提问、任务完成），这样你可以切到别的窗口干活，不用盯着终端。是否配置？"
+options:
+  - label: "配置（推荐）"
+    description: "安装通知 hook — 点击通知直接跳回终端窗口"
+  - label: "跳过"
+    description: "以后可以手动配置"
+```
+
+If user selects "配置":
+
+**Part A — Check terminal-notifier (optional fallback, improves non-iTerm2 experience):**
+
+The notify hook uses iTerm2 bell as primary notification method — clicking jumps to the exact tab. For non-iTerm2 terminals, `terminal-notifier` is the best fallback (clicking activates the terminal window). Without either, falls back to `osascript` (clicking opens Script Editor).
+
+```bash
+command -v terminal-notifier &>/dev/null && echo "INSTALLED" || echo "NOT_INSTALLED"
+```
+
+If `NOT_INSTALLED`, output:
+
+```
+💡 推荐安装 `terminal-notifier`（点击通知直接跳回 iTerm2，而非打开脚本编辑器）：
+   `brew install terminal-notifier`
+   跳过也可以 — 通知功能正常，只是点击行为不同。
+```
+
+Do NOT block on this — proceed regardless. The notify.sh script handles both cases automatically.
+
+**Part B — Write `~/.claude/notify.sh`:**
+
+```bash
+cat > ~/.claude/notify.sh << 'NOTIFEOF'
+#!/bin/bash
+# Claude Code notification — macOS banner + optional sound
+# Skips subagent notifications.
+
+INPUT=$(cat)
+
+extract() {
+  echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$1',''))" 2>/dev/null
+}
+
+HOOK_EVENT=$(extract hook_event_name)
+MESSAGE=$(extract message)
+NOTIF_TYPE=$(extract notification_type)
+CWD=$(extract cwd)
+
+# ── Skip subagent events ──
+IS_SUBAGENT=$(extract is_subagent)
+SESSION_TYPE=$(extract session_type)
+SUBAGENT_ID=$(extract subagent_id)
+
+if [ "$IS_SUBAGENT" = "True" ] || [ "$IS_SUBAGENT" = "true" ]; then exit 0; fi
+if [ "$SESSION_TYPE" = "subagent" ] || [ "$SESSION_TYPE" = "task" ]; then exit 0; fi
+if [ -n "$SUBAGENT_ID" ] && [ "$SUBAGENT_ID" != "None" ] && [ "$SUBAGENT_ID" != "" ]; then exit 0; fi
+
+# ── Project name ──
+PROJECT=$(basename "$CWD" 2>/dev/null)
+
+# ── Extract event-specific fields ──
+LAST_MSG=$(extract last_assistant_message)
+TEAMMATE_NAME=$(extract teammate_name)
+
+short() { echo "$1" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | head -c 100; }
+
+SUMMARY=""
+case "$HOOK_EVENT" in
+  Notification)
+    case "$NOTIF_TYPE" in
+      permission_prompt) SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Permission required" ;;
+      elicitation_dialog) SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Question for you" ;;
+      idle_prompt) SUMMARY="Waiting for input" ;;
+      auth_success) SUMMARY="Authentication successful" ;;
+      *) SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Needs attention" ;;
+    esac ;;
+  Stop)
+    SUMMARY=$(short "$LAST_MSG"); [ -z "$SUMMARY" ] && SUMMARY="Task complete" ;;
+  TeammateIdle)
+    if [ -n "$TEAMMATE_NAME" ] && [ "$TEAMMATE_NAME" != "None" ]; then
+      SUMMARY="Teammate ${TEAMMATE_NAME} is idle"
+    else SUMMARY="Teammate idle"; fi ;;
+  *) SUMMARY="Needs attention" ;;
+esac
+
+# ── macOS notification ──
+# Primary: iTerm2 bell → notification with session name, click jumps to exact tab
+# Fallback: terminal-notifier → click activates iTerm2 window (can't target tab)
+# Fallback 2: osascript → click opens Script Editor (worst UX)
+SESSION_TTY=$(ps -p $PPID -o tty= 2>/dev/null | tr -d ' ')
+if [ -n "$SESSION_TTY" ] && [ -w "/dev/$SESSION_TTY" ]; then
+  printf '\a' > /dev/$SESSION_TTY
+elif command -v terminal-notifier &>/dev/null; then
+  terminal-notifier -title "$PROJECT" -message "$SUMMARY" -activate com.googlecode.iterm2
+else
+  ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
+  ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
+  osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
+fi
+
+exit 0
+NOTIFEOF
+chmod +x ~/.claude/notify.sh
+```
+
+**Part C — Register hooks in `~/.claude/settings.json`:**
+
+```bash
+python3 -c "
+import json, os
+p = os.path.expanduser('~/.claude/settings.json')
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except (json.JSONDecodeError, ValueError):
+    d = {}
+if not isinstance(d.get('hooks'), dict):
+    d['hooks'] = {}
+hook_entry = [{'matcher': '', 'hooks': [{'type': 'command', 'command': '~/.claude/notify.sh'}]}]
+changed = False
+for event in ['Notification', 'Stop', 'TeammateIdle']:
+    if event not in d['hooks']:
+        d['hooks'][event] = hook_entry
+        changed = True
+    else:
+        # Check if notify.sh is already registered
+        has_notify = any(
+            h.get('command', '').endswith('notify.sh')
+            for rule in d['hooks'][event]
+            for h in rule.get('hooks', [])
+        )
+        if not has_notify:
+            d['hooks'][event].extend(hook_entry)
+            changed = True
+if changed:
+    json.dump(d, open(p, 'w'), indent=2)
+    print('registered')
+else:
+    print('already_registered')
+"
+```
+
+**Part D — Output:**
+
+```
+✅ 桌面通知已配置
+   Hook: `~/.claude/notify.sh`
+   Events: Notification, Stop, TeammateIdle
+   iTerm2: 点击通知 → 跳到对应 tab
+   其他终端: {If terminal-notifier:} 点击 → 激活终端窗口 {else:} 建议 `brew install terminal-notifier`
+```
+
 **Step 6 — Handle missing sections with safe defaults:**
 
 For `quality:` section, if missing, use safe defaults instead of referencing Step 3 variables (which are skipped in merge mode):
@@ -1238,7 +1404,7 @@ fi
 Read `SKILL_VERSION` from the config file AFTER the sed update in Step 1 (to get the updated value):
 
 ```bash
-SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.7.1" 2>/dev/null)
+SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.0" 2>/dev/null)
 WORKTREE_STATUS=$(git config --local teamwork.worktree 2>/dev/null || echo "not set")
 ```
 
@@ -1264,7 +1430,7 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 3
-skill_version: 3.7.1
+skill_version: 3.8.0
 
 roles:
   - id: leader

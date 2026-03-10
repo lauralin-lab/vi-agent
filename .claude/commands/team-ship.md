@@ -1,6 +1,6 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "3.7.1"
+version: "3.8.0"
 ---
 
 # /team-ship — Deliver Mission
@@ -326,7 +326,13 @@ Closes #{issue}
 - [ ] {manual task description}
 
 ## Acceptance Criteria
-{criteria from Contract}
+{criteria from Contract — see FILTER RULE below}
+
+**FILTER RULE**: When copying criteria from Contract to PR body, **drop any criterion
+whose completion requires the PR itself to be merged or CI to pass on the PR**.
+These are delivery-mechanism criteria (e.g. "PR 合入 xxx", "CI 通过", "PR merged"),
+valid in the Issue but self-referential in a PR. Only include criteria about the
+actual work product (code changes, behavior, test results).
 
 ## Test
 {test command} — passing ✅

@@ -22,31 +22,20 @@ if [[ -z "$REPO" ]]; then
   exit 1
 fi
 
-# Read label prefixes and mc_label from config (prefer tw-config.sh if available)
+# Read label prefixes and mc_label from config via resolve-labels
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TW_CONFIG="$SCRIPT_DIR/tw-config.sh"
+
 STATUS_PREFIX="status:"
 PRIORITY_PREFIX="priority:"
 MC_LABEL="mission"
 
-TW_CONFIG="$HOME/.claude/commands/scripts/tw-config.sh"
 if [[ -x "$TW_CONFIG" ]] || [[ -f "$TW_CONFIG" ]]; then
-  _S=$(bash "$TW_CONFIG" label_prefix.status "" 2>/dev/null)
-  _P=$(bash "$TW_CONFIG" label_prefix.priority "" 2>/dev/null)
-  _M=$(bash "$TW_CONFIG" github.mc_label "" 2>/dev/null)
-  [[ -z "$_M" ]] && _M=$(bash "$TW_CONFIG" mc_label "" 2>/dev/null)
-  [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
-  [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
-  [[ -n "$_M" ]] && MC_LABEL="$_M"
+  eval "$(bash "$TW_CONFIG" resolve-labels 2>/dev/null)"
+  # MISSION_LABEL, STATUS_PREFIX, PRIORITY_PREFIX now set
+  [[ -n "$MISSION_LABEL" ]] && MC_LABEL="$MISSION_LABEL"
 else
-  # Fallback: grep from config files directly
-  for CONF in .teamwork/config.yml .teamspace/config.yml; do
-    if [[ -f "$CONF" ]]; then
-      _S=$(grep -v '^\s*#' "$CONF" | grep '^\s*status:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
-      _P=$(grep -v '^\s*#' "$CONF" | grep '^\s*priority:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' 2>/dev/null || true)
-      [[ -n "$_S" ]] && STATUS_PREFIX="$_S"
-      [[ -n "$_P" ]] && PRIORITY_PREFIX="$_P"
-      break
-    fi
-  done
+  MISSION_LABEL=""
 fi
 
 echo "Creating teamwork labels for $REPO"
