@@ -1,0 +1,18 @@
+# Teamwork Tips Pool
+# One tip per line. Skills randomly pick one to display after output.
+# Lines starting with # are comments and should be skipped.
+/team auto #N — 一键完成 claim→drive→ship，适合小任务快速交付
+/team wrap — 已经写完代码了？用 wrap 反向补齐 issue + PR 流程
+/team doctor — 检查本地 branch 健康状态，发现孤儿分支、过期 stash 等问题
+/team-issue fix #N — 把已有的 GitHub Issue 纳入 teamwork 管理
+/team-issue batch V0.2 -- ... — 批量创建 milestone + 多个 Issue
+/team-ship review — 让 AI 对当前 PR 做代码审查（安全/架构/质量）
+/team-ship sync — 在 base branch 上 rebase，保持分支最新
+/team-issue update #N — AI 辅助编辑已有 Issue 内容
+/team-issue #N <文字> — 快速给 Issue 添加评论，不用打开浏览器
+/team queue — 按优先级查看所有待办 mission，找到下一个要做的事
+/team #42 — 快速查看任意 mission 的详情（branch、PR、进度）
+/team config — 查看和编辑 teamwork 配置（测试命令、通知、quality gates）
+/team learn — 11 节可视化指南，理解 teamwork 的设计哲学
+worktree 模式：git config --local teamwork.worktree true — 每个 mission 独立目录，并行开发不冲突
+/team-rc promote — 将 staging 验证通过的 RC 发布到 production（squash merge + tag + Release）

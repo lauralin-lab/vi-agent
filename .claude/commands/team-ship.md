@@ -1,11 +1,14 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "3.0.0"
+version: "3.7.1"
 ---
 
 # /team-ship — Deliver Mission
 
 > Push your branch, create a PR that auto-closes the Issue, optionally watch CI, and clean up the local Contract.
+
+**Visual Encoding** (apply to ALL output — see `docs/visual-encoding-standard.md`):
+`**bold**` → headers/labels (white) · `` `backtick` `` → commands/paths/counts (purple-blue) · `*italic*` → branches (dim) · `**#NNN**` → issues (light-blue clickable, 3+ digits) · `────` dividers · ⛔ NO code blocks around output
 
 **User input**: $ARGUMENTS
 
@@ -29,26 +32,26 @@ version: "3.0.0"
 Parse `$ARGUMENTS`:
 - If `help` or `-h` → output the following and **STOP**:
 
-```
-/team-ship — Deliver your mission
+**`/team-ship` — Deliver your mission**
 
-USAGE:
-  /team-ship            Push + create PR + CI check + cleanup
-  /team-ship done       After PR merge: close Issue, update labels, clean worktree
-  /team-ship review     AI review current PR (correctness/security/architecture/quality)
-  /team-ship sync       Rebase current branch on latest base branch
+**USAGE**
+  `/team-ship`            Push + create PR + CI check + cleanup
+  `/team-ship done`       After PR merge: close Issue, update labels, clean worktree
+  `/team-ship review`     AI review current PR (correctness/security/architecture/quality)
+  `/team-ship sync`       Rebase current branch on latest base branch
 
-SHIP FLOW:
-  1. Pre-flight: verify branch, sub-tasks done, tests pass
+**SHIP FLOW**
+  1. Pre-flight: verify branch, code sub-tasks done, tests pass
+     (🔧 MANUAL tasks don't block — they're listed in PR description)
   2. Push branch to GitHub
-  3. Create PR with "Closes #N" (auto-closes Issue on merge)
+  3. Create PR with `Closes #N` (auto-closes Issue on merge)
+     If manual tasks exist: adds "Manual Steps (post-merge)" checklist
   4. Watch CI (if configured)
   5. Request review (if configured)
-  6. Clean up local Contract, label Issue status:review
+  6. Clean up local Contract, label Issue `status:review`
 
-AFTER MERGE:
-  /team-ship done closes the Issue, labels status:done, returns to base branch.
-```
+**AFTER MERGE**
+  `/team-ship done` closes the Issue, labels `status:done`, returns to base branch.
 
 - If `done help` → jump to **Operation Done Help**
 - If `done` → jump to **Operation Done**
@@ -63,10 +66,19 @@ AFTER MERGE:
 ## Step 0: Prerequisites
 
 ```bash
+# Branch safety: never ship from protected branches
+CURRENT=$(git branch --show-current)
+bash ~/.claude/commands/scripts/tw-git.sh protect-check 2>/dev/null || {
+  echo "ERROR: You're on a protected branch ($CURRENT). Switch to a mission branch first."
+  # STOP
+}
+```
+
+```bash
 # Identity
 GH_USER=$(gh api user --jq '.login' 2>/dev/null)
 if [ -z "$GH_USER" ]; then
-  echo "ERROR: Cannot get GitHub user identity. Run 'gh auth login' first."
+  echo "**ERROR:** Cannot get GitHub user identity. Run 'gh auth login' first."
   exit 1
 fi
 ```
@@ -79,6 +91,7 @@ TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/nu
 ```
 
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 Read `$TEAMWORK_DIR/config.yml` → extract project settings, conventions, quality preferences.
 
@@ -101,9 +114,11 @@ ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
 ```
 
 - If no Contract found AND no `.mission` file → "No active mission. Nothing to ship." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - If no Contract but `.mission` exists → use Issue number from `.mission` to locate Contract or fetch Issue directly.
 - **Worktree fallback**: If in worktree mode and Contract not found locally, check the main repo's `$TEAMWORK_DIR/active/` directory (parent of worktree path).
 - If multiple Contracts found → "Multiple active contracts found. Keep one, remove the rest." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 Read the Contract file fully. Extract from YAML frontmatter:
 - `issue` number
@@ -116,6 +131,43 @@ Extract from body:
 - **Sub-tasks** (with checkbox status)
 - **Acceptance Criteria**
 - **AI Notes**
+
+---
+
+## Step 1b: Worktree Guard
+
+If NOT in worktree mode (`WORKTREE_MODE` is not true), check whether the user SHOULD be in a worktree:
+
+```bash
+WORKTREE_ENABLED=$(git config --local teamwork.worktree 2>/dev/null || echo "false")
+```
+
+If `WORKTREE_ENABLED` is `true` AND `WORKTREE_MODE` is not true (no `.mission` file):
+
+The user has worktree mode enabled but is running `/team-ship` from the main repo. This can ship the wrong code or mix changes from different missions.
+
+Find the correct worktree path for this Contract's branch:
+
+```bash
+git worktree list --porcelain | grep -B2 "branch refs/heads/${CONTRACT_BRANCH}" | head -1 | sed 's/worktree //'
+```
+
+If a worktree path is found:
+**⚠️ WORKTREE MISMATCH**
+Worktree mode is enabled but you're in the main repo.
+Your mission worktree: `{worktree_path}`
+
+Switch to it:  `cd {worktree_path}`
+Then re-run:   `/team-ship`
+→ **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+If no worktree exists for this branch:
+⚠️ Worktree mode is enabled but no worktree exists for branch *{branch}*.
+Run `/team-claim` **#{issue}** to recreate with worktree isolation.
+Or disable worktree mode: `git config --local teamwork.worktree false`
+→ **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ---
 
@@ -161,16 +213,22 @@ else
 fi
 ```
 
-- If `BEHIND_BASE` > 30 → 🔴 "Branch is {N} commits behind base. Rebase before shipping to avoid painful merge conflicts. Run `/team-ship sync` first." → **STOP**
-- If `BEHIND_BASE` > 10 → 🟡 "Branch is {N} commits behind base. Consider running `/team-ship sync` before shipping."
-- If `BEHIND_REMOTE` > 0 → 🟡 "Local branch is behind remote by {N} commits. Run `git pull --rebase` to sync before pushing."
+- If `BEHIND_BASE` > 30 → 🔴 "Branch is `{N}` commits behind base. Run `/team-ship sync` to rebase (conflicts will be auto-resolved)." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+- If `BEHIND_BASE` > 10 → 🟡 "Branch is `{N}` commits behind base. Consider `/team-ship sync` to rebase before shipping."
+- If `BEHIND_REMOTE` > 0 → 🟡 "Local branch is behind remote by `{N}` commits. Run `/team-ship sync` to sync before pushing."
 
 ### 2b: Verify all sub-tasks complete
 
 Check the Contract's sub-tasks section. Count `- [x]` vs `- [ ]`.
-- If any unchecked sub-tasks remain → display them and say:
-  "Not all sub-tasks are complete. Finish them with `/team-drive` first, or manually check them off in the Contract."
+
+Separate unchecked tasks into **code tasks** (no `🔧 MANUAL` or `(MANUAL)` tag) and **manual tasks** (tagged `🔧 MANUAL` or `(MANUAL)`).
+
+- If any unchecked **code** sub-tasks remain → display them and say:
+  "Not all code tasks are complete. Finish them with `/team-drive` first, or manually check them off in the Contract."
   → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+- If only **manual** sub-tasks are unchecked → proceed (these are human-action tasks, not blockers for the PR). Note them for inclusion in PR description.
 
 ### 2c: Clean working tree
 
@@ -213,6 +271,7 @@ fi
 ```
 
 - If any test command exits non-zero → "Tests are failing. Fix them before shipping. Run /team-drive to fix, then retry /team-ship." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ---
 
@@ -223,7 +282,8 @@ bash ~/.claude/commands/scripts/tw-git.sh push {branch}
 ```
 
 - If exit code 2 → push failed. Suggest `/team-ship sync` then retry push.
-- If push still fails → "Push failed. Resolve the issue manually." → **STOP**
+- If push still fails → "Push failed. Run `/team doctor` to diagnose." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ---
 
@@ -244,7 +304,7 @@ Display existing PR status:
 - CI status from PR statusCheckRollup
 - Review decision
 - Mergeable state
-Output: "PR #{number} already exists — CI: {status}, Review: {status}. Pushing will update it."
+Output: "PR **#{number}** already exists — CI: {status}, Review: {status}. Pushing will update it."
 
 ### 4b: Generate PR body
 
@@ -257,8 +317,13 @@ Closes #{issue}
 {objective from Contract}
 
 ## Changes
-{For each completed sub-task:}
+{For each completed code sub-task:}
 - {sub-task description}
+
+{If manual tasks exist, add:}
+## Manual Steps (post-merge)
+{For each manual sub-task:}
+- [ ] {manual task description}
 
 ## Acceptance Criteria
 {criteria from Contract}
@@ -367,7 +432,9 @@ bash ~/.claude/commands/scripts/tw-label.sh verify {issue} review
 - If verify fails (network) → "⚠ Could not verify labels. Assume update succeeded."
 - Non-blocking in all cases: continue to 7b.
 
-### 7b: Remove Contract
+### 7b: Remove Contract (conditional on CI status)
+
+If CI passed OR CI was not configured → delete the Contract:
 
 ```bash
 bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISSION-{issue}.md"
@@ -375,25 +442,29 @@ bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISS
 
 The Contract has served its purpose. The PR body now contains the essential information. If the PR is rejected and the mission needs to be reworked, re-run `/team-claim #{issue}` to regenerate a fresh Contract.
 
+If CI failed → keep the Contract:
+
+Contract preserved — run `/team-drive` to iterate on CI failures, then `/team-ship` again.
+
 ---
 
 ## Step 8: Output Delivery Summary
 
-```
-📦 SHIPPED ── #{issue} {title} ─────────────
-🔀 {branch}
+**📦 SHIPPED** ── **#{issue}** {title} ─────────────
+🔀 *{branch}*
 🔀 PR: {pr-url}
 {ci_icon} CI: {passing/failing/not configured}
 Review:    {requested from @{reviewer} / not required}
 Labels:    {actual current labels}
 
-📋 SUB-TASKS DELIVERED
+**📋 SUB-TASKS DELIVERED**
   ✅ {task 1}
   ✅ {task 2}
 
 ────────────────────────────────────────────
-/team-ship done (after merge) │ /team-ship review │ /team
-```
+`/team-ship done` (after merge) │ `/team-ship review` │ `/team`
+
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
 ---
 
@@ -410,6 +481,7 @@ Locate the Issue number from (in priority order):
 4. `$ARGUMENTS` — if user passes `done #42` or `done 42`
 
 If no Issue found → "Cannot determine Issue. Provide Issue number: `/team-ship done #42`" → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### D2: Verify PR is merged
 
@@ -419,6 +491,7 @@ bash ~/.claude/commands/scripts/tw-pr.sh verify-merged "$BRANCH"
 ```
 
 - If exit code 1 → "No merged PR found for branch `{branch}`. PR must be merged before running `done`." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### D3: Close Issue (fallback — usually handled by "Closes #N" in PR)
 
@@ -456,7 +529,7 @@ If `.mission` file exists (worktree mode):
   cd {original_repo_path}
   bash ~/.claude/commands/scripts/tw-git.sh worktree-remove "$WORKTREE_PATH"
   ```
-- If no: `cd {original_repo_path}` first (must leave worktree for D6), then warn "Worktree kept. Remove manually with `git worktree remove {path}`."
+- If no: `cd {original_repo_path}` first (must leave worktree for D6), then warn "Worktree kept. Run `/team doctor fix` later to clean up stale worktrees."
 
 ### D6: Return to base branch
 
@@ -479,27 +552,41 @@ bash ~/.claude/commands/scripts/tw-git.sh ensure-base || {
   fi
   # STOP
 }
+# Note: ensure-base already does checkout + pull, so base branch is up-to-date
+# (includes the just-merged PR squash commit)
 ```
 
 ### D7: Clean up Contract
 
+⚠️ Re-detect TEAMWORK_DIR here — the value from flow start may point to a removed worktree.
+
 ```bash
+# Re-detect after worktree removal + base branch switch
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null)
+TEAMWORK_DIR="${TEAMWORK_DIR:-.teamwork}"
+
 bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISSION-{issue}.md"
+
+# Fallback: if file still exists (path mismatch), find and delete
+if ls .teamwork/active/MISSION-{issue}.md .teamspace/active/MISSION-{issue}.md 2>/dev/null; then
+  rm -f .teamwork/active/MISSION-{issue}.md .teamspace/active/MISSION-{issue}.md 2>/dev/null
+  echo "Contract cleaned up via fallback path"
+fi
 ```
 
 ### D8: Output summary
 
-```
-🏁 DONE ── #{issue} {title} ────────────────
+**🏁 DONE** ── **#{issue}** {title} ────────────────
 Issue:     closed
 🔀 PR: {pr-url} (merged)
-Labels:    {STATUS_PREFIX}done
+Labels:    `{STATUS_PREFIX}done`
 Worktree:  {removed/kept/n/a}
-Branch:    {BASE_BRANCH}
+Branch:    *{BASE_BRANCH}*
 
 ────────────────────────────────────────────
-/team-claim (next mission) │ /team (dashboard)
-```
+`/team-claim` (next mission) │ `/team` (dashboard)
+
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
 ---
 
@@ -516,6 +603,7 @@ gh pr list --head "$BRANCH" --state open --json number,url --limit 1
 
 If `$ARGUMENTS` contains a PR number → use that instead.
 If no open PR found → "No open PR found for branch `{branch}`." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### R2: Get PR diff
 
@@ -556,7 +644,12 @@ options:
 gh pr review {pr} --body "{review_body}" {--approve|--request-changes|--comment}
 ```
 
-Output: "Review published on PR #{pr}: {approve/request-changes/comment}"
+Output:
+
+Review published on PR **#{pr}**: {approve/request-changes/comment}
+After merge: `/team-ship done` │ Address comments: push more commits
+
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
 ---
 
@@ -573,6 +666,7 @@ BASE_BRANCH="${BASE_BRANCH:-main}"
 ```
 
 If on `$BASE_BRANCH` → "Already on $BASE_BRANCH. Nothing to sync." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### S2: Fetch and rebase
 
@@ -580,8 +674,53 @@ If on `$BASE_BRANCH` → "Already on $BASE_BRANCH. Nothing to sync." → **STOP*
 bash ~/.claude/commands/scripts/tw-git.sh rebase "$BASE_BRANCH"
 ```
 
-- If exit 0 → "Branch `{branch}` rebased on latest $BASE_BRANCH."
-- If exit 2 → "Rebase conflicts detected. Resolve them, then `git rebase --continue`." → **STOP** (do not abort automatically)
+- If exit 0 → jump to **S3: Summary**
+- If exit 2 → jump to **S2b: AI conflict resolution**
+
+### S2b: AI conflict resolution
+
+When rebase produces conflicts, resolve them automatically:
+
+1. **List conflicted files:**
+```bash
+git diff --name-only --diff-filter=U
+```
+
+2. **For each conflicted file:**
+   - Read the file (it contains `<<<<<<<`, `=======`, `>>>>>>>` markers)
+   - Understand both sides: "ours" (mission branch) = the work being rebased, "theirs" (base branch) = upstream changes
+   - Edit the file to resolve: merge both sides' intent, preserving mission changes where they don't contradict upstream
+   - `git add {file}`
+
+3. **Continue rebase:**
+```bash
+git rebase --continue
+```
+   - If more conflicts appear → repeat step 1-3
+   - If rebase completes → jump to **S3: Summary**
+
+4. **If a conflict is genuinely ambiguous** (both sides made semantic changes to the same logic that contradict each other), resolve with best judgment and flag it in the summary.
+
+### S3: Summary
+
+Output:
+
+**SYNC COMPLETE** ────────────────────────────
+Branch:   *{branch}*
+Rebased:  on latest *{BASE_BRANCH}*
+{If conflicts resolved:}
+Resolved: `{N}` conflict(s) in {file list}
+{If any flagged:}
+⚠️ Review: {file} — both sides changed {description}, merged as {approach}
+
+Push the rebased branch:
+```bash
+git push --force-with-lease origin {branch}
+```
+
+- If push succeeds → done
+- If push fails → "Push failed. Run `/team-ship sync` to rebase, then retry `/team-ship`." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ---
 
@@ -591,30 +730,28 @@ bash ~/.claude/commands/scripts/tw-git.sh rebase "$BASE_BRANCH"
 
 Output the following and **STOP**:
 
-```
-/team-ship done — Post-Merge Cleanup
-═══════════════════════════════════════════
+**`/team-ship done` — Post-Merge Cleanup**
+────────────────────────────────────────────
 
-USAGE:
-  /team-ship done           Auto-detect Issue from Contract/branch
-  /team-ship done #42       Specify Issue number explicitly
+**USAGE**
+  `/team-ship done`           Auto-detect Issue from Contract/branch
+  `/team-ship done #42`       Specify Issue number explicitly
 
-WHAT IT DOES:
+**WHAT IT DOES**
   1. Verify PR is merged (fails if PR still open)
-  2. Close Issue (if not auto-closed by "Closes #N")
-  3. Update labels: status:review → status:done
+  2. Close Issue (if not auto-closed by `Closes #N`)
+  3. Update labels: `status:review` → `status:done`
   4. Clean up worktree (if in worktree mode)
   5. Return to base branch
   6. Remove local Contract
 
-WHEN TO USE:
+**WHEN TO USE**
   After your PR has been merged on GitHub.
-  Usually the last step: /team-drive → /team-ship → (merge) → /team-ship done
+  Usually the last step: `/team-drive` → `/team-ship` → (merge) → `/team-ship done`
 
-TROUBLESHOOTING:
+**TROUBLESHOOTING**
   "No merged PR found" → PR must be merged first. Check GitHub.
-  "Cannot determine Issue" → Specify explicitly: /team-ship done #42
-```
+  "Cannot determine Issue" → Specify explicitly: `/team-ship done #42`
 
 ---
 
@@ -624,15 +761,14 @@ TROUBLESHOOTING:
 
 Output the following and **STOP**:
 
-```
-/team-ship review — AI Code Review
-═══════════════════════════════════════════
+**`/team-ship review` — AI Code Review**
+────────────────────────────────────────────
 
-USAGE:
-  /team-ship review         Review PR for current branch
-  /team-ship review #43     Review specific PR number
+**USAGE**
+  `/team-ship review`         Review PR for current branch
+  `/team-ship review #43`     Review specific PR number
 
-WHAT IT DOES:
+**WHAT IT DOES**
   1. Find open PR for current branch
   2. Fetch full diff
   3. Read all changed files for context
@@ -640,9 +776,8 @@ WHAT IT DOES:
   5. Choose action: approve / request changes / comment only
   6. Publish review to GitHub
 
-WHEN TO USE:
+**WHEN TO USE**
   Before merging a PR, or when a teammate asks for review.
-```
 
 ---
 
@@ -652,37 +787,46 @@ WHEN TO USE:
 
 Output the following and **STOP**:
 
-```
-/team-ship sync — Rebase on Base Branch
-═══════════════════════════════════════════
+**`/team-ship sync` — Rebase on Base Branch**
+────────────────────────────────────────────
 
-USAGE:
-  /team-ship sync           Rebase current branch on latest base
+**USAGE**
+  `/team-ship sync`           Rebase current branch on latest base
 
-WHAT IT DOES:
+**WHAT IT DOES**
   1. Verify you're on a mission branch (not base)
   2. Fetch latest base branch from remote
   3. Rebase your branch on top of latest base
+  4. Auto-resolve conflicts (AI reads both sides and merges)
+  5. Force-push rebased branch to remote
 
-WHEN TO USE:
-  When /team doctor shows your branch is behind base or remote.
-  Before /team-ship if branch has drifted.
+**WHEN TO USE**
+  When dashboard shows "⚠️ `N` behind *{base}*" on your PR.
+  When `/team doctor` shows your branch is behind base.
+  Before `/team-ship` if branch has drifted.
 
-TROUBLESHOOTING:
-  "Rebase conflicts" → Resolve conflicts, then: git rebase --continue
+**TROUBLESHOOTING**
   Already on base branch → Nothing to sync.
-```
+  Ambiguous conflict → AI resolves + flags for review in summary.
 
 ---
 
 ## Error Handling
 
 - Config missing → "Run `/team` first to initialize teamwork." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - No active Contract → "No mission to ship. Run `/team-claim` first." → **STOP**
-- Incomplete sub-tasks → warn with list of remaining tasks → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+- Incomplete code sub-tasks → warn with list of remaining tasks → **STOP** (MANUAL tasks don't block)
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - Tests fail → "Fix tests before shipping." → **STOP**
-- Push fails → suggest rebase (`/team-ship sync`), if still fails → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+- Push fails → suggest `/team-ship sync`, if still fails → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - PR creation fails → "Failed to create PR. Check `gh auth status` and try again." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - CI fails → warn but DO NOT stop (PR is already created, user can iterate)
 - Label/reviewer operations fail → warn but continue (non-fatal)
 - Contract removal fails → warn but continue (non-fatal)
+
+**On any STOP:** Always append: 💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
