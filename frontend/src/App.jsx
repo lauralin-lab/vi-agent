@@ -9,6 +9,7 @@ import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
 import SettingsView from './components/SettingsView';
 import AllTasksView from './components/AllTasksView';
+import PlaygroundView from './components/PlaygroundView';
 
 import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
@@ -98,6 +99,7 @@ function App() {
   // View state
   const [viewState, setViewState] = useState(() => {
     const path = window.location.pathname;
+    if (path === '/playground') return 'playground';
     if (path === '/memories' || path === '/memory') return 'memory';
     if (path === '/home' || path === '/history') return 'home';
     return 'camera';
@@ -338,6 +340,11 @@ function App() {
   const handleProfileTap = () => {
     setViewState('memory');
   };
+
+  // --- Playground: full-page desktop layout, no DeviceFrame ---
+  if (viewState === 'playground') {
+    return <PlaygroundView nanoClaw={nanoClaw} />;
+  }
 
   // --- Auth gate: show login page if not authenticated ---
   if (auth.loading) {

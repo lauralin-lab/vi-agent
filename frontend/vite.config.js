@@ -25,6 +25,11 @@ export default defineConfig({
         target: process.env.VITE_API_URL || `http://localhost:${process.env.API_PORT || 8000}`,
         changeOrigin: true,
       },
+      '/nanoclaw': {
+        target: process.env.VITE_NANOCLAW_URL || `http://localhost:${process.env.NANOCLAW_PORT || 3100}`,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/nanoclaw/, ''),
+      },
     },
   },
 })

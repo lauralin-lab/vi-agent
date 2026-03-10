@@ -2,44 +2,80 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import useSound from '../hooks/useSound';
-import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
 import { IOS_SPRING } from '../constants';
 
-function extractPhotos(session) {
-    const photos = [];
-    if (session.context?.photos) {
-        if (Array.isArray(session.context.photos)) {
-            photos.push(...session.context.photos);
-        } else if (typeof session.context.photos === 'string') {
-            const urls = session.context.photos.match(/https?:\/\/[^\s]+/g);
-            if (urls) photos.push(...urls);
-        }
+// ── NanoClaw API (same as PlaygroundView) ──
+
+async function fetchSessionHistory() {
+    const res = await fetch('/nanoclaw/api/dashboard/sessions/history');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.sessions || [];
+}
+
+// ── Group flat task list into sessions (same logic as PlaygroundView) ──
+
+function groupIntoSessions(tasks) {
+    const map = {};
+    for (const t of tasks) {
+        const sid = t.sessionId || 'unknown';
+        if (!map[sid]) map[sid] = { sessionId: sid, tasks: [], latestTs: 0 };
+        map[sid].tasks.push(t);
+        if ((t.ts || 0) > map[sid].latestTs) map[sid].latestTs = t.ts || 0;
     }
-    if (photos.length === 0 && session.prompt) {
-        const urls = session.prompt.match(/https:\/\/storage\.googleapis\.com\/[^\s]+/g);
-        if (urls) photos.push(...urls);
+    return Object.values(map).sort((a, b) => b.latestTs - a.latestTs);
+}
+
+// ── Extract photos from task mediaUrls ──
+
+function extractSessionPhotos(session) {
+    const photos = [];
+    for (const task of session.tasks) {
+        if (task.mediaUrls?.length) {
+            for (const url of task.mediaUrls) {
+                if (!photos.includes(url)) photos.push(url);
+            }
+        }
     }
     return photos;
 }
 
-const formatTimestamp = (dateStr) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
+// ── Get session display title from first task prompt ──
+
+function getSessionTitle(session) {
+    const firstTask = session.tasks[0];
+    return firstTask?.prompt || '(no prompt)';
+}
+
+// ── Get latest result text from session tasks ──
+
+function getSessionResult(session) {
+    // Look through tasks in reverse order for the last result
+    for (let i = session.tasks.length - 1; i >= 0; i--) {
+        const t = session.tasks[i];
+        if (t.result) return t.result;
+    }
+    return null;
+}
+
+const formatTimestamp = (ts) => {
+    if (!ts) return '';
+    const d = new Date(ts);
     if (isNaN(d.getTime())) return '';
     return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-const getCalendarDate = (dateStr) => {
-    if (!dateStr) return null;
-    const d = new Date(dateStr);
+const getCalendarDate = (ts) => {
+    if (!ts) return null;
+    const d = new Date(ts);
     if (isNaN(d.getTime())) return null;
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-const getCalendarDateKey = (dateStr) => {
-    if (!dateStr) return 'unknown';
-    const d = new Date(dateStr);
+const getCalendarDateKey = (ts) => {
+    if (!ts) return 'unknown';
+    const d = new Date(ts);
     if (isNaN(d.getTime())) return 'unknown';
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
@@ -50,42 +86,24 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
     const scrollRef = useRef(null);
     const dateRefs = useRef({});
 
-    // Fetch sessions
+    // Fetch sessions from NanoClaw session history API
     useEffect(() => {
-        const viUserId = api.getViUserId();
-        if (!isAuthenticated && !api.getToken() && !viUserId) return;
-        api.getSessions().then(raw => {
-            const normalized = (raw || [])
-                .map(s => ({
-                    id: s.id,
-                    prompt: s.prompt || s.title || s.intention || '',
-                    status: s.status === 'completed' || s.status === 'ended' ? 'complete'
-                        : s.status === 'dispatched' ? 'pending'
-                            : s.status === 'failed' ? 'error'
-                                : s.status || 'pending',
-                    created_at: s.started_at || s.dispatched_at || s.created_at,
-                    context: s.context,
-                    title: s.title,
-                    result_html: s.result_html,
-                    result_summary: s.result_summary,
-                    timeline: s.timeline || [],
-                }))
-                .filter(s => s.status === 'complete' || s.status === 'error')
-                .sort((a, b) => {
-                    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-                    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-                    return tb - ta;
-                });
-            setSessions(normalized);
-        }).catch(() => {});
+        fetchSessionHistory()
+            .then(tasks => {
+                const grouped = groupIntoSessions(tasks);
+                setSessions(grouped);
+            })
+            .catch(err => {
+                console.error('AllTasksView: failed to fetch session history:', err);
+            });
     }, [isAuthenticated]);
 
     // Group by date (newest first)
     const dateGroups = useMemo(() => {
         const groups = {};
         sessions.forEach(session => {
-            const key = getCalendarDateKey(session.created_at);
-            if (!groups[key]) groups[key] = { key, label: getCalendarDate(session.created_at) || 'Unknown', sessions: [] };
+            const key = getCalendarDateKey(session.latestTs);
+            if (!groups[key]) groups[key] = { key, label: getCalendarDate(session.latestTs) || 'Unknown', sessions: [] };
             groups[key].sessions.push(session);
         });
         return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key));
@@ -102,14 +120,15 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
 
     const handleSessionClick = useCallback((session) => {
         play('nav.forward');
-        const photos = extractPhotos(session);
+        const photos = extractSessionPhotos(session);
+        const title = getSessionTitle(session);
+        const result = getSessionResult(session);
         onSelectSession?.({
-            sessionId: session.id,
-            prompt: session.prompt,
-            result: session.result_html || session.result_summary || null,
+            sessionId: session.sessionId,
+            prompt: title,
+            result: result,
             photos,
-            title: session.title || session.prompt,
-            timeline: session.timeline,
+            title: title,
         });
     }, [play, onSelectSession]);
 
@@ -176,11 +195,12 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
 
                             <div className="space-y-2.5">
                                 {group.sessions.map((session) => {
-                                    const photos = extractPhotos(session);
+                                    const photos = extractSessionPhotos(session);
                                     const heroImg = photos[0] || null;
+                                    const title = getSessionTitle(session);
                                     return (
                                         <div
-                                            key={session.id}
+                                            key={session.sessionId}
                                             onClick={() => handleSessionClick(session)}
                                             className="flex items-center gap-3 p-3 cursor-pointer active:scale-[0.98] transition-all group"
                                             style={{
@@ -195,10 +215,10 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
                                                     className="block mb-1"
                                                     style={{ fontSize: 10, color: 'rgba(0,0,0,0.25)', letterSpacing: '0.02em' }}
                                                 >
-                                                    {formatTimestamp(session.created_at)}
+                                                    {formatTimestamp(session.latestTs)}
                                                 </span>
                                                 <p className="font-medium leading-snug line-clamp-2" style={{ fontSize: 14, color: '#000', letterSpacing: '-0.01em' }}>
-                                                    {getShortTitle(session.prompt)}
+                                                    {getShortTitle(title)}
                                                 </p>
                                             </div>
 

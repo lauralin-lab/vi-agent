@@ -202,10 +202,10 @@ async def dispatch_exec_user(
             try:
                 await session_center.update_session(db, session_id, {"context": context})
             except ValueError:
-                # Session doesn't exist yet, create it
-                session_id = await session_center.create_session(
-                    db, uid, context=context, redis=redis,
-                )
+                # Session doesn't exist in DB (e.g. NanoClaw-native session from playground)
+                # Preserve the original session_id for continuity — NanoClaw uses it
+                # for Claude CLI --resume, so changing it breaks conversation memory.
+                pass
 
         # Dispatch the session
         await session_center.dispatch_session(

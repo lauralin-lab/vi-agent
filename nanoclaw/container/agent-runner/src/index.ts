@@ -181,18 +181,50 @@ function setupClaudeMd(): void {
     log('No base CLAUDE.md found in container image');
     return;
   }
+
+  let content = fs.readFileSync(srcPath, 'utf-8');
+
+  // Build dynamic skill catalog from package manifests
+  const packagesDir = '/workspace/packages';
+  if (fs.existsSync(packagesDir)) {
+    const catalogLines: string[] = [
+      '',
+      '## Available Skills Catalog',
+      '',
+      'Below are your available skills. **Automatically select the best skill** based on the user\'s request and any photos provided. You do NOT need a hashtag — just match the content to the right skill.',
+      '',
+    ];
+    for (const entry of fs.readdirSync(packagesDir)) {
+      if (entry.startsWith('_') || entry.startsWith('.')) continue;
+      const manifestPath = path.join(packagesDir, entry, 'manifest.json');
+      if (!fs.existsSync(manifestPath)) continue;
+      try {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        const name = manifest.name || entry;
+        const triggers = manifest.triggers || {};
+        const visualCues = (triggers.visual_cues || []).join(', ');
+        const voiceKw = (triggers.voice_keywords || []).join(', ');
+        const template = manifest.output?.template || 'text';
+        catalogLines.push(`### ${name} (\`${entry}\`)`);
+        catalogLines.push(`- **Skill file**: \`.claude/skills/${entry}/SKILL.md\``);
+        catalogLines.push(`- **Output template**: \`${template}\``);
+        if (visualCues) catalogLines.push(`- **Use when you see**: ${visualCues}`);
+        if (voiceKw) catalogLines.push(`- **Use when user asks about**: ${voiceKw}`);
+        catalogLines.push('');
+      } catch { /* skip malformed manifests */ }
+    }
+    catalogLines.push('**How to use**: Read the SKILL.md for the matched skill, then follow its phases and output format. If the skill specifies a card template, output a `card-data` JSON block matching the template schema.');
+    content += '\n' + catalogLines.join('\n') + '\n';
+    log(`Added skill catalog to CLAUDE.md`);
+  }
+
   // Always overwrite — ensures updates to CLAUDE.md take effect
   // even on persistent volumes with stale copies
   try {
-    fs.copyFileSync(srcPath, destPath);
-    log('Copied base CLAUDE.md to workspace');
+    fs.writeFileSync(destPath, content);
+    log('Wrote CLAUDE.md with skill catalog to workspace');
   } catch (err) {
-    try {
-      fs.writeFileSync(destPath, fs.readFileSync(srcPath, 'utf-8'));
-      log('Wrote base CLAUDE.md to workspace (fallback)');
-    } catch {
-      log(`Could not set up CLAUDE.md: ${err}`);
-    }
+    log(`Could not set up CLAUDE.md: ${err}`);
   }
 }
 

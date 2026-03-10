@@ -243,6 +243,16 @@ class ApiClient {
    */
   async dispatchExec({ prompt, skillSlug, mediaUrls, sessionId, priority, params } = {}) {
     const viUserId = this.getViUserId();
+
+    // Parse #skill-slug from prompt (e.g. "analyze this #nutrition-analyzer")
+    if (!skillSlug && prompt) {
+      const hashMatch = prompt.match(/#([a-zA-Z][a-zA-Z0-9_-]*)\s*$/);
+      if (hashMatch) {
+        skillSlug = hashMatch[1];
+        prompt = prompt.slice(0, hashMatch.index).trim();
+      }
+    }
+
     const body = { prompt };
     if (skillSlug) body.skill_slug = skillSlug;
     if (mediaUrls) body.media_urls = mediaUrls;
