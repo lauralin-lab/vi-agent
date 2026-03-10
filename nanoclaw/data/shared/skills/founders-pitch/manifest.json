@@ -1,0 +1,22 @@
+{
+  "name": "Founder's Pitch",
+  "slug": "founders-pitch",
+  "icon": "🎬",
+  "description": "Scan your face and product to generate a 30-second AI avatar pitch video",
+  "category": "marketing",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#DC2626", "preview_template": "Creating your pitch video..." },
+  "thinking": {
+    "title": "Producing Pitch Video",
+    "steps": [
+      { "label": "Analyzing founder", "content": "Reading face and appearance" },
+      { "label": "Analyzing product", "content": "Identifying product features" },
+      { "label": "Writing script", "content": "Crafting 30-second pitch" },
+      { "label": "Generating video", "content": "Creating AI avatar video" }
+    ]
+  },
+  "output": { "template": "video-artifact" },
+  "references_dir": "references",
+  "tags": ["pitch", "video", "founder", "product", "avatar"]
+}

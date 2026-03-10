@@ -1,0 +1,21 @@
+{
+  "name": "Food Scanner",
+  "slug": "food",
+  "icon": "🍽️",
+  "description": "Scan any meal to get calories, macros, health score, and diet advice",
+  "category": "food",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#16A34A", "preview_template": "Analyzing your meal..." },
+  "thinking": {
+    "title": "Analyzing Meal",
+    "steps": [
+      { "label": "Identifying food", "content": "Recognizing dish and ingredients" },
+      { "label": "Estimating nutrition", "content": "Calories, protein, carbs, fat" },
+      { "label": "Scoring health", "content": "Rating and recommendations" }
+    ]
+  },
+  "output": { "template": "nutrition-card" },
+  "references_dir": "references",
+  "tags": ["food", "nutrition", "calories", "diet", "health"]
+}

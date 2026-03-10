@@ -1,0 +1,21 @@
+{
+  "name": "Medicine Scanner",
+  "slug": "medicine",
+  "icon": "💊",
+  "description": "Scan pills or medicine labels to understand usage, side effects, and interactions",
+  "category": "health",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#2563EB", "preview_template": "Reading your medicine..." },
+  "thinking": {
+    "title": "Analyzing Medicine",
+    "steps": [
+      { "label": "Identifying medicine", "content": "Reading label and pill shape" },
+      { "label": "Looking up info", "content": "Usage, side effects, interactions" },
+      { "label": "Summarizing", "content": "Clear, simple explanation" }
+    ]
+  },
+  "output": { "template": "image-analysis" },
+  "references_dir": "references",
+  "tags": ["medicine", "pills", "pharmacy", "health", "dosage"]
+}

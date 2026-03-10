@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chromavibe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;800&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    .font-heading { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-body { font-family: 'Inter', sans-serif; }
+    .gradient-hero { background: linear-gradient(135deg, #00B4D8 0%, #7B2FF7 100%); }
+    .gradient-text { background: linear-gradient(135deg, #00B4D8, #7B2FF7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .fade-in { animation: fadeIn 0.8s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="font-body text-gray-800 bg-[#F8F9FA]">
+
+  <!-- Hero -->
+  <section class="gradient-hero min-h-[85vh] flex items-center justify-center text-center px-6 fade-in">
+    <div class="max-w-3xl">
+      <h1 class="font-heading text-5xl md:text-7xl font-extrabold text-white mb-4">Chromavibe</h1>
+      <p class="text-xl md:text-2xl text-white/90 mb-8">Design anything. Instantly.</p>
+      <p class="text-base text-white/70 mb-10 max-w-xl mx-auto">Turn your creative vision into polished designs, campaigns, and content — no skills required.</p>
+      <a href="#" class="inline-block bg-white text-[#7B2FF7] font-heading font-semibold px-8 py-4 rounded-full text-lg hover:scale-105 transition-transform shadow-lg">Start Creating Free</a>
+    </div>
+  </section>
+
+  <!-- Social Proof -->
+  <div class="py-6 bg-white text-center text-sm text-gray-500 font-medium tracking-wide">
+    Loved by 50,000+ creators, marketers, and small businesses
+  </div>
+
+  <!-- How It Works -->
+  <section class="max-w-5xl mx-auto px-6 py-20">
+    <h2 class="font-heading text-3xl font-bold text-center mb-12">How It Works</h2>
+    <div class="grid md:grid-cols-3 gap-8">
+      <div class="text-center">
+        <div class="w-16 h-16 rounded-full gradient-hero flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4">1</div>
+        <h3 class="font-heading font-semibold text-lg mb-2">Share Your Vibe</h3>
+        <p class="text-gray-600 text-sm">Upload a photo, video, or mood board that captures your aesthetic.</p>
+      </div>
+      <div class="text-center">
+        <div class="w-16 h-16 rounded-full gradient-hero flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4">2</div>
+        <h3 class="font-heading font-semibold text-lg mb-2">AI Builds Your Brand</h3>
+        <p class="text-gray-600 text-sm">Get a full brand kit — name, colors, typography, and voice — in seconds.</p>
+      </div>
+      <div class="text-center">
+        <div class="w-16 h-16 rounded-full gradient-hero flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4">3</div>
+        <h3 class="font-heading font-semibold text-lg mb-2">Launch Everywhere</h3>
+        <p class="text-gray-600 text-sm">Landing page, ad campaigns, social posts — all ready to publish.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="bg-white py-20">
+    <div class="max-w-5xl mx-auto px-6 grid md:grid-cols-3 gap-8">
+      <div class="bg-[#F8F9FA] rounded-2xl p-8 hover:shadow-md transition-shadow">
+        <div class="text-3xl mb-4">🎨</div>
+        <h3 class="font-heading font-semibold text-lg mb-2">Brand Kit in Seconds</h3>
+        <p class="text-gray-600 text-sm">Colors, fonts, logo concept, and brand voice — extracted from your vibe.</p>
+      </div>
+      <div class="bg-[#F8F9FA] rounded-2xl p-8 hover:shadow-md transition-shadow">
+        <div class="text-3xl mb-4">🌐</div>
+        <h3 class="font-heading font-semibold text-lg mb-2">Live Landing Page</h3>
+        <p class="text-gray-600 text-sm">Mobile-first, conversion-optimized HTML — ready to deploy.</p>
+      </div>
+      <div class="bg-[#F8F9FA] rounded-2xl p-8 hover:shadow-md transition-shadow">
+        <div class="text-3xl mb-4">📣</div>
+        <h3 class="font-heading font-semibold text-lg mb-2">Ad Campaigns</h3>
+        <p class="text-gray-600 text-sm">Full-funnel ad copy: awareness, consideration, conversion. Done.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonial -->
+  <section class="py-16 text-center px-6">
+    <p class="text-xl italic text-gray-700 max-w-2xl mx-auto">"I uploaded a sunset photo and got a complete brand identity in 30 seconds. This is insane."</p>
+    <p class="mt-4 text-sm text-gray-500">— Maya Chen, Indie Creator</p>
+  </section>
+
+  <!-- Final CTA -->
+  <section class="gradient-hero py-20 text-center px-6">
+    <h2 class="font-heading text-3xl md:text-4xl font-bold text-white mb-6">Your vibe is your brand. Let's build it.</h2>
+    <a href="#" class="inline-block bg-white text-[#7B2FF7] font-heading font-semibold px-8 py-4 rounded-full text-lg hover:scale-105 transition-transform shadow-lg">Start Creating Free</a>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-8 text-center text-sm text-gray-400">
+    Chromavibe · Design anything. Instantly. · &copy; 2026
+  </footer>
+
+</body>
+</html>

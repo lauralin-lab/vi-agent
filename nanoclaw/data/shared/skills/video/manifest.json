@@ -1,0 +1,29 @@
+{
+  "name": "Video Marketing Assistant",
+  "slug": "video",
+  "icon": "🎬",
+  "description": "Turn short video clips into complete marketing assets — hooks, captions, ads, scripts, and content calendars",
+  "category": "marketing",
+  "version": "0.1.0",
+  "requirements": {
+    "input_types": ["video", "image", "text"]
+  },
+  "ui": {
+    "card_color": "#8B5CF6",
+    "preview_template": "Creating your marketing assets..."
+  },
+  "thinking": {
+    "title": "Generating Marketing Assets",
+    "steps": [
+      { "label": "Analyzing video", "content": "Reading mood, setting, and subject" },
+      { "label": "Identifying audience", "content": "Matching to platform and target demographic" },
+      { "label": "Generating assets", "content": "Writing hooks, captions, and ad copy" },
+      { "label": "Applying brand voice", "content": "Matching tone from your references" }
+    ]
+  },
+  "output": {
+    "template": "content-card"
+  },
+  "references_dir": "references",
+  "tags": ["video", "marketing", "social-media", "content", "ads", "hooks", "captions"]
+}

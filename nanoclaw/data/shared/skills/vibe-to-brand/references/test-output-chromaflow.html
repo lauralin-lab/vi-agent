@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chromaflow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;800&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    .font-heading { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-body { font-family: 'Inter', sans-serif; }
+    .gradient-bg { background: linear-gradient(135deg, #00C4CC 0%, #7B2FF7 100%); }
+    .fade-in { animation: fadeIn 0.8s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="font-body text-gray-800 bg-[#F7F7F8]">
+
+  <!-- Hero -->
+  <section class="gradient-bg min-h-[80vh] flex items-center justify-center text-center px-6 fade-in">
+    <div>
+      <h1 class="font-heading text-5xl md:text-7xl font-extrabold text-white mb-4">Chromaflow</h1>
+      <p class="text-xl md:text-2xl text-white/90 mb-8">Create boldly. Ship beautifully.</p>
+      <a href="#" class="inline-block bg-white text-[#7B2FF7] font-heading font-semibold px-8 py-4 rounded-full text-lg hover:scale-105 transition-transform">Get Early Access</a>
+    </div>
+  </section>
+
+  <!-- Social Proof -->
+  <div class="py-6 bg-white text-center text-sm text-gray-500 font-medium tracking-wide">
+    Trusted by 12,000+ creators worldwide
+  </div>
+
+  <!-- Features -->
+  <section class="max-w-5xl mx-auto px-6 py-20 grid md:grid-cols-3 gap-8">
+    <div class="bg-white rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow">
+      <div class="text-3xl mb-4">🎨</div>
+      <h3 class="font-heading font-semibold text-lg mb-2">Design in Seconds</h3>
+      <p class="text-gray-600 text-sm">From blank to branded in one click. AI handles the heavy lifting.</p>
+    </div>
+    <div class="bg-white rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow">
+      <div class="text-3xl mb-4">⚡</div>
+      <h3 class="font-heading font-semibold text-lg mb-2">Ship 10x Faster</h3>
+      <p class="text-gray-600 text-sm">Ads, posts, and landing pages — generated and ready to publish.</p>
+    </div>
+    <div class="bg-white rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow">
+      <div class="text-3xl mb-4">📈</div>
+      <h3 class="font-heading font-semibold text-lg mb-2">Built to Convert</h3>
+      <p class="text-gray-600 text-sm">Every asset is optimized for performance. Not just pretty — effective.</p>
+    </div>
+  </section>
+
+  <!-- Testimonial -->
+  <section class="bg-white py-16 text-center px-6">
+    <p class="text-xl italic text-gray-700 max-w-2xl mx-auto">"Chromaflow replaced our entire design workflow. We went from 3 days to 3 minutes."</p>
+    <p class="mt-4 text-sm text-gray-500">— Jamie Lin, Founder @ StudioLab</p>
+  </section>
+
+  <!-- Final CTA -->
+  <section class="gradient-bg py-20 text-center px-6">
+    <h2 class="font-heading text-3xl md:text-4xl font-bold text-white mb-6">Ready to create something bold?</h2>
+    <a href="#" class="inline-block bg-white text-[#7B2FF7] font-heading font-semibold px-8 py-4 rounded-full text-lg hover:scale-105 transition-transform">Start Free</a>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-8 text-center text-sm text-gray-400">
+    Chromaflow · Create boldly. Ship beautifully. · &copy; 2026
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "Plant Identifier",
+  "slug": "plant",
+  "icon": "🌿",
+  "description": "Scan any plant to identify species, check pet safety, get care instructions",
+  "category": "nature",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#15803D", "preview_template": "Identifying your plant..." },
+  "thinking": {
+    "title": "Identifying Plant",
+    "steps": [
+      { "label": "Identifying species", "content": "Matching plant features to database" },
+      { "label": "Checking safety", "content": "Pet toxicity check" },
+      { "label": "Diagnosing health", "content": "Checking for visible problems" },
+      { "label": "Writing care guide", "content": "Water, sunlight, soil instructions" }
+    ]
+  },
+  "output": { "template": "image-analysis" },
+  "references_dir": "references",
+  "tags": ["plant", "garden", "botany", "pet-safety", "care"]
+}

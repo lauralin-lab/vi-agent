@@ -1,0 +1,22 @@
+{
+  "name": "Code Scanner",
+  "slug": "code-scanner",
+  "icon": "🔍",
+  "description": "Scan code on screen to find bugs, security issues, and get instant fixes",
+  "category": "development",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#1E293B", "preview_template": "Scanning your code..." },
+  "thinking": {
+    "title": "Scanning Code",
+    "steps": [
+      { "label": "Reading code", "content": "Extracting code from screen" },
+      { "label": "Finding bugs", "content": "Logic errors, wrong operators" },
+      { "label": "Security check", "content": "Secrets, injection, XSS" },
+      { "label": "Writing fix", "content": "Corrected code with explanation" }
+    ]
+  },
+  "output": { "template": "image-analysis" },
+  "references_dir": "references",
+  "tags": ["code", "bugs", "security", "review", "programming"]
+}

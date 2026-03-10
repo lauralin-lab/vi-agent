@@ -1,0 +1,22 @@
+{
+  "name": "Menu Scanner",
+  "slug": "menu",
+  "icon": "📋",
+  "description": "Scan a restaurant menu to get calorie estimates, diet filtering, and smart picks",
+  "category": "food",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#CA8A04", "preview_template": "Reading the menu..." },
+  "thinking": {
+    "title": "Scanning Menu",
+    "steps": [
+      { "label": "Reading menu", "content": "Extracting items and prices" },
+      { "label": "Estimating nutrition", "content": "Calorie estimates per item" },
+      { "label": "Filtering", "content": "Applying your diet preferences" },
+      { "label": "Recommending", "content": "Picking the best options" }
+    ]
+  },
+  "output": { "template": "nutrition-card" },
+  "references_dir": "references",
+  "tags": ["menu", "restaurant", "diet", "calories", "ordering"]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "Pet Health Checker",
+  "slug": "pet-health",
+  "icon": "🐾",
+  "description": "Scan your pet to check visible health indicators, get diet tips and vet advice",
+  "category": "health",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#F59E0B", "preview_template": "Checking your pet..." },
+  "thinking": {
+    "title": "Checking Pet Health",
+    "steps": [
+      { "label": "Identifying pet", "content": "Breed, age, size estimate" },
+      { "label": "Health check", "content": "Coat, eyes, posture, weight" },
+      { "label": "Diet advice", "content": "Food recommendations for breed" }
+    ]
+  },
+  "output": { "template": "image-analysis" },
+  "references_dir": "references",
+  "tags": ["pet", "dog", "cat", "health", "vet", "diet"]
+}

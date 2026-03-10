@@ -1,0 +1,22 @@
+{
+  "name": "Napkin-to-App",
+  "slug": "napkin-to-app",
+  "icon": "📱",
+  "description": "Photo of a hand-drawn UI sketch becomes a working React/Tailwind prototype",
+  "category": "development",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#0EA5E9", "preview_template": "Building your app..." },
+  "thinking": {
+    "title": "Building App from Sketch",
+    "steps": [
+      { "label": "Analyzing sketch", "content": "Identifying UI elements and layout" },
+      { "label": "Planning components", "content": "Mapping sketch to React components" },
+      { "label": "Generating code", "content": "Writing React + Tailwind application" },
+      { "label": "Deploying", "content": "Pushing to GitHub Pages" }
+    ]
+  },
+  "output": { "template": "deployment" },
+  "references_dir": "references",
+  "tags": ["code", "react", "prototype", "sketch", "wireframe"]
+}

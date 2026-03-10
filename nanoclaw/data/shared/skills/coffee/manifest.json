@@ -1,0 +1,21 @@
+{
+  "name": "Coffee Analyzer",
+  "slug": "coffee",
+  "icon": "☕",
+  "description": "Scan coffee beans or drinks to identify type, origin, flavor notes, and nutrition",
+  "category": "food",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#92400E", "preview_template": "Analyzing your coffee..." },
+  "thinking": {
+    "title": "Analyzing Coffee",
+    "steps": [
+      { "label": "Identifying coffee", "content": "Reading bean type or drink style" },
+      { "label": "Analyzing details", "content": "Origin, roast, flavor notes" },
+      { "label": "Preparing results", "content": "Creating coffee profile card" }
+    ]
+  },
+  "output": { "template": "nutrition-card" },
+  "references_dir": "references",
+  "tags": ["coffee", "beans", "barista", "caffeine", "nutrition"]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "Vibe-to-Brand",
+  "slug": "vibe-to-brand",
+  "icon": "✨",
+  "description": "Turn a 5-second vibe video into a full brand kit, landing page, and ad campaign",
+  "category": "marketing",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["video", "image"] },
+  "ui": { "card_color": "#7C3AED", "preview_template": "Extracting your vibe..." },
+  "thinking": {
+    "title": "Building Your Brand",
+    "steps": [
+      { "label": "Extracting vibe", "content": "Reading mood, colors, and aesthetic" },
+      { "label": "Creating brand kit", "content": "Name, tagline, colors, typography" },
+      { "label": "Building landing page", "content": "Generating live HTML page" },
+      { "label": "Writing ad campaign", "content": "3-part funnel: awareness, consideration, conversion" }
+    ]
+  },
+  "output": { "template": "brand-kit" },
+  "references_dir": "references",
+  "tags": ["brand", "marketing", "landing-page", "ads", "vibe"]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "Clothing Advisor",
+  "slug": "clothing",
+  "icon": "👗",
+  "description": "Scan your outfit for style advice, occasion matching, and accessory suggestions",
+  "category": "fashion",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#BE185D", "preview_template": "Analyzing your style..." },
+  "thinking": {
+    "title": "Analyzing Style",
+    "steps": [
+      { "label": "Identifying items", "content": "Reading clothing, colors, patterns" },
+      { "label": "Rating outfit", "content": "Scoring for occasion" },
+      { "label": "Styling advice", "content": "Pairing and accessory suggestions" }
+    ]
+  },
+  "output": { "template": "image-analysis" },
+  "references_dir": "references",
+  "tags": ["fashion", "outfit", "style", "clothing", "accessories"]
+}

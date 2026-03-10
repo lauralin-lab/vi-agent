@@ -1,0 +1,21 @@
+{
+  "name": "Flower Identifier",
+  "slug": "flowers",
+  "icon": "💐",
+  "description": "Scan flowers to identify species, learn their meaning, and get care tips",
+  "category": "nature",
+  "version": "0.1.0",
+  "requirements": { "input_types": ["image"] },
+  "ui": { "card_color": "#E11D48", "preview_template": "Identifying your flowers..." },
+  "thinking": {
+    "title": "Identifying Flowers",
+    "steps": [
+      { "label": "Identifying species", "content": "Matching flower features" },
+      { "label": "Reading meaning", "content": "Flower language and symbolism" },
+      { "label": "Care advice", "content": "How to keep them fresh" }
+    ]
+  },
+  "output": { "template": "image-analysis" },
+  "references_dir": "references",
+  "tags": ["flowers", "bouquet", "florist", "meaning", "gift"]
+}
