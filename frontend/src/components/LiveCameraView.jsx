@@ -50,6 +50,7 @@ export default function LiveCameraView({
   livekit,
   onOpenHistory,
   onViewResult,
+  sessionIdRef,
 }) {
   const { play } = useSound();
   const videoRef = useRef(null);
@@ -545,6 +546,10 @@ export default function LiveCameraView({
     doneClickedRef.current = true;
     play('session.send');
 
+    // Clear previous session ref so follow-ups wait for the new session ID
+    // (prevents race condition where LiveSessionView reads stale session ID)
+    if (sessionIdRef) sessionIdRef.current = null;
+
     // User-edited intention takes priority, then agent intention, then card text
     const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
 
@@ -591,12 +596,16 @@ export default function LiveCameraView({
     // V5: Dispatch exec request via REST → Redis → NanoClaw.
     const prompt = finalIntention || 'Analyze this photo';
     try {
-      await api.dispatchExec({
+      const resp = await api.dispatchExec({
         prompt,
         mediaUrls: allUrls,
         priority: 'thorough',
       });
-      console.log('[redis][frontend] Exec dispatched:', prompt, allUrls.length, 'media files');
+      // Store the backend-created sessionId so LiveSessionView can use it for follow-ups
+      if (resp?.sessionId && sessionIdRef) {
+        sessionIdRef.current = resp.sessionId;
+      }
+      console.log('[redis][frontend] Exec dispatched:', prompt, allUrls.length, 'media files, session:', resp?.sessionId);
     } catch (e) {
       console.error('[redis][frontend] Failed to dispatch exec:', e);
     }

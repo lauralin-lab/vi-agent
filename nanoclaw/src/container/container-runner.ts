@@ -62,6 +62,7 @@ export interface ContainerInput {
 export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
+  newSessionId?: string;
   error?: string;
 }
 
@@ -75,6 +76,34 @@ interface VolumeMount {
 // Volume mounts
 // ---------------------------------------------------------------------------
 
+/**
+ * Translate a container-local path to a host path for Docker-in-Docker volume mounts.
+ * When nanoclaw runs inside Docker and spawns agent containers via the host Docker socket,
+ * -v paths must be real host paths, not nanoclaw-container paths.
+ *
+ * Path mapping:
+ *   /workspace/...  → HOST_WORKSPACE_DIR/...  (named volume)
+ *   /packages/...   → HOST_PROJECT_DIR/packages/...  (bind mount)
+ *   /skills/...     → HOST_PROJECT_DIR/nanoclaw/data/shared/skills/...  (bind mount)
+ */
+function toHostPath(containerPath: string): string {
+  // If HOST_WORKSPACE_DIR is set, translate /workspace paths
+  if (config.hostWorkspaceDir && containerPath.startsWith(config.userDataDir)) {
+    return containerPath.replace(config.userDataDir, config.hostWorkspaceDir);
+  }
+  // If HOST_PROJECT_DIR is set, translate /packages and /skills paths
+  if (config.hostProjectDir) {
+    if (containerPath === config.packagesDir || containerPath.startsWith(config.packagesDir + '/')) {
+      return containerPath.replace(config.packagesDir, path.join(config.hostProjectDir, 'packages'));
+    }
+    if (containerPath === config.sharedSkillsDir || containerPath.startsWith(config.sharedSkillsDir + '/')) {
+      return containerPath.replace(config.sharedSkillsDir, path.join(config.hostProjectDir, 'nanoclaw/data/shared/skills'));
+    }
+  }
+  // No translation — either running on host directly or paths already correct
+  return containerPath;
+}
+
 function buildVolumeMounts(input: ContainerInput): VolumeMount[] {
   const mounts: VolumeMount[] = [];
 
@@ -82,7 +111,7 @@ function buildVolumeMounts(input: ContainerInput): VolumeMount[] {
   const userDataDir = config.userDataDir;
   if (fs.existsSync(userDataDir)) {
     mounts.push({
-      hostPath: userDataDir,
+      hostPath: toHostPath(userDataDir),
       containerPath: '/workspace/user-data',
       readonly: false,
     });
@@ -92,7 +121,7 @@ function buildVolumeMounts(input: ContainerInput): VolumeMount[] {
   const skillsDir = config.sharedSkillsDir;
   if (fs.existsSync(skillsDir)) {
     mounts.push({
-      hostPath: skillsDir,
+      hostPath: toHostPath(skillsDir),
       containerPath: '/workspace/skills',
       readonly: true,
     });
@@ -102,7 +131,7 @@ function buildVolumeMounts(input: ContainerInput): VolumeMount[] {
   const packagesDir = config.packagesDir;
   if (fs.existsSync(packagesDir)) {
     mounts.push({
-      hostPath: packagesDir,
+      hostPath: toHostPath(packagesDir),
       containerPath: '/workspace/packages',
       readonly: true,
     });
@@ -113,16 +142,18 @@ function buildVolumeMounts(input: ContainerInput): VolumeMount[] {
   fs.mkdirSync(path.join(ipcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(ipcDir, 'input'), { recursive: true });
   mounts.push({
-    hostPath: ipcDir,
+    hostPath: toHostPath(ipcDir),
     containerPath: '/workspace/ipc',
     readonly: false,
   });
 
   // 5. Working directory for the agent — writable
+  // Agent container runs as 'node' (UID 1000), so we chmod to ensure write access
   const workDir = path.join(config.userDataDir, 'workspace', input.taskId);
   fs.mkdirSync(workDir, { recursive: true });
+  fs.chmodSync(workDir, 0o777);
   mounts.push({
-    hostPath: workDir,
+    hostPath: toHostPath(workDir),
     containerPath: '/workspace/group',
     readonly: false,
   });
@@ -134,19 +165,17 @@ function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
 ): string[] {
-  const args: string[] = ['run', '-i', '--rm', '--name', containerName];
+  const args: string[] = ['run', '-i', '--rm', '--name', containerName, '--label', 'vi-agent-spawned=true'];
 
   // Pass host timezone
   const tz = process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
   args.push('-e', `TZ=${tz}`);
 
-  // Run as current user for bind mount permissions
-  const hostUid = process.getuid?.();
-  const hostGid = process.getgid?.();
-  if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
-    args.push('--user', `${hostUid}:${hostGid}`);
-    args.push('-e', 'HOME=/home/node');
-  }
+  // Run as root to match bind-mount ownership (host dirs are root-owned)
+  // The Dockerfile sets USER node, but bind-mounted volumes from named Docker
+  // volumes or host paths are typically root-owned and not writable by UID 1000.
+  args.push('--user', 'root');
+  args.push('-e', 'HOME=/root');
 
   for (const mount of mounts) {
     if (mount.readonly) {
@@ -178,6 +207,15 @@ function readSecrets(): Record<string, string> {
       secrets[key] = process.env[key]!;
     }
   }
+
+  // Pass API server access so the container can call presign/upload endpoints
+  if (config.apiServerUrl) {
+    secrets['API_SERVER_URL'] = config.apiServerUrl;
+  }
+  if (config.internalApiToken) {
+    secrets['INTERNAL_API_TOKEN'] = config.internalApiToken;
+  }
+
   return secrets;
 }
 
@@ -263,6 +301,9 @@ export async function runContainerAgent(
 
       // 1. Extract complete OUTPUT blocks first (they span multiple lines)
       //    Must happen BEFORE line-splitting to avoid consuming marker lines.
+      //    But DEFER their callbacks until after CARD_OPs, so card updates
+      //    (replace_card, finalize_card) arrive before exec_result.
+      const deferredOutputs: ContainerOutput[] = [];
       let startIdx: number;
       while ((startIdx = parseBuffer.indexOf(OUTPUT_START_MARKER)) !== -1) {
         const endIdx = parseBuffer.indexOf(OUTPUT_END_MARKER, startIdx);
@@ -280,9 +321,7 @@ export async function runContainerAgent(
           const parsed: ContainerOutput = JSON.parse(jsonStr);
           hadOutput = true;
           resetTimeout();
-          if (onOutput) {
-            outputChain = outputChain.then(() => onOutput(parsed));
-          }
+          deferredOutputs.push(parsed);
         } catch (err) {
           console.warn(
             `[container-runner] failed to parse OUTPUT marker: ${jsonStr.slice(0, 200)}`,
@@ -290,7 +329,7 @@ export async function runContainerAgent(
         }
       }
 
-      // 2. Process complete lines for CARD_OP markers
+      // 2. Process complete lines for CARD_OP markers (before deferred outputs)
       const lines = parseBuffer.split('\n');
       // Keep incomplete last line in buffer
       parseBuffer = lines.pop() || '';
@@ -310,6 +349,13 @@ export async function runContainerAgent(
               `[container-runner] failed to parse CARD_OP: ${jsonStr.slice(0, 200)}`,
             );
           }
+        }
+      }
+
+      // 3. Now process deferred OUTPUT blocks (after CARD_OPs)
+      for (const parsed of deferredOutputs) {
+        if (onOutput) {
+          outputChain = outputChain.then(() => onOutput(parsed));
         }
       }
     });

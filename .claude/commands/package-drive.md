@@ -29,16 +29,19 @@ WHAT IS AN EXPERIENCE PACKAGE?
   • "Calorie Calculator" — app tracks daily intake with running totals
 
   A package has:
-  • SKILL.md — what the AI does (a prompt, in plain English)
+  • SKILL.md — the skill prompt (what the AI does, in plain English)
   • manifest.json — metadata (name, triggers, templates, app mode)
   • templates/ — how results look (card layouts)
   • examples/ — saved test runs showing input → output
 
+  At runtime, SKILL.md gets auto-deployed to .claude/skills/{id}/SKILL.md
+  where the Claude Code agent discovers it as a native skill.
+
 WHERE TO FIND THINGS:
   • Packages live in:      packages/{package-id}/
-  • Skills live in:        container/skills/{package-id}/SKILL.md
+  • SKILL.md lives in:     packages/{package-id}/SKILL.md
   • Shared templates:      packages/_shared/
-  • Dashboard:             http://localhost:3001 (when running)
+  • Dashboard Skills tab:  shows all SKILL.md content (Shared + From Package)
 
 NO CODING NEEDED:
   You write what the AI should do in plain English (SKILL.md).
@@ -103,7 +106,7 @@ options:
    {user's description}
 
    ## Acceptance Criteria
-   - [ ] Package files created/updated in packages/{id}/ and container/skills/{id}/
+   - [ ] Package files created/updated in packages/{id}/
    - [ ] SKILL.md reviewed and tested
    - [ ] manifest.json valid with correct triggers and templates
    - [ ] At least one example test case added"
@@ -224,9 +227,12 @@ Now generate all files. Explain each one as you create it:
 Creating your package: {name}
 
 I'll create these files:
-  📄 packages/{id}/manifest.json  — package metadata
-  📝 container/skills/{id}/SKILL.md  — what the AI does (you can edit this!)
-  📁 packages/{id}/examples/  — we'll add test examples next
+  📄 packages/{id}/manifest.json  — package metadata & config
+  📝 packages/{id}/SKILL.md       — the skill prompt (what the AI does — you can edit this!)
+  📁 packages/{id}/examples/      — we'll add test examples next
+
+At runtime, SKILL.md auto-deploys to .claude/skills/{id}/SKILL.md
+so the agent discovers it as a native skill.
 ```
 
 **Create manifest.json** in `packages/{id}/manifest.json`:
@@ -238,12 +244,12 @@ I'll create these files:
 - Pick appropriate `templates.shared` from `packages/_shared/`
 - Estimate `output.estimated_time` and `output.estimated_cost`
 
-**Create SKILL.md** in `container/skills/{id}/SKILL.md`:
+**Create SKILL.md** in `packages/{id}/SKILL.md`:
 - Write in plain English — this IS the skill
 - Structure: what to analyze → how to think → what cards to output → how to present results
 - Reference the card templates by name
 - Keep it under 50 lines — concise instructions, not a novel
-- Use the movie-poster skill as a style reference: `packages/movie-poster/skill.md`
+- Use existing packages as style reference: `packages/nutrition-analyzer/SKILL.md`
 
 **Create examples directory** `packages/{id}/examples/`
 
@@ -366,10 +372,10 @@ If user tests and saves examples via dashboard, those are automatically stored i
 ✅ Package ready: {name}
 
 Files created:
-  📄 packages/{id}/manifest.json
-  📝 container/skills/{id}/SKILL.md
-  📁 packages/{id}/examples/{examples if any}
-  📁 packages/{id}/assets/{assets if any}
+  📄 packages/{id}/manifest.json    — package config
+  📝 packages/{id}/SKILL.md         — the skill prompt
+  📁 packages/{id}/templates/       — card templates (if any)
+  📁 packages/{id}/examples/        — test examples (if any)
 ```
 
 Use `AskUserQuestion`:
@@ -393,7 +399,7 @@ Commit the package files and use the team ship workflow:
 
 ```bash
 # Stage package files
-git add packages/{id}/ container/skills/{id}/
+git add packages/{id}/
 
 # Commit
 git commit -m "pkg({id}): create {name} experience package
@@ -413,7 +419,7 @@ A teammate will review your package, then it goes live!
 **If "Save for later":**
 
 ```bash
-git add packages/{id}/ container/skills/{id}/
+git add packages/{id}/ packages/{id}/
 git commit -m "pkg({id}): work in progress — {name}
 
 Mission: #{issue}"
@@ -437,7 +443,7 @@ Saved! When you're ready to continue:
 ls packages/{id}/
 ```
 
-Read `packages/{id}/manifest.json` and `container/skills/{id}/SKILL.md` (or `packages/{id}/skill.md` if not yet migrated to container format).
+Read `packages/{id}/manifest.json` and `packages/{id}/SKILL.md`.
 
 **Show the user what exists:**
 ```

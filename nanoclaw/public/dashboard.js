@@ -19,7 +19,8 @@
         loadSessionList();
       }
       if (target === 'packages') loadPackagesList();
-      if (target === 'skills') loadSkillsList();
+      if (target === 'skills') loadSkillsTabList();
+      if (target === 'tools') loadToolsList();
       if (target === 'templates') loadTemplatesList();
       if (target === 'apis') loadApiList();
     });
@@ -181,7 +182,7 @@
 
   async function loadOverview() {
     fetchHealth();
-    fetchSkills();
+    fetchTools();
     fetchTemplates();
     fetchSessions();
     loadAllMemoryLayers();
@@ -292,15 +293,15 @@
       '</tbody></table>';
   }
 
-  // ── Native Skills (overview grid) ──
-  async function fetchSkills() {
+  // ── Native Tools (overview grid) ──
+  async function fetchTools() {
     try {
-      const res = await fetch('/api/dashboard/native-skills');
+      const res = await fetch('/api/dashboard/native-tools');
       const data = await res.json();
       const tools = data.tools || [];
-      renderSkillsGrid(tools);
+      renderToolsGrid(tools);
     } catch (err) {
-      $('skills-grid').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
+      $('tools-grid').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
     }
     // Also populate skillsList from packages for chat skill picker
     try {
@@ -312,12 +313,12 @@
     } catch { /* ignore */ }
   }
 
-  function renderSkillsGrid(tools) {
+  function renderToolsGrid(tools) {
     if (tools.length === 0) {
-      $('skills-grid').innerHTML = '<div class="loading">No native skills</div>';
+      $('tools-grid').innerHTML = '<div class="loading">No native tools</div>';
       return;
     }
-    $('skills-grid').innerHTML = tools.map(t =>
+    $('tools-grid').innerHTML = tools.map(t =>
       '<div class="skill-card">' +
       '<div class="skill-card-icon">' + (t.icon || '⚙️') + '</div>' +
       '<div class="skill-card-info">' +
@@ -510,7 +511,7 @@
   // Full overview refresh every 30s (skills, templates, sessions, memory)
   setInterval(() => {
     if (document.querySelector('#page-overview.active')) {
-      fetchSkills();
+      fetchTools();
       fetchTemplates();
       fetchSessions();
     }
@@ -1059,6 +1060,16 @@
         '</div>';
     }
 
+    // Text result cards — render inline with markdown (no iframe needed)
+    if (card.template === 'text-result' || card.template === 'text_result') {
+      const title = card.data.title || 'Result';
+      const content = card.data.content || card.data.text || '';
+      return '<div class="chat-card-rendered chat-card-thinking">' +
+        '<div class="chat-card-header">' + escapeHtml(title) + ' ' + statusBadge + toggle + '</div>' +
+        (content ? '<div class="chat-card-conclusion">' + markdownToHtml(content) + '</div>' : '<div style="color:#8b8fa3;padding:8px">No content</div>') +
+        '</div>';
+    }
+
     // All other cards — render via iframe for rich display
     return '<div class="chat-card-rendered">' +
       '<div class="chat-card-header">' + escapeHtml(card.template || 'card') + ' ' + statusBadge + toggle + '</div>' +
@@ -1089,6 +1100,12 @@
       if (iframe && e.data.height > 0) {
         iframe.style.height = Math.min(e.data.height + 4, 600) + 'px';
       }
+      // Also resize template preview iframes
+      document.querySelectorAll('.tpl-preview-iframe').forEach(function(pf) {
+        if (pf.contentWindow === e.source && e.data.height > 0) {
+          pf.style.height = Math.min(e.data.height + 4, 600) + 'px';
+        }
+      });
     }
   });
 
@@ -1278,28 +1295,24 @@
 
   let chatUploadFiles = []; // { file, preview, url }
 
-  $('chat-add-btn').addEventListener('click', () => {
-    $('chat-file-input').click();
+  const chatMediaArea = $('chat-media-area');
+  chatMediaArea.addEventListener('click', () => $('chat-file-input').click());
+  chatMediaArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    chatMediaArea.classList.add('drag-over');
+  });
+  chatMediaArea.addEventListener('dragleave', () => {
+    chatMediaArea.classList.remove('drag-over');
+  });
+  chatMediaArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    chatMediaArea.classList.remove('drag-over');
+    if (e.dataTransfer.files) addChatFiles(Array.from(e.dataTransfer.files));
   });
 
   $('chat-file-input').addEventListener('change', (e) => {
     if (e.target.files) addChatFiles(Array.from(e.target.files));
     e.target.value = '';
-  });
-
-  // Drag and drop on chat input area
-  const chatInputArea = $('chat-input-area');
-  chatInputArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    chatInputArea.classList.add('drag-over');
-  });
-  chatInputArea.addEventListener('dragleave', () => {
-    chatInputArea.classList.remove('drag-over');
-  });
-  chatInputArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    chatInputArea.classList.remove('drag-over');
-    if (e.dataTransfer.files) addChatFiles(Array.from(e.dataTransfer.files));
   });
 
   function addChatFiles(files) {
@@ -1516,7 +1529,7 @@
 
     // Instruction (rendered as markdown)
     if (pkg.instructionPrompt) {
-      html += '<div class="pkg-info-section"><div class="pkg-info-label">Instruction Prompt</div>' +
+      html += '<div class="pkg-info-section"><div class="pkg-info-label">Skill (MD)</div>' +
         '<div class="pkg-info-md">' + markdownToHtml(pkg.instructionPrompt) + '</div></div>';
     }
 
@@ -1571,10 +1584,9 @@
       '<div class="chat-empty"><span style="font-size:28px;margin-bottom:4px">💬</span>Send a message to test this package</div>' +
       '</div>' +
       '<div class="chat-input-area" style="border-top:1px solid var(--border);padding:10px 14px">' +
-      '<div class="pkg-media-area" id="pkg-media-area">📎 Drop files here or click to upload</div>' +
+      '<div class="media-drop-area" id="pkg-media-area">📎 Drop files here or click to upload</div>' +
       '<div class="pkg-media-previews" id="pkg-media-previews"></div>' +
       '<div class="chat-input-row" style="padding:0;border:none">' +
-      '<button class="btn-icon chat-add-btn" id="pkg-add-btn" title="Attach files">+</button>' +
       '<input type="text" id="pkg-chat-input" placeholder="Test this package..." autocomplete="off">' +
       '<button class="btn btn-primary" id="pkg-chat-send">Send</button>' +
       '</div>' +
@@ -1589,7 +1601,6 @@
     $('pkg-chat-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPkgTest(packageId); }
     });
-    $('pkg-add-btn').addEventListener('click', () => $('pkg-file-input').click());
     $('pkg-file-input').addEventListener('change', (e) => {
       if (e.target.files) addPkgFiles(Array.from(e.target.files));
       e.target.value = '';
@@ -1722,13 +1733,17 @@
       const data = await res.json();
       pkgPlaygroundTaskId = data.taskId;
 
-      // Listen for results via existing SSE
-      const checkResult = setInterval(() => {
-        if (!pkgPlaygroundTaskId) {
-          clearInterval(checkResult);
-          return;
+      // Timeout: if no result after 90s, show error
+      const execTimeout = setTimeout(() => {
+        if (pkgPlaygroundTaskId === data.taskId) {
+          pkgPlaygroundTaskId = null;
+          pkgPlaygroundCards = {};
+          const bubble = msgs.querySelector('.chat-msg.assistant:last-child .chat-bubble');
+          if (bubble) {
+            bubble.innerHTML = '<span style="color:var(--yellow)">Execution timed out (90s). The agent may still be processing — check the monitor panel for events.</span>';
+          }
         }
-      }, 500);
+      }, 90000);
     } catch (err) {
       assistDiv.querySelector('.chat-bubble').innerHTML = '<span style="color:var(--red)">Error: ' + escapeHtml(err.message) + '</span>';
     }
@@ -1801,24 +1816,24 @@
   }
 
   // ══════════════════════════════════════════════════════════════
-  // SKILLS TAB
+  // SKILLS TAB — SKILL.md content from packages
   // ══════════════════════════════════════════════════════════════
 
   let skillsTabList = [];
-  let selectedSkillName = null;
+  let selectedSkillId = null;
 
-  async function loadSkillsList() {
+  async function loadSkillsTabList() {
     try {
-      const res = await fetch('/api/dashboard/native-skills');
+      const res = await fetch('/api/dashboard/package-skills');
       const data = await res.json();
-      skillsTabList = data.tools || [];
-      renderSkillsTabList();
+      skillsTabList = data.skills || [];
+      renderSkillsTabSidebar();
     } catch (err) {
       $('skill-list').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
     }
   }
 
-  function renderSkillsTabList(filter) {
+  function renderSkillsTabSidebar(filter) {
     const container = $('skill-list');
     let filtered = skillsTabList;
     if (filter) {
@@ -1828,7 +1843,115 @@
       );
     }
     if (filtered.length === 0) {
-      container.innerHTML = '<div class="loading">No native skills found</div>';
+      container.innerHTML = '<div class="loading">No skills found</div>';
+      return;
+    }
+
+    // Group by source: Shared first, then From Package
+    const shared = filtered.filter(s => s.source === 'shared');
+    const fromPkg = filtered.filter(s => s.source !== 'shared');
+
+    let html = '';
+    if (shared.length > 0) {
+      html += '<div class="skill-category-label">Shared</div>';
+      html += shared.map(s =>
+        '<div class="pkg-item' + (selectedSkillId === s.id ? ' active' : '') + '" data-id="' + escapeHtml(s.id) + '">' +
+        '<span class="pkg-item-icon">' + (s.icon || '📋') + '</span>' +
+        '<div class="pkg-item-info">' +
+        '<div class="pkg-item-name">' + escapeHtml(s.name) + '</div>' +
+        '<div class="pkg-item-desc">' + escapeHtml(s.description || '') + '</div>' +
+        '</div></div>'
+      ).join('');
+    }
+    if (fromPkg.length > 0) {
+      html += '<div class="skill-category-label">From Package</div>';
+      html += fromPkg.map(s =>
+        '<div class="pkg-item' + (selectedSkillId === s.id ? ' active' : '') + '" data-id="' + escapeHtml(s.id) + '">' +
+        '<span class="pkg-item-icon">' + (s.icon || '📄') + '</span>' +
+        '<div class="pkg-item-info">' +
+        '<div class="pkg-item-name">' + escapeHtml(s.name) + '</div>' +
+        '<div class="pkg-item-desc">' + escapeHtml(s.description || '') + '</div>' +
+        '</div></div>'
+      ).join('');
+    }
+    container.innerHTML = html;
+
+    container.querySelectorAll('.pkg-item').forEach(item => {
+      item.addEventListener('click', () => selectSkillTab(item.dataset.id));
+    });
+  }
+
+  $('skill-filter-input').addEventListener('input', (e) => renderSkillsTabSidebar(e.target.value));
+  $('skill-refresh-btn').addEventListener('click', loadSkillsTabList);
+
+  function selectSkillTab(id) {
+    selectedSkillId = id;
+    renderSkillsTabSidebar($('skill-filter-input').value);
+    const skill = skillsTabList.find(s => s.id === id);
+    if (!skill) return;
+    renderSkillContent(skill);
+  }
+
+  function renderSkillContent(skill) {
+    const main = $('skill-main');
+    const sourceLabel = skill.source === 'shared' ? 'shared' : 'package';
+    const sourcePath = skill.source === 'shared'
+      ? 'skills/' + escapeHtml(skill.id) + '/ &rarr; .claude/skills/' + escapeHtml(skill.id) + '/SKILL.md'
+      : 'packages/' + escapeHtml(skill.id) + '/SKILL.md &rarr; .claude/skills/' + escapeHtml(skill.id) + '/SKILL.md';
+
+    let contentHtml;
+    if (skill.skillContent) {
+      contentHtml = '<div class="skill-section"><div class="skill-section-title">SKILL.md Content</div>' +
+        '<div class="skill-section-body skill-md-content">' + markdownToHtml(skill.skillContent) + '</div></div>';
+    } else {
+      contentHtml = '<div class="skill-section"><div class="skill-section-title">SKILL.md Content</div>' +
+        '<div class="skill-section-body" style="color:var(--text-dim)">No SKILL.md found for this skill</div></div>';
+    }
+
+    main.innerHTML = '<div class="skill-detail">' +
+      '<div class="skill-detail-header">' +
+      '<span style="font-size:32px">' + (skill.icon || '📄') + '</span>' +
+      '<div>' +
+      '<h3>' + escapeHtml(skill.name) + '</h3>' +
+      '<div style="margin-top:4px">' +
+      '<span class="badge badge-blue">' + escapeHtml(skill.category || '-') + '</span> ' +
+      '<span class="badge badge-green">' + sourceLabel + '</span>' +
+      '</div></div></div>' +
+      '<div class="skill-section"><div class="skill-section-title">Path</div>' +
+      '<div class="skill-section-body" style="font-size:12px;color:var(--text-dim)">' + sourcePath + '</div></div>' +
+      contentHtml +
+      '</div>';
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // TOOLS TAB — native built-in tools
+  // ══════════════════════════════════════════════════════════════
+
+  let toolsTabList = [];
+  let selectedToolName = null;
+
+  async function loadToolsList() {
+    try {
+      const res = await fetch('/api/dashboard/native-tools');
+      const data = await res.json();
+      toolsTabList = data.tools || [];
+      renderToolsTabList();
+    } catch (err) {
+      $('tool-list').innerHTML = '<div class="loading">Error: ' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  function renderToolsTabList(filter) {
+    const container = $('tool-list');
+    let filtered = toolsTabList;
+    if (filter) {
+      const q = filter.toLowerCase();
+      filtered = toolsTabList.filter(s =>
+        s.name.toLowerCase().includes(q) || (s.category || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q)
+      );
+    }
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="loading">No native tools found</div>';
       return;
     }
 
@@ -1844,7 +1967,7 @@
     for (const [cat, tools] of Object.entries(groups)) {
       html += '<div class="skill-category-label">' + escapeHtml(cat) + '</div>';
       html += tools.map(t =>
-        '<div class="pkg-item' + (selectedSkillName === t.name ? ' active' : '') + '" data-name="' + escapeHtml(t.name) + '">' +
+        '<div class="pkg-item' + (selectedToolName === t.name ? ' active' : '') + '" data-name="' + escapeHtml(t.name) + '">' +
         '<span class="pkg-item-icon">' + (t.icon || '⚙️') + '</span>' +
         '<div class="pkg-item-info">' +
         '<div class="pkg-item-name">' + escapeHtml(t.name) + '</div>' +
@@ -1855,23 +1978,23 @@
     container.innerHTML = html;
 
     container.querySelectorAll('.pkg-item').forEach(item => {
-      item.addEventListener('click', () => selectSkillTab(item.dataset.name));
+      item.addEventListener('click', () => selectToolTab(item.dataset.name));
     });
   }
 
-  $('skill-filter-input').addEventListener('input', (e) => renderSkillsTabList(e.target.value));
-  $('skill-refresh-btn').addEventListener('click', loadSkillsList);
+  $('tool-filter-input').addEventListener('input', (e) => renderToolsTabList(e.target.value));
+  $('tool-refresh-btn').addEventListener('click', loadToolsList);
 
-  function selectSkillTab(name) {
-    selectedSkillName = name;
-    renderSkillsTabList($('skill-filter-input').value);
-    const tool = skillsTabList.find(t => t.name === name);
+  function selectToolTab(name) {
+    selectedToolName = name;
+    renderToolsTabList($('tool-filter-input').value);
+    const tool = toolsTabList.find(t => t.name === name);
     if (!tool) return;
-    renderSkillDetail(tool);
+    renderToolDetail(tool);
   }
 
-  function renderSkillDetail(tool) {
-    const main = $('skill-main');
+  function renderToolDetail(tool) {
+    const main = $('tool-main');
     main.innerHTML = '<div class="skill-detail">' +
       '<div class="skill-detail-header">' +
       '<span style="font-size:32px">' + (tool.icon || '⚙️') + '</span>' +
@@ -1912,29 +2035,132 @@
     var slots = tpl.slots || {};
     var data = {};
 
-    // Template-specific sample data for good previews
+    // Template-specific sample data — uses ALL available slots per template definition
     var samples = {
-      'nutrition-card': { food_name: 'Grilled Salmon', calories: 367, protein_g: 34, carbs_g: 0, fat_g: 22, serving_size: '6 oz fillet', health_score: 9, recommendation: 'Excellent protein source' },
-      'shopping-list': { title: 'Grocery List', categories: [{ name: 'Produce', items: ['Avocados', 'Spinach', 'Tomatoes'] }, { name: 'Dairy', items: ['Greek Yogurt', 'Milk'] }] },
-      'comparison-table': { title: 'Phone Comparison', items: [{ name: 'iPhone 16', pros: ['Great camera', 'Smooth UI'], cons: ['Expensive'] }, { name: 'Pixel 9', pros: ['Best AI', 'Clean Android'], cons: ['Less apps'] }] },
-      'hero-image': { title: 'Mountain Sunset', description: 'A beautiful sunset over the Rocky Mountains with golden light filtering through clouds.' },
-      'image-analysis': { title: 'Scene Analysis', description: 'A bustling city street with pedestrians and colorful storefronts.', detected_objects: [{ label: 'Person', confidence: 0.95 }, { label: 'Car', confidence: 0.88 }], tags: ['urban', 'street', 'daytime'] },
-      'calendar-event': { title: 'Team Standup', date: '2025-03-15', time: '10:00 AM', location: 'Zoom', description: 'Daily team sync meeting' },
-      'map-pins': { title: 'Nearby Coffee Shops', pins: [{ name: 'Blue Bottle', lat: 37.78, lng: -122.41 }, { name: 'Stumptown', lat: 37.77, lng: -122.42 }] },
-      'quiz': { title: 'Quick Quiz', questions: [{ question: 'What is the capital of France?', options: ['London', 'Paris', 'Berlin', 'Madrid'], answer: 1 }] },
-      'conversation': { title: 'Chat Log', messages: [{ role: 'user', content: 'Hello!' }, { role: 'assistant', content: 'Hi there!' }] },
-      'thinking-process': { title: 'Analyzing...', steps: [{ label: 'Reading input', status: 'done' }, { label: 'Processing', status: 'active' }] },
+      'freeform-html': { html: '<h2 style="color:#6c7ee1;margin-bottom:8px">Weekly Report</h2><p>Revenue is up <strong>12%</strong> this quarter, driven by mobile growth.</p><table style="width:100%;border-collapse:collapse;margin:12px 0"><tr style="background:rgba(108,126,225,0.15)"><th style="padding:6px 10px;text-align:left">Metric</th><th style="padding:6px 10px;text-align:right">Value</th></tr><tr><td style="padding:6px 10px;border-bottom:1px solid #2a2d3a">Users</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid #2a2d3a">24,531</td></tr><tr><td style="padding:6px 10px;border-bottom:1px solid #2a2d3a">Revenue</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid #2a2d3a">$142K</td></tr><tr><td style="padding:6px 10px">Retention</td><td style="padding:6px 10px;text-align:right">89%</td></tr></table><p style="color:#4ade80">All targets met for Q1.</p>' },
+      'nutrition-card': {
+        title: 'Grilled Salmon', icon: '🐟',
+        food_name: 'Grilled Salmon Fillet', photo_url: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80',
+        calories: 367, protein_g: 34, carbs_g: 0, fat_g: 22, fiber_g: 0,
+        serving_size: '6 oz fillet', health_score: 9,
+        recommendation: 'Excellent source of omega-3 fatty acids and lean protein. Pairs well with steamed vegetables.',
+        daily_percent: { calories: 18, protein: 68, fat: 34, fiber: 0 }
+      },
+      'shopping-list': {
+        title: 'Weekend Grocery Run',
+        items: [
+          { name: 'Avocados', quantity: '3', category: 'Produce', checked: false, price_estimate: 4.50 },
+          { name: 'Baby Spinach', quantity: '1 bag', category: 'Produce', checked: true, price_estimate: 3.99 },
+          { name: 'Cherry Tomatoes', quantity: '1 pint', category: 'Produce', checked: false, price_estimate: 3.49 },
+          { name: 'Greek Yogurt', quantity: '32 oz', category: 'Dairy', checked: true, price_estimate: 5.99 },
+          { name: 'Free-Range Eggs', quantity: '12', category: 'Dairy', checked: false, price_estimate: 6.49 },
+          { name: 'Olive Oil', quantity: '1 bottle', category: 'Pantry', checked: false, price_estimate: 8.99 },
+          { name: 'Quinoa', quantity: '1 lb', category: 'Pantry', checked: false, price_estimate: 4.99 },
+          { name: 'Dark Chocolate', quantity: '2 bars', category: 'Pantry', checked: true, price_estimate: 7.98 }
+        ],
+        total_estimate: 46.42,
+        store_suggestion: 'Whole Foods Market — 399 4th St, San Francisco'
+      },
+      'comparison-table': {
+        title: 'Phone Comparison 2025',
+        items: [
+          { name: 'iPhone 16 Pro', image_url: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=300&q=80', highlight: true, pros: ['Best camera system', 'Smooth 120Hz display', '5-year software support'], cons: ['Expensive ($1199)', 'No USB-C fast charge adapter'] },
+          { name: 'Pixel 9 Pro', image_url: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=300&q=80', highlight: false, pros: ['Best AI features', 'Clean Android', 'Great night mode'], cons: ['Weaker video', 'Smaller app ecosystem'] },
+          { name: 'Galaxy S25 Ultra', image_url: 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=300&q=80', highlight: false, pros: ['S Pen stylus', 'Best zoom camera', 'Large 6.9" display'], cons: ['Heavy at 233g', 'Bloatware'] }
+        ],
+        features: ['Camera', 'Display', 'Battery', 'AI Features', 'Price'],
+        verdict: 'iPhone 16 Pro offers the best overall package for most users, but Pixel 9 Pro leads in AI capabilities.'
+      },
+      'hero-image': {
+        title: 'Golden Gate at Sunset',
+        subtitle: 'San Francisco, California',
+        image_url: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=800&q=80',
+        description: 'The Golden Gate Bridge bathed in warm sunset light, with fog rolling beneath the deck and the Marin Headlands in the background.',
+        actions: [{ label: 'View Gallery', url: '#gallery' }, { label: 'Share', url: '#share' }]
+      },
+      'image-analysis': {
+        title: 'Street Scene Analysis',
+        photo_url: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=600&q=80',
+        description: 'A bustling city intersection with pedestrians, taxis, and neon signage reflecting off wet pavement after rain.',
+        detected_objects: [{ label: 'Person', confidence: 0.97 }, { label: 'Taxi', confidence: 0.93 }, { label: 'Traffic Light', confidence: 0.91 }, { label: 'Umbrella', confidence: 0.85 }],
+        tags: ['urban', 'street', 'rainy', 'nightlife', 'city']
+      },
+      'calendar-event': {
+        title: 'Team Standup',
+        start_time: '2025-03-15T10:00:00',
+        end_time: '2025-03-15T10:15:00',
+        location: 'Zoom — Meeting Room 3',
+        description: 'Daily sync: blockers, progress, and plan for today. Please have your updates ready.',
+        attendees: ['Alice Chen', 'Bob Kim', 'Carol Wu', 'Dave Park'],
+        reminder_minutes: 10,
+        status: 'confirmed'
+      },
+      'map-pins': {
+        title: 'Best Coffee in SF',
+        center: { lat: 37.775, lng: -122.418 },
+        zoom: 13,
+        markers: [
+          { name: 'Blue Bottle (Hayes Valley)', lat: 37.776, lng: -122.423, description: 'Minimalist pour-over perfection' },
+          { name: 'Sightglass Coffee', lat: 37.778, lng: -122.408, description: 'Industrial-chic roastery' },
+          { name: 'Ritual Coffee Roasters', lat: 37.752, lng: -122.421, description: 'Valencia St neighborhood staple' }
+        ],
+        selected_marker: 0
+      },
+      'quiz': {
+        question: 'What is the capital of Australia?',
+        options: [
+          { id: 'a', text: 'Sydney', correct: false },
+          { id: 'b', text: 'Melbourne', correct: false },
+          { id: 'c', text: 'Canberra', correct: true },
+          { id: 'd', text: 'Brisbane', correct: false }
+        ],
+        explanation: 'Canberra was chosen as the capital in 1908 as a compromise between Sydney and Melbourne, the two largest cities.',
+        selected_option: 'c',
+        revealed: true,
+        image_url: 'https://images.unsplash.com/photo-1523482580672-f109ba8cb9be?w=600&q=80'
+      },
+      'conversation': {
+        topic: 'Account Login Issue',
+        messages: [
+          { role: 'user', content: 'Hi, I cannot log into my account. It says "invalid credentials".' },
+          { role: 'ai', content: 'I can help with that! Let me check your account. Could you confirm your email address?' },
+          { role: 'user', content: 'It is alice@example.com' },
+          { role: 'ai', content: 'I see — your password was reset yesterday. I have sent a new reset link to your email. Please check your inbox.' }
+        ],
+        input_placeholder: 'Type your message...',
+        resolved: true
+      },
+      'thinking-process': {
+        title: 'Analyzing Photo',
+        steps: [
+          { label: 'Detecting objects', status: 'done' },
+          { label: 'Classifying scene', status: 'done' },
+          { label: 'Generating description', status: 'active' },
+          { label: 'Confidence check', status: 'pending' }
+        ],
+        conclusion: 'The image contains a street scene in a major city, likely during evening hours with moderate foot traffic.'
+      },
+      'place-card': { name: 'Tartine Bakery', category: 'Bakery & Cafe', rating: 4.7, price_level: '$$', address: '600 Guerrero St, San Francisco, CA 94110', phone: '(415) 487-2600', hours: 'Mon-Sun 7:30AM - 7PM', tags: ['bakery', 'pastries', 'coffee', 'brunch'], image_url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80' },
+      'info-card': { title: 'Flight Status', icon: '✈️', subtitle: 'UA 237 — SFO to JFK', fields: [{ label: 'Status', value: 'On Time', highlight: true }, { label: 'Departure', value: '2:45 PM PST' }, { label: 'Arrival', value: '11:20 PM EST' }, { label: 'Gate', value: 'B22' }, { label: 'Terminal', value: 'International' }], footer: 'Last updated 5 minutes ago' },
+      'checklist': { title: 'Launch Checklist', items: [{ text: 'Code review completed', checked: true }, { text: 'Unit tests passing', checked: true }, { text: 'Staging deployment verified', checked: true }, { text: 'Performance benchmarks met', checked: false }, { text: 'Documentation updated', checked: false }] },
+      'recipe': { title: 'Classic Margherita Pizza', prep_time: '20 min', cook_time: '12 min', image_url: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=600&q=80', ingredients: ['Pizza dough (1 ball)', 'San Marzano tomatoes (1 can)', 'Fresh mozzarella (8 oz)', 'Fresh basil leaves', 'Extra virgin olive oil', 'Sea salt'], steps: ['Preheat oven to 500°F with pizza stone.', 'Stretch dough into 12-inch round on floured surface.', 'Crush tomatoes by hand and spread evenly, leaving 1-inch border.', 'Tear mozzarella into pieces and distribute over sauce.', 'Bake 10-12 minutes until crust is golden and cheese bubbles.', 'Top with fresh basil, drizzle olive oil, and slice.'] },
     };
 
     if (samples[id]) return samples[id];
 
-    // Generic fallback: generate from slots
+    // Generic fallback: generate from slots with realistic values
     for (var name in slots) {
       var slot = slots[name];
-      if (slot.type === 'string') data[name] = 'Sample ' + name;
+      if (slot.type === 'string') {
+        if (name.includes('title') || name.includes('name')) data[name] = 'Sample Card';
+        else if (name.includes('description') || name.includes('desc')) data[name] = 'A brief description of the content displayed in this card.';
+        else if (name.includes('url') || name.includes('image')) data[name] = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&q=80';
+        else if (name.includes('html')) data[name] = '<p>Hello from <strong>' + escapeHtml(id) + '</strong> template.</p>';
+        else data[name] = 'Sample ' + name;
+      }
       else if (slot.type === 'number') data[name] = 42;
       else if (slot.type === 'boolean') data[name] = true;
-      else if (slot.type === 'array') data[name] = ['Item 1', 'Item 2'];
+      else if (slot.type === 'array') data[name] = ['Item 1', 'Item 2', 'Item 3'];
       else data[name] = null;
     }
     return data;
@@ -1951,30 +2177,40 @@
       );
     }
     if (filtered.length === 0) {
-      container.innerHTML = '<div class="loading">No templates found</div>';
+      container.innerHTML = '<div class="loading">No cards found</div>';
       return;
     }
 
-    // Render as thumbnail gallery grid
-    container.innerHTML = '<div class="tpl-gallery">' + filtered.map(t => {
-      var iframeId = 'tpl-thumb-' + (t.$id || '').replace(/[^a-z0-9]/gi, '-');
-      var sampleData = generateSampleData(t);
-      var card = { cardId: 'thumb-' + t.$id, template: t.$id, data: sampleData, status: 'finalized' };
-      return '<div class="tpl-thumb' + (selectedTemplateId === t.$id ? ' active' : '') + '" data-id="' + escapeHtml(t.$id) + '">' +
-        '<div class="tpl-thumb-preview">' +
-        '<iframe id="' + iframeId + '" class="tpl-thumb-iframe" src="/card-embed.html" ' +
-        'data-card="' + escapeHtml(JSON.stringify(card)) + '" ' +
-        'scrolling="no"></iframe>' +
-        '</div>' +
-        '<div class="tpl-thumb-info">' +
-        '<div class="tpl-thumb-name">' + escapeHtml(t.$id) + '</div>' +
-        '<div class="tpl-thumb-meta">' +
-        '<span class="badge badge-blue" style="font-size:9px">' + escapeHtml(t.category || '-') + '</span>' +
-        (t.streamable ? ' <span class="badge badge-green" style="font-size:9px">stream</span>' : '') +
-        '</div></div></div>';
-    }).join('') + '</div>';
+    // Group by category
+    const groups = {};
+    for (const t of filtered) {
+      const cat = t.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(t);
+    }
 
-    container.querySelectorAll('.tpl-thumb').forEach(item => {
+    let html = '';
+    for (const [cat, items] of Object.entries(groups)) {
+      html += '<div class="skill-category-label">' + escapeHtml(cat) + '</div>';
+      var cardIcons = {
+        'freeform-html': '🌐', 'nutrition-card': '🥗', 'shopping-list': '🛒',
+        'comparison-table': '⚖️', 'hero-image': '🖼️', 'image-analysis': '🔍',
+        'calendar-event': '📅', 'map-pins': '📍', 'quiz': '❓',
+        'conversation': '💬', 'thinking-process': '🧠', 'place-card': '🏪',
+        'info-card': 'ℹ️', 'checklist': '✅', 'recipe': '🍳'
+      };
+      html += items.map(t =>
+        '<div class="pkg-item' + (selectedTemplateId === t.$id ? ' active' : '') + '" data-id="' + escapeHtml(t.$id) + '">' +
+        '<span class="pkg-item-icon">' + (cardIcons[t.$id] || '📄') + '</span>' +
+        '<div class="pkg-item-info">' +
+        '<div class="pkg-item-name">' + escapeHtml(t.$id) + '</div>' +
+        '<div class="pkg-item-desc">' + escapeHtml(t.description || '') + '</div>' +
+        '</div></div>'
+      ).join('');
+    }
+    container.innerHTML = html;
+
+    container.querySelectorAll('.pkg-item').forEach(item => {
       item.addEventListener('click', () => selectTemplateTab(item.dataset.id));
     });
   }
@@ -1992,6 +2228,13 @@
 
   function renderTemplateDetail(tpl) {
     const main = $('tpl-main');
+    const slots = tpl.slots || {};
+    const slotEntries = Object.entries(slots);
+    const sampleData = generateSampleData(tpl);
+    const sampleCard = { cardId: 'preview-' + tpl.$id, template: tpl.$id, data: sampleData, status: 'finalized' };
+    const cardHash = encodeURIComponent(JSON.stringify(sampleCard));
+
+    // ── Header row ──
     let html = '<div class="tpl-detail">' +
       '<div class="tpl-detail-header">' +
       '<h3>' + escapeHtml(tpl.$id) + '</h3>' +
@@ -2005,9 +2248,37 @@
       '<p style="margin-top:8px;color:var(--text-dim);font-size:13px">' + escapeHtml(tpl.description || '') + '</p>' +
       '</div>';
 
+    // ── Three-column row: Example Data | Raw JSON | Rendered Card ──
+    html += '<div class="tpl-three-col">';
+
+    // Column 1: Example data (editable)
+    html += '<div class="tpl-col">' +
+      '<div class="tpl-col-header">Example Data</div>' +
+      '<div class="tpl-col-body">' +
+      '<textarea class="tpl-test-data" id="tpl-test-data">' + escapeHtml(JSON.stringify(sampleData, null, 2)) + '</textarea>' +
+      '<button class="btn btn-primary btn-sm" id="tpl-test-btn" style="margin-top:6px;width:100%">Render</button>' +
+      '</div></div>';
+
+    // Column 2: Raw card JSON
+    html += '<div class="tpl-col">' +
+      '<div class="tpl-col-header">Raw Card</div>' +
+      '<div class="tpl-col-body">' +
+      '<div class="json-view" id="tpl-raw-json">' + escapeHtml(JSON.stringify(sampleCard, null, 2)) + '</div>' +
+      '</div></div>';
+
+    // Column 3: Rendered card preview
+    html += '<div class="tpl-col">' +
+      '<div class="tpl-col-header">Rendered</div>' +
+      '<div class="tpl-col-body tpl-render-col" id="tpl-render-preview">' +
+      '<iframe class="tpl-preview-iframe" src="/card-embed.html#' + cardHash + '" ' +
+      'data-card="' + escapeHtml(JSON.stringify(sampleCard)) + '" scrolling="no"></iframe>' +
+      '</div></div>';
+
+    html += '</div>'; // end tpl-three-col
+
+    // ── Info rows below ──
+
     // Slots table
-    const slots = tpl.slots || {};
-    const slotEntries = Object.entries(slots);
     if (slotEntries.length > 0) {
       html += '<div class="tpl-section"><div class="skill-section-title">Slots (' + slotEntries.length + ')</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Streamable</th><th>Mutable</th></tr></thead><tbody>' +
@@ -2021,59 +2292,35 @@
         '</tbody></table></div></div>';
     }
 
-    // Test panel
-    const sampleData = {};
-    for (const [name, slot] of slotEntries) {
-      if (slot.type === 'string') sampleData[name] = 'Sample ' + name;
-      else if (slot.type === 'number') sampleData[name] = 42;
-      else if (slot.type === 'boolean') sampleData[name] = true;
-      else if (slot.type === 'array') sampleData[name] = [];
-      else sampleData[name] = null;
-    }
+    // Meta info
+    let metaHtml = '';
+    if (tpl.component) metaHtml += '<div class="tpl-meta-row"><span class="tpl-meta-label">Component</span><code>' + escapeHtml(tpl.component) + '</code></div>';
+    if (tpl.streamable_slots && tpl.streamable_slots.length) metaHtml += '<div class="tpl-meta-row"><span class="tpl-meta-label">Streamable Slots</span><span>' + tpl.streamable_slots.map(s => '<code style="margin-right:4px">' + escapeHtml(s) + '</code>').join('') + '</span></div>';
+    if (tpl.mutable_slots && tpl.mutable_slots.length) metaHtml += '<div class="tpl-meta-row"><span class="tpl-meta-label">Mutable Slots</span><span>' + tpl.mutable_slots.map(s => '<code style="margin-right:4px">' + escapeHtml(s) + '</code>').join('') + '</span></div>';
+    if (metaHtml) html += '<div class="tpl-section"><div class="skill-section-title">Info</div>' + metaHtml + '</div>';
 
-    html += '<div class="tpl-section"><div class="skill-section-title">Test Render</div>' +
-      '<textarea class="tpl-test-data" id="tpl-test-data">' + escapeHtml(JSON.stringify(sampleData, null, 2)) + '</textarea>' +
-      '<div style="margin-top:8px"><button class="btn btn-primary btn-sm" id="tpl-test-btn">Render</button></div>' +
-      '<div class="tpl-test-output" id="tpl-test-output"></div></div>';
-
-    // Component info
-    if (tpl.component) {
-      html += '<div class="tpl-section"><div class="skill-section-title">React Component</div>' +
-        '<code>' + escapeHtml(tpl.component) + '</code></div>';
-    }
-
-    // Streamable/mutable slots
-    if (tpl.streamable_slots) {
-      html += '<div class="tpl-section"><div class="skill-section-title">Streamable Slots</div>' +
-        tpl.streamable_slots.map(s => '<code style="margin-right:4px">' + escapeHtml(s) + '</code>').join('') + '</div>';
-    }
-    if (tpl.mutable_slots) {
-      html += '<div class="tpl-section"><div class="skill-section-title">Mutable Slots</div>' +
-        tpl.mutable_slots.map(s => '<code style="margin-right:4px">' + escapeHtml(s) + '</code>').join('') + '</div>';
-    }
-
-    // Full JSON
-    html += '<div class="tpl-section"><div class="skill-section-title">Definition (JSON)</div>' +
-      '<div class="json-view">' + escapeHtml(JSON.stringify(tpl, null, 2)) + '</div></div>';
+    // Full JSON (collapsed by default)
+    html += '<div class="tpl-section">' +
+      '<details><summary class="skill-section-title" style="cursor:pointer">Definition (JSON)</summary>' +
+      '<div class="json-view">' + escapeHtml(JSON.stringify(tpl, null, 2)) + '</div>' +
+      '</details></div>';
 
     html += '</div>';
     main.innerHTML = html;
 
-    // Wire test button
+    // ── Wire test button ──
     $('tpl-test-btn').addEventListener('click', () => {
       try {
         const data = JSON.parse($('tpl-test-data').value);
-        const card = { cardId: 'test', template: tpl.$id, data, status: 'finalized' };
-        $('tpl-test-output').innerHTML = renderCardVisual(card);
-        // Wire toggle buttons
-        $('tpl-test-output').querySelectorAll('.chat-card-toggle').forEach(btn => {
-          btn.addEventListener('click', () => {
-            card.rawMode = !card.rawMode;
-            $('tpl-test-output').innerHTML = card.rawMode ? renderCardRaw(card) : renderCardVisual(card);
-          });
-        });
+        const card = { cardId: 'test-' + tpl.$id, template: tpl.$id, data, status: 'finalized' };
+        // Update raw JSON column
+        $('tpl-raw-json').textContent = JSON.stringify(card, null, 2);
+        // Update rendered column with new iframe
+        const newHash = encodeURIComponent(JSON.stringify(card));
+        $('tpl-render-preview').innerHTML =
+          '<iframe class="tpl-preview-iframe" src="/card-embed.html#' + newHash + '" scrolling="no"></iframe>';
       } catch (err) {
-        $('tpl-test-output').innerHTML = '<div style="color:var(--red);padding:12px">Error: ' + escapeHtml(err.message) + '</div>';
+        $('tpl-render-preview').innerHTML = '<div style="color:var(--red);padding:12px">Error: ' + escapeHtml(err.message) + '</div>';
       }
     });
   }

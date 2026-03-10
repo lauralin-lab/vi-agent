@@ -23,10 +23,13 @@
         <span class="icon">&#128230;</span> Packages
       </a>
       <a class="nav-link" data-page="skills">
-        <span class="icon">&#9881;</span> Skills
+        <span class="icon">&#128218;</span> Skills
+      </a>
+      <a class="nav-link" data-page="tools">
+        <span class="icon">&#9881;</span> Tools
       </a>
       <a class="nav-link" data-page="templates">
-        <span class="icon">&#9638;</span> Templates
+        <span class="icon">&#9638;</span> Cards
       </a>
       <a class="nav-link" data-page="apis">
         <span class="icon">&#128279;</span> APIs
@@ -63,14 +66,14 @@
         </div>
       </div>
 
-      <!-- Skills -->
+      <!-- Tools -->
       <div class="overview-section" style="margin-top:16px">
-        <div class="section-header" data-toggle="skills">
-          <span>Skills</span>
+        <div class="section-header" data-toggle="tools">
+          <span>Tools</span>
           <span class="section-chevron">&#9660;</span>
         </div>
-        <div class="section-body" id="section-skills">
-          <div id="skills-grid" class="skills-grid"></div>
+        <div class="section-body" id="section-tools">
+          <div id="tools-grid" class="skills-grid"></div>
         </div>
       </div>
 
@@ -182,7 +185,30 @@
     </section>
 
     <!-- ════════════════════════════════════════════════════════ -->
-    <!-- SKILLS PAGE                                             -->
+    <!-- TOOLS PAGE                                              -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-tools">
+      <div class="skill-layout">
+        <div class="skill-sidebar">
+          <div class="skill-sidebar-header">
+            <span>Tools</span>
+            <button class="btn-sm" id="tool-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="skill-sidebar-filter">
+            <input type="text" id="tool-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="skill-sidebar-list" id="tool-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="skill-main" id="tool-main">
+          <div class="skill-empty">Select a tool to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- SKILLS PAGE                                              -->
     <!-- ════════════════════════════════════════════════════════ -->
     <section class="page" id="page-skills">
       <div class="skill-layout">
@@ -199,19 +225,19 @@
           </div>
         </div>
         <div class="skill-main" id="skill-main">
-          <div class="skill-empty">Select a skill to view details</div>
+          <div class="skill-empty">Select a skill to view its SKILL.md</div>
         </div>
       </div>
     </section>
 
     <!-- ════════════════════════════════════════════════════════ -->
-    <!-- TEMPLATES PAGE                                          -->
+    <!-- CARDS PAGE                                               -->
     <!-- ════════════════════════════════════════════════════════ -->
     <section class="page" id="page-templates">
       <div class="tpl-layout">
         <div class="tpl-sidebar">
           <div class="tpl-sidebar-header">
-            <span>Templates</span>
+            <span>Cards</span>
             <button class="btn-sm" id="tpl-refresh-btn" title="Refresh">&#8635;</button>
           </div>
           <div class="tpl-sidebar-filter">
@@ -222,7 +248,7 @@
           </div>
         </div>
         <div class="tpl-main" id="tpl-main">
-          <div class="tpl-empty">Select a template to view details</div>
+          <div class="tpl-empty">Select a card to view details</div>
         </div>
       </div>
     </section>
@@ -278,7 +304,7 @@
           <!-- Collapsible Monitor -->
           <div class="monitor-panel" id="monitor-panel">
             <div class="monitor-header" id="monitor-toggle">
-              <span>&#9660; Monitor</span>
+              <span>&#9654; Monitor</span>
               <div class="monitor-filters" id="channel-filters">
                 <label class="ch-filter"><input type="checkbox" value="ctx" checked><span class="ch-dot ch-ctx"></span></label>
                 <label class="ch-filter"><input type="checkbox" value="exec" checked><span class="ch-dot ch-exec"></span></label>
@@ -301,9 +327,9 @@
               <div class="skill-picker-header">Select a skill</div>
               <div class="skill-picker-list" id="skill-picker-list"></div>
             </div>
+            <div class="media-drop-area" id="chat-media-area">📎 Drop files here or click to upload</div>
             <div class="chat-upload-preview" id="chat-upload-preview" style="display:none"></div>
             <div class="chat-input-row">
-              <button class="btn-icon chat-add-btn" id="chat-add-btn" title="Attach files">+</button>
               <input type="text" id="chat-input" placeholder="Type a message... Use @ to mention a skill" autocomplete="off">
               <button class="btn btn-primary" id="chat-send">Send</button>
             </div>

@@ -70,7 +70,10 @@ export async function predictIntentions(
       model: config.intentionModel,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content }],
+      messages: [
+        { role: 'user', content },
+        { role: 'assistant', content: '[' },
+      ],
     });
 
     let text = response.content
@@ -80,6 +83,9 @@ export async function predictIntentions(
 
     // Strip markdown code fences if present
     text = text.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+
+    // Prepend the '[' from the assistant prefill
+    text = '[' + text;
 
     let intentions: PredictedIntention[];
     try {

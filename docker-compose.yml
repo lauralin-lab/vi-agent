@@ -11,6 +11,7 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vi} -d ${POSTGRES_DB:-vi_db}" ]
       interval: 5s
@@ -141,10 +142,13 @@ services:
       # USER_ID no longer needed — NanoClaw discovers active users dynamically
       USER_DATA_DIR: /workspace
       HEALTH_PORT: "3100"
+      CONTAINER_MODE: "true"
+      CONTAINER_NETWORK: vi_agent_vi-network
     volumes:
       - ./data/dev/user:/workspace
       - ./nanoclaw/data/shared/skills:/skills:ro
       - ./packages:/packages:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy

@@ -177,25 +177,82 @@
     return html;
   }
 
+  function renderObjectFields(obj) {
+    var html = '';
+    Object.keys(obj).forEach(function(k) {
+      var v = obj[k];
+      if (v === null || v === undefined) return;
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(k) + '</span><span class="module-field-val" style="font-size:11px;color:#8b8fa3">' + escapeHtml(JSON.stringify(v)) + '</span></div>';
+      } else if (Array.isArray(v)) {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(k) + '</span><span class="module-field-val">' + v.map(function(i) { return escapeHtml(typeof i === 'string' ? i : JSON.stringify(i)); }).join(', ') + '</span></div>';
+      } else {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(k) + '</span><span class="module-field-val">' + escapeHtml(String(v)) + '</span></div>';
+      }
+    });
+    return html;
+  }
+
   function renderGenericModule(card) {
     const data = card.data || {};
     const entries = Object.entries(data);
     if (entries.length === 0) return '<div class="module-card"><div class="module-empty">No data</div></div>';
 
+    // Auto-detect title/name/heading from data
+    var title = data.title || data.name || data.heading || card.template || 'Card';
+    var subtitle = data.subtitle || data.description || '';
+    var icon = data.icon || '';
+    var imageUrl = data.image_url || data.imageUrl || data.image || data.url || '';
+    // Check if url looks like an image
+    var isImageUrl = imageUrl && /\.(jpg|jpeg|png|gif|webp|svg)|unsplash|image/i.test(imageUrl);
+
     let html = '<div class="module-card">';
-    html += '<div class="module-header"><div class="module-title">' + escapeHtml(card.template || 'Card') + '</div></div>';
+
+    // Image at top if present
+    if (isImageUrl) {
+      html += '<img class="module-image" src="' + escapeHtml(imageUrl) + '" onerror="this.style.display=\'none\'">';
+    }
+
+    // Header
+    html += '<div class="module-header">';
+    if (icon) html += '<span class="module-icon">' + icon + '</span>';
+    html += '<div><div class="module-title">' + escapeHtml(title) + '</div>';
+    if (subtitle && subtitle !== title) html += '<div class="module-subtitle">' + escapeHtml(subtitle.length > 200 ? subtitle.slice(0, 200) + '...' : subtitle) + '</div>';
+    html += '</div></div>';
+
+    // Skip already-used keys
+    var skipKeys = { title: 1, name: 1, heading: 1, subtitle: 1, icon: 1 };
+    if (isImageUrl) { skipKeys.image_url = 1; skipKeys.imageUrl = 1; skipKeys.image = 1; }
+    // Don't skip description if it's long (show it as a section)
+    if (subtitle === data.description) skipKeys.description = 1;
+
     entries.forEach(function(entry) {
       const key = entry[0], val = entry[1];
+      if (skipKeys[key]) return;
+
       if (typeof val === 'string' && val.length > 200) {
         html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + '</div><div style="font-size:13px;white-space:pre-wrap;line-height:1.5">' + escapeHtml(val) + '</div></div>';
+      } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(key) + '</span><span class="module-field-val">' + escapeHtml(String(val)) + '</span></div>';
       } else if (Array.isArray(val)) {
-        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + '</div>';
-        val.forEach(function(item) { html += '<div class="module-list-item">' + escapeHtml(typeof item === 'string' ? item : JSON.stringify(item)) + '</div>'; });
+        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + ' (' + val.length + ')</div>';
+        val.forEach(function(item) {
+          if (typeof item === 'string' || typeof item === 'number') {
+            html += '<div class="module-list-item">' + escapeHtml(String(item)) + '</div>';
+          } else if (typeof item === 'object' && item !== null) {
+            // Render object items as mini field groups
+            var itemTitle = item.name || item.title || item.label || item.question || '';
+            html += '<div style="padding:8px;margin:4px 0;background:rgba(0,0,0,0.2);border-radius:6px">';
+            if (itemTitle) html += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + escapeHtml(itemTitle) + '</div>';
+            html += renderObjectFields(item);
+            html += '</div>';
+          }
+        });
         html += '</div>';
       } else if (typeof val === 'object' && val !== null) {
-        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + '</div><div style="font-size:12px;font-family:monospace;white-space:pre-wrap;color:#8b8fa3">' + escapeHtml(JSON.stringify(val, null, 2)) + '</div></div>';
-      } else {
-        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(key) + '</span><span class="module-field-val">' + escapeHtml(String(val)) + '</span></div>';
+        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + '</div>';
+        html += '<div style="padding:4px 0">' + renderObjectFields(val) + '</div>';
+        html += '</div>';
       }
     });
     html += '</div>';
@@ -205,6 +262,8 @@
   // Module type → renderer map
   var renderers = {
     'html_stream': renderHtmlCard,
+    'freeform-html': renderHtmlCard,
+    'freeform_html': renderHtmlCard,
     'place_card': function(c) { return renderPlaceCard(c.data); },
     'place-card': function(c) { return renderPlaceCard(c.data); },
     'info_card': function(c) { return renderInfoCard(c.data); },
@@ -212,6 +271,8 @@
     'checklist': function(c) { return renderChecklist(c.data); },
     'recipe': function(c) { return renderRecipe(c.data); },
     'comparison': function(c) { return renderComparison(c.data); },
+    'comparison-table': function(c) { return renderComparison(c.data); },
+    'comparison_table': function(c) { return renderComparison(c.data); },
     'shopping_list': function(c) { return renderShoppingList(c.data); },
     'shopping-list': function(c) { return renderShoppingList(c.data); },
   };
@@ -222,21 +283,40 @@
     return renderGenericModule(card);
   }
 
-  // Listen for postMessage from parent dashboard
-  window.addEventListener('message', function(e) {
-    if (!e.data || e.data.type !== 'render-card') return;
-    var card = e.data.card;
-    if (!card) return;
+  function doRender(card) {
     var container = document.getElementById('card-content');
     container.innerHTML = renderCard(card);
-    // Notify parent of rendered height
     requestAnimationFrame(function() {
       var height = container.scrollHeight;
       window.parent.postMessage({ type: 'card-height', cardId: card.cardId, height: height }, '*');
     });
+  }
+
+  // Self-initialize: try URL hash first (most reliable), then frameElement
+  var initialized = false;
+  if (window.location.hash && window.location.hash.length > 1) {
+    try {
+      doRender(JSON.parse(decodeURIComponent(window.location.hash.slice(1))));
+      initialized = true;
+    } catch (e) { /* bad hash data */ }
+  }
+  if (!initialized) {
+    try {
+      var frame = window.frameElement;
+      if (frame && frame.dataset.card) {
+        doRender(JSON.parse(frame.dataset.card));
+        initialized = true;
+      }
+    } catch (e) { /* cross-origin */ }
+  }
+
+  // Listen for postMessage (dynamic updates from chat streaming + cross-origin fallback)
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.type !== 'render-card') return;
+    if (e.data.card) doRender(e.data.card);
   });
 
-  // Signal ready
+  // Signal ready (for postMessage-based flow)
   window.parent.postMessage({ type: 'card-embed-ready' }, '*');
 })();
 </script>

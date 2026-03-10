@@ -50,4 +50,12 @@ export const config = {
   // Container execution mode (v5.2) — default: true
   containerMode: optional('CONTAINER_MODE', 'true') === 'true',
   agentContainerImage: optional('AGENT_CONTAINER_IMAGE', 'nanoclaw-agent:latest'),
+
+  // Docker-in-Docker: host path prefix for translating container paths to host paths.
+  // When nanoclaw runs inside Docker and spawns agent containers via the host Docker socket,
+  // -v mount paths must be host paths, not nanoclaw-container paths.
+  // Set to the host project directory (e.g. /opt/vi-agent/instances/szj/src)
+  // or the named volume mount point for USER_DATA_DIR.
+  hostProjectDir: process.env.HOST_PROJECT_DIR || '',
+  hostWorkspaceDir: process.env.HOST_WORKSPACE_DIR || '',
 } as const;

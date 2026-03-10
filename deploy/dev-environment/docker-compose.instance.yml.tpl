@@ -165,10 +165,16 @@ services:
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
       - DASHBOARD=true
       - SSL_DIR=/etc/nginx/ssl
+      - CONTAINER_MODE=true
+      - AGENT_CONTAINER_IMAGE=nanoclaw-agent:latest
+      - HOST_PROJECT_DIR=__REPO_DIR__
+      - HOST_WORKSPACE_DIR=/var/lib/docker/volumes/vi-agent-__DEV_NAME___nanoclaw_workspace/_data
+      - CONTAINER_NETWORK=vi-agent-__DEV_NAME___default
     volumes:
       - nanoclaw_workspace:/workspace
       - __REPO_DIR__/packages:/packages:ro
       - ./ssl:/etc/nginx/ssl:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy

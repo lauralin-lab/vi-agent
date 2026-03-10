@@ -236,7 +236,8 @@ async def dispatch_exec_user(
     channel = f"vi:exec:{uid}"
     await redis.publish(channel, exec_msg.model_dump_json())
 
-    logger.info("[redis][api] Exec dispatch: task=%s skill=%s uid=%s session=%s", task_id, req.skill_slug, uid, session_id)
+    logger.warning("[exec] dispatch: task=%s session=%s (req.session_id=%s) uid=%s prompt=%.60s",
+                   task_id, session_id, req.session_id, uid, req.prompt)
 
     return {
         "ok": True,

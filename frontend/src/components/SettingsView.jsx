@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { IOS_SPRING } from '../constants';
 import MemoryContent from './MemoryView';
 
-const MAX_SKILLS_PREVIEW = 5;
+const MAX_TOOLS_PREVIEW = 5;
 
 const PROVIDERS = [
   { key: 'google', name: 'Google', icon: 'G', iconBg: 'rgba(66,133,244,0.08)', iconColor: '#4285F4', scopes: ['Calendar', 'Drive', 'Gmail'] },
@@ -13,25 +13,25 @@ const PROVIDERS = [
   { key: 'slack', name: 'Slack', icon: 'S', iconBg: 'rgba(74,21,75,0.08)', iconColor: '#4A154B', scopes: ['Messages', 'Channels'] },
 ];
 
-// ── Skill Row ──
-function SkillRow({ skill, onToggle, isLast }) {
-  const isEnabled = skill.enabled !== false;
+// ── Tool Row (formerly SkillRow — packages are "tools" in the dashboard) ──
+function ToolRow({ tool, onToggle, isLast }) {
+  const isEnabled = tool.enabled !== false;
   return (
     <div
       className="flex items-center gap-3 px-4 py-3"
       style={{ borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.06)' }}
     >
       <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center"
-        style={{ background: skill.ui?.card_color || 'rgba(0,0,0,0.04)', fontSize: 20 }}>
-        {skill.icon || '...'}
+        style={{ background: tool.ui?.card_color || 'rgba(0,0,0,0.04)', fontSize: 20 }}>
+        {tool.icon || '...'}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold truncate" style={{ fontSize: 15, color: '#000' }}>{skill.name}</p>
-        {skill.description && (
-          <p className="truncate" style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)' }}>{skill.description}</p>
+        <p className="font-semibold truncate" style={{ fontSize: 15, color: '#000' }}>{tool.name}</p>
+        {tool.description && (
+          <p className="truncate" style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)' }}>{tool.description}</p>
         )}
       </div>
-      <button onClick={() => onToggle(skill)} className="shrink-0 relative transition-colors duration-200"
+      <button onClick={() => onToggle(tool)} className="shrink-0 relative transition-colors duration-200"
         style={{ width: 48, height: 28, borderRadius: 14, background: isEnabled ? '#000' : 'rgba(0,0,0,0.08)' }}>
         <div className="absolute top-1 rounded-full bg-white pointer-events-none transition-all duration-200"
           style={{ width: 20, height: 20, left: isEnabled ? 24 : 4, boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
@@ -108,10 +108,10 @@ function GroupedCard({ children, delay = 0 }) {
 }
 
 export default function SettingsView({ onBack, livekit }) {
-  // ── Skills state ──
-  const [skills, setSkills] = useState([]);
-  const [skillsLoading, setSkillsLoading] = useState(true);
-  const [showAllSkills, setShowAllSkills] = useState(false);
+  // ── Tools state (packages shown as toggleable tools) ──
+  const [tools, setTools] = useState([]);
+  const [toolsLoading, setToolsLoading] = useState(true);
+  const [showAllTools, setShowAllTools] = useState(false);
 
   // ── Connections state ──
   const [connStatuses, setConnStatuses] = useState({});
@@ -119,18 +119,18 @@ export default function SettingsView({ onBack, livekit }) {
   const [connecting, setConnecting] = useState(null);
   const [disconnecting, setDisconnecting] = useState(null);
 
-  // ── Load skills ──
-  const loadSkills = useCallback(async () => {
+  // ── Load tools (from /api/skills endpoint — packages) ──
+  const loadTools = useCallback(async () => {
     try {
       const viUserId = api.getViUserId();
       const qs = viUserId ? `?vi_user_id=${encodeURIComponent(viUserId)}` : '';
       const data = await api.request(`/api/skills${qs}`);
-      setSkills(Array.isArray(data) ? data : (data?.skills || []));
+      setTools(Array.isArray(data) ? data : (data?.skills || []));
     } catch (e) {
-      console.error('Failed to load skills:', e);
-      setSkills([]);
+      console.error('Failed to load tools:', e);
+      setTools([]);
     } finally {
-      setSkillsLoading(false);
+      setToolsLoading(false);
     }
   }, []);
 
@@ -153,26 +153,26 @@ export default function SettingsView({ onBack, livekit }) {
   }, []);
 
   useEffect(() => {
-    loadSkills();
+    loadTools();
     loadConnections();
-  }, [loadSkills, loadConnections]);
+  }, [loadTools, loadConnections]);
 
-  // ── Skill toggle ──
-  const handleToggle = useCallback(async (skill) => {
-    const slug = skill.slug;
+  // ── Tool toggle ──
+  const handleToggle = useCallback(async (tool) => {
+    const slug = tool.slug;
     if (!slug) return;
-    const isEnabled = skill.enabled !== false;
+    const isEnabled = tool.enabled !== false;
     // Flip immediately
-    setSkills(prev => prev.map(s => s.slug === slug ? { ...s, enabled: !isEnabled } : s));
-    // Only call API for user skills (shared skills can't be toggled server-side)
-    if (skill.source === 'shared') return;
+    setTools(prev => prev.map(s => s.slug === slug ? { ...s, enabled: !isEnabled } : s));
+    // Only call API for user tools (shared ones can't be toggled server-side)
+    if (tool.source === 'shared') return;
     const viUserId = api.getViUserId();
     const qs = viUserId ? `?vi_user_id=${encodeURIComponent(viUserId)}` : '';
     try {
       await api.request(`/api/skills/${encodeURIComponent(slug)}/${isEnabled ? 'disable' : 'enable'}${qs}`, { method: 'POST' });
     } catch (e) {
-      console.error('Failed to toggle skill:', e);
-      setSkills(prev => prev.map(s => s.slug === slug ? { ...s, enabled: isEnabled } : s));
+      console.error('Failed to toggle tool:', e);
+      setTools(prev => prev.map(s => s.slug === slug ? { ...s, enabled: isEnabled } : s));
     }
   }, []);
 
@@ -206,9 +206,9 @@ export default function SettingsView({ onBack, livekit }) {
   }, [disconnecting]);
 
   // ── Derived ──
-  const visibleSkills = showAllSkills ? skills : skills.slice(0, MAX_SKILLS_PREVIEW);
-  const hasMoreSkills = skills.length > MAX_SKILLS_PREVIEW;
-  const isLoading = skillsLoading && connLoading;
+  const visibleTools = showAllTools ? tools : tools.slice(0, MAX_TOOLS_PREVIEW);
+  const hasMoreTools = tools.length > MAX_TOOLS_PREVIEW;
+  const isLoading = toolsLoading && connLoading;
 
   // ═══ Main Profile page ═══
   return (
@@ -233,20 +233,20 @@ export default function SettingsView({ onBack, livekit }) {
           </div>
         ) : (
           <>
-            {/* ═══ Skills Section ═══ */}
-            {skills.length > 0 && (
+            {/* ═══ Tools Section (packages with toggle) ═══ */}
+            {tools.length > 0 && (
               <div className="mb-6">
-                <SectionHeader label="Skills" />
+                <SectionHeader label="Tools" />
                 <GroupedCard>
-                  {visibleSkills.map((skill, idx) => (
-                    <SkillRow key={skill.slug || skill.name} skill={skill} onToggle={handleToggle}
-                      isLast={idx === visibleSkills.length - 1 && !hasMoreSkills} />
+                  {visibleTools.map((tool, idx) => (
+                    <ToolRow key={tool.slug || tool.name} tool={tool} onToggle={handleToggle}
+                      isLast={idx === visibleTools.length - 1 && !hasMoreTools} />
                   ))}
-                  {hasMoreSkills && (
-                    <button onClick={() => setShowAllSkills(prev => !prev)}
+                  {hasMoreTools && (
+                    <button onClick={() => setShowAllTools(prev => !prev)}
                       className="w-full py-2.5 text-center font-medium hover:bg-black/[0.02] transition-colors"
                       style={{ fontSize: 14, color: 'rgba(0,0,0,0.4)', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                      {showAllSkills ? 'Show less' : 'See all'}
+                      {showAllTools ? 'Show less' : 'See all'}
                     </button>
                   )}
                 </GroupedCard>

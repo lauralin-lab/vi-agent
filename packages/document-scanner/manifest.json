@@ -13,7 +13,7 @@
   },
 
   "instruction": {
-    "file": "instruction.md",
+    "file": "SKILL.md",
     "model": "claude-sonnet-4-6",
     "max_turns": 5,
     "max_tokens": 8192
@@ -26,7 +26,7 @@
 
   "tools": {
     "bundled": [],
-    "builtin": ["memory_update", "publish_result"]
+    "builtin": []
   },
 
   "apis": {},

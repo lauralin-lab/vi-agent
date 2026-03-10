@@ -68,13 +68,13 @@ export function ensureContainerRuntimeRunning(): void {
 }
 
 /** Kill orphaned NanoClaw agent containers from previous runs.
- *  Only targets containers spawned by the container-runner (prefix: vi-agent-test- or vi-agent-exec-).
- *  Never touches compose-managed containers (vi-agent-szj-*, vi-agent-xxl-*, etc.). */
+ *  Uses Docker label filtering to ONLY target containers we spawned.
+ *  Never touches compose-managed containers. */
 export function cleanupOrphans(): void {
   try {
-    // Only match agent execution containers, not compose service containers
+    // Only clean up containers with our label (set by container-runner and container-manager)
     const output = execSync(
-      `${CONTAINER_RUNTIME_BIN} ps -a --filter name=vi-agent-test- --filter name=vi-agent-exec- --format '{{.Names}}'`,
+      `${CONTAINER_RUNTIME_BIN} ps -a --filter label=vi-agent-spawned=true --format '{{.Names}}'`,
       { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' },
     );
     const orphans = output.trim().split('\n').filter(Boolean);

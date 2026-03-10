@@ -104,6 +104,9 @@ function App() {
   });
   const [allTasksScrollDate, setAllTasksScrollDate] = useState(null);
   const [sessionData, setSessionData] = useState(null);
+  // Track the sessionId returned by the backend for camera-initiated sessions
+  // (LiveCameraView dispatches before navigating, LiveSessionView needs the ID for follow-ups)
+  const currentSessionIdRef = useRef(null);
   const [liveResult, setLiveResult] = useState(null);
   const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [lastIntention, setLastIntention] = useState('');
@@ -311,6 +314,7 @@ function App() {
     setLiveResult(result);
     setCapturedPhotos(photos || []);
     setLastIntention(intention || '');
+    currentSessionIdRef.current = null; // reset — will be set by LiveCameraView's dispatch response
     setSessionData(null);
     setViewState('live-session');
   };
@@ -371,6 +375,7 @@ function App() {
                 livekit={livekit}
                 onOpenHistory={handleOpenHistory}
                 onViewResult={handleViewResult}
+                sessionIdRef={currentSessionIdRef}
               />
             )}
 
@@ -386,6 +391,7 @@ function App() {
                 sessionData={sessionData}
                 onAddPhoto={handleAddPhotoToSession}
                 sessionCacheRef={sessionCacheRef}
+                sessionIdRef={currentSessionIdRef}
               />
             )}
 

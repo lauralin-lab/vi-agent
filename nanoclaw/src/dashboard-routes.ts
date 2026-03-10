@@ -81,10 +81,68 @@ export function createDashboardRouter(): Router {
   });
 
   // =====================================================================
-  // Native Skills API — built-in tools from skill-executor.ts
+  // Package Skills API — SKILL.md from packages + shared skill manifests
   // =====================================================================
 
-  router.get('/api/dashboard/native-skills', (_req: Request, res: Response) => {
+  router.get('/api/dashboard/package-skills', async (_req: Request, res: Response) => {
+    try {
+      // Skills from packages (have SKILL.md content)
+      const pkgs = getAllPackages();
+      const packageSkills = pkgs
+        .filter((p) => !!p.instructionPrompt)
+        .map((p) => ({
+          id: p.manifest.id,
+          name: p.manifest.name,
+          icon: p.manifest.icon,
+          category: p.manifest.category,
+          description: p.manifest.description,
+          skillContent: p.instructionPrompt,
+          source: 'package' as const,
+        }));
+
+      // Shared/user skills (from skill-loader manifests)
+      const manifests = await getAllManifests();
+      const sharedSkills = manifests.map((m) => ({
+        id: m.slug || m.name,
+        name: m.name,
+        icon: m.icon || '📋',
+        category: m.category || 'shared',
+        description: m.description || '',
+        skillContent: null as string | null,
+        source: 'shared' as const,
+      }));
+
+      // Try to load SKILL.md content for shared skills
+      for (const skill of sharedSkills) {
+        for (const baseDir of [join(config.userDataDir, 'skills'), config.sharedSkillsDir]) {
+          try {
+            const content = await readFile(join(baseDir, skill.id, 'SKILL.md'), 'utf-8');
+            skill.skillContent = content;
+            break;
+          } catch {
+            // Also try instruction.md fallback
+            try {
+              const content = await readFile(join(baseDir, skill.id, 'instruction.md'), 'utf-8');
+              skill.skillContent = content;
+              break;
+            } catch { /* not found */ }
+          }
+        }
+      }
+
+      res.json({ skills: [...sharedSkills, ...packageSkills] });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  // =====================================================================
+  // Native Tools API — built-in tools available to the agent
+  // =====================================================================
+
+  router.get('/api/dashboard/native-tools', (_req: Request, res: Response) => {
     const nativeTools = [
       { name: 'file_read', icon: '📖', category: 'filesystem', description: 'Read a file from the user workspace' },
       { name: 'file_write', icon: '✏️', category: 'filesystem', description: 'Write content to a file in the user workspace' },
@@ -268,9 +326,10 @@ export function createDashboardRouter(): Router {
 
   router.post('/api/dashboard/chat', async (req: Request, res: Response) => {
     try {
-      const { prompt, skillSlug, uid: requestUid } = req.body as {
+      const { prompt, skillSlug, mediaUrls, uid: requestUid } = req.body as {
         prompt?: string;
         skillSlug?: string;
+        mediaUrls?: string[];
         uid?: string;
       };
 
@@ -288,6 +347,7 @@ export function createDashboardRouter(): Router {
         sessionId,
         prompt: prompt.trim(),
         skillSlug: skillSlug || undefined,
+        mediaUrls: mediaUrls || undefined,
         ts: Date.now(),
         userId: uid,
       };
@@ -882,6 +942,19 @@ export function createDashboardRouter(): Router {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  });
+
+  // Error handler — catch body-parser "request aborted" and other middleware errors
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  router.use((err: any, _req: Request, res: Response, next: Function) => {
+    if (err.type === 'request.aborted' || err.message === 'request aborted') {
+      // Client disconnected before body was fully read — not worth logging
+      if (!res.headersSent) {
+        res.status(400).json({ error: 'Request aborted by client' });
+      }
+      return;
+    }
+    next(err);
   });
 
   return router;

@@ -7,9 +7,12 @@ import type { PackageManifest, TemplateDefinition } from '../channels/types.js';
 //
 // Each package lives in packages/{package-id}/ and contains:
 //   manifest.json           — PackageManifest definition
-//   instruction.md          — AI instruction prompt
+//   SKILL.md                — AI skill prompt (phase-based format)
 //   templates/*.json        — Bundled template schemas
 //   tools/tools.json        — Custom tool definitions (optional)
+//
+// SKILL.md replaces the former instruction.md. The loader supports both
+// for backwards compatibility (SKILL.md takes priority).
 //
 // At startup, loadPackages() scans the directory and loads all valid
 // packages. At runtime, getPackage() and listPackages() provide access.
@@ -148,14 +151,27 @@ async function tryLoadPackage(
     };
   }
 
-  // 3. Load instruction prompt
-  const instructionFile = manifest.instruction?.file ?? 'instruction.md';
+  // 3. Load skill/instruction prompt (SKILL.md takes priority over instruction.md)
   let instructionPrompt = '';
-  try {
-    instructionPrompt = await readFile(join(pkgDir, instructionFile), 'utf-8');
-  } catch {
+  const explicitFile = manifest.instruction?.file;
+
+  // Priority: explicit file from manifest > SKILL.md > instruction.md
+  const candidateFiles = explicitFile
+    ? [explicitFile]
+    : ['SKILL.md', 'instruction.md'];
+
+  for (const candidate of candidateFiles) {
+    try {
+      instructionPrompt = await readFile(join(pkgDir, candidate), 'utf-8');
+      break;
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  if (!instructionPrompt) {
     console.warn(
-      `[package-loader] ${manifest.id}: instruction prompt "${instructionFile}" not found, using empty prompt`,
+      `[package-loader] ${manifest.id}: no SKILL.md or instruction.md found, using empty prompt`,
     );
   }
 

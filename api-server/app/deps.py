@@ -110,6 +110,10 @@ async def get_current_user_or_device(
                 if not user.is_active:
                     raise HTTPException(status_code=403, detail={"code": "user_disabled", "message": "Account disabled"})
                 return user
+            # Internal services with valid token: create a synthetic user
+            # so endpoints like presign work without a DB row
+            synthetic = User(vi_user_id=vi_user_id, is_active=True)
+            return synthetic
 
     # 3. Device auth via query param
     if vi_user_id:

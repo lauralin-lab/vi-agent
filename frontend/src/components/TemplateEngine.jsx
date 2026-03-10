@@ -98,6 +98,22 @@ const TEMPLATE_REGISTRY = {
     streamable: true,
     description: 'Swipeable image gallery with captions',
   },
+  thinking: {
+    category: 'present',
+    renderer: 'react',
+    component: 'StepsGuideModule',
+    mutable: false,
+    streamable: true,
+    description: 'Thinking/processing indicator card',
+  },
+  'text-result': {
+    category: 'present',
+    renderer: 'react',
+    component: 'TextResultModule',
+    mutable: false,
+    streamable: false,
+    description: 'Plain text/markdown result card',
+  },
   'freeform-html': {
     category: 'present',
     renderer: 'html',

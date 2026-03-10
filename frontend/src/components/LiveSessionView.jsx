@@ -612,7 +612,7 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
 // Main Component
 // ═══════════════════════════════════════════════════════════
 
-export default function LiveSessionView({ result, photos, intention, onBack, livekit, nanoClaw, sessionData, onAddPhoto, sessionCacheRef }) {
+export default function LiveSessionView({ result, photos, intention, onBack, livekit, nanoClaw, sessionData, onAddPhoto, sessionCacheRef, sessionIdRef }) {
   const { play } = useSound();
   const scrollContainerRef = useRef(null);
   const headerRef = useRef(null);
@@ -622,6 +622,20 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   const fromHome = sessionData?.fromHome;
   const cacheKey = sessionData?.sessionId;
   const [dispatchingSlug, setDispatchingSlug] = useState(null);
+
+  // Resolve the current session ID: prefer explicit sessionData, fall back to shared ref (set by LiveCameraView)
+  const getSessionId = useCallback(() => sessionData?.sessionId || sessionIdRef?.current || null, [sessionData, sessionIdRef]);
+
+  // After any dispatchExec, capture the returned sessionId for future calls
+  const dispatchWithSession = useCallback(async (params) => {
+    const sid = getSessionId();
+    const resp = await api.dispatchExec({ ...params, sessionId: sid });
+    // Always update ref with the backend's session ID (handles both new and existing)
+    if (resp?.sessionId && sessionIdRef) {
+      sessionIdRef.current = resp.sessionId;
+    }
+    return resp;
+  }, [getSessionId, sessionIdRef]);
 
   // ── Chat Input ──
   const [chatText, setChatText] = useState('');
@@ -733,7 +747,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
 
     // V5: Dispatch via REST → Redis → NanoClaw (replaces LiveKit RPC)
     try {
-      await api.dispatchExec({ prompt: text, mediaUrls: images });
+      await dispatchWithSession({ prompt: text, mediaUrls: images });
     } catch (e) {
       console.error('[Session] Failed to dispatch exec:', e);
       upsertBlock({
@@ -744,7 +758,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         role: 'system',
       });
     }
-  }, [chatText, chatImages, play, upsertBlock]);
+  }, [chatText, chatImages, play, upsertBlock, dispatchWithSession]);
 
   // ── File select handler ──
   const handleFileSelect = useCallback(async (e) => {
@@ -1092,7 +1106,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         const title = payload.title || '';
         const allOptions = (payload.allOptions || '').split('|').filter(Boolean);
         const optionsStr = allOptions.length ? ` (options: ${allOptions.join(', ')})` : '';
-        api.dispatchExec({ prompt: `[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}` }).catch(() => {});
+        dispatchWithSession({ prompt: `[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}` }).catch(() => {});
         showToast(selected || 'Selected');
         break;
       }
@@ -1101,13 +1115,13 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       default:
         showToast('Done');
     }
-  }, [showToast]);
+  }, [showToast, dispatchWithSession]);
 
   // ── Action card handler ──
   const handleActionSelect = useCallback((option) => {
-    api.dispatchExec({ prompt: option }).catch(() => {});
+    dispatchWithSession({ prompt: option }).catch(() => {});
     livekit?.dismissActionCard?.();
-  }, [livekit]);
+  }, [livekit, dispatchWithSession]);
 
   // ── Scroll handling ──
   const handleContentScroll = useCallback(() => {
@@ -1321,11 +1335,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               if (dispatchingSlug) return; // prevent double-tap
               setDispatchingSlug(slug);
               try {
-                await api.dispatchExec({
+                await dispatchWithSession({
                   prompt: [intention.title, intention.description].filter(Boolean).join(' '),
                   skillSlug: intention.skill_slug,
                   mediaUrls: intention.params?.media_urls || [],
-                  sessionId: sessionData?.sessionId,
                   priority: 'thorough',
                   params: intention.params,
                 });
