@@ -1,0 +1,123 @@
+name: Infrastructure
+
+on:
+  pull_request:
+    paths: ['infra/environments/**', 'infra/modules/**']
+  push:
+    branches: [pre-launch]
+    paths: ['infra/environments/**', 'infra/modules/**']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      action:
+        description: 'Terraform action'
+        type: choice
+        options: [plan, apply]
+        default: plan
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  detect-env:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.detect.outputs.environments }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect changed environments
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          ENVS=$(git diff --name-only "$BASE" HEAD -- infra/environments/ | cut -d/ -f3 | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          [ "$ENVS" = "[]" ] && ENVS='["dev"]'
+          echo "environments=$ENVS" >> "$GITHUB_OUTPUT"
+          echo "Detected environments: $ENVS"
+
+  terraform:
+    needs: [detect-env]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.detect-env.result == 'success')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.environment)) || fromJSON(needs.detect-env.outputs.environments) }}
+    environment: ${{ matrix.environment }}
+    defaults:
+      run:
+        working-directory: infra/environments/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check GCP credentials
+        id: creds
+        run: |
+          if [ -z "${{ secrets.WIF_PROVIDER }}" ] || [ -z "${{ secrets.WIF_SERVICE_ACCOUNT }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::GCP credentials not configured. Set WIF_PROVIDER and WIF_SERVICE_ACCOUNT secrets to enable Terraform."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.creds.outputs.skip != 'true'
+
+      - name: Authenticate to GCP
+        id: auth
+        if: steps.creds.outputs.skip != 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Terraform Init
+        if: steps.creds.outputs.skip != 'true'
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        if: steps.creds.outputs.skip != 'true'
+        run: terraform plan -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Comment PR with plan
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request' && steps.creds.outputs.skip != 'true'
+        with:
+          script: |
+            const output = `#### Terraform Plan - \`${{ matrix.environment }}\`
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            *Triggered by @${{ github.actor }}*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Check plan result
+        if: steps.creds.outputs.skip != 'true' && steps.plan.outcome == 'failure'
+        run: |
+          echo "Terraform plan failed"
+          exit 1
+
+      - name: Terraform Apply
+        if: >
+          steps.creds.outputs.skip != 'true' &&
+          github.event_name == 'workflow_dispatch' &&
+          inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan

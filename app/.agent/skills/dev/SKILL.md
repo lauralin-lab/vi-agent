@@ -11,7 +11,7 @@ description: 创建个人 Dev 环境
 ## 配置
 
 - **服务器 IP**: `34.172.9.61`
-- **服务器用户**: `liyasong`（所有人都通过此账户 SSH）
+- **服务器用户**: 从 `dev.sh --show-config` 输出的 `SERVER` 字段获取（每人用自己的 Linux 账户 SSH）
 - **GCP Project**: `excellent-nexus-488404-c8`
 - **GCP Zone**: `us-central1-c`
 - **Instance Name**: `vi-agent`
@@ -28,15 +28,7 @@ description: 创建个人 Dev 环境
 2. **本地有 GitHub SSH key** — 用于通过 Agent Forwarding 在服务器上拉代码
 3. **本地 `.env`** — 项目根目录的 `.env` 文件包含 API keys
 
-如果你是新成员，让管理员 (liyasong) 把你的 SSH public key 加到 GCP：
-```bash
-# 管理员执行（一次性）:
-gcloud compute instances add-metadata vi-agent --zone=us-central1-c \
-  --metadata-from-file ssh-keys=/tmp/updated-ssh-keys.txt
-# 同时加到 authorized_keys:
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
-  "echo '<USER_SSH_PUBLIC_KEY>' >> ~/.ssh/authorized_keys"
-```
+如果你是新成员，请参考 `docs/dev-onboarding.md` 获取服务器账户设置指引。
 
 ### SSH 连接方式
 
@@ -51,19 +43,26 @@ done
 
 如果检测到多个 key，用 AskUserQuestion 让用户选择。
 
+**获取 SSH 连接信息:**
+```bash
+# dev.sh --show-config 会输出 SERVER=<user>@<ip>
+bash deploy/dev-environment/dev.sh --show-config
+```
+
 **验证连接:**
 ```bash
-ssh -A -i <USER_SSH_KEY> -o ConnectTimeout=5 liyasong@34.172.9.61 "echo ok"
+ssh -A -i <USER_SSH_KEY> -o ConnectTimeout=5 $SERVER "echo ok"
 ```
-如果失败，提示：你的 SSH key 可能还没加到服务器，请联系管理员 (liyasong)。
+如果失败，提示：你的 SSH key 可能还没加到服务器，请参考 `docs/dev-onboarding.md`。
 
 **所有后续 SSH 命令统一使用:**
 ```bash
-SSH_CMD="ssh -A -i <USER_SSH_KEY> liyasong@34.172.9.61"
+SERVER=$(bash deploy/dev-environment/dev.sh --show-config 2>/dev/null | grep '^SERVER=' | cut -d= -f2)
+SSH_CMD="ssh -A -i <USER_SSH_KEY> $SERVER"
 SCP_CMD="scp -i <USER_SSH_KEY>"
 ```
 - `-A`: Agent Forwarding，让服务器用本地的 GitHub SSH key 拉代码
-- 所有人都 SSH 到 `liyasong` 用户（共享账户，不同 key）
+- 每人用自己的 Linux 账户 SSH（`SERVER_USER` 在 `.dev.local` 中配置）
 
 ---
 
@@ -131,10 +130,10 @@ done
 
 验证连接：
 ```bash
-ssh -A -i <CHOSEN_KEY> -o ConnectTimeout=5 liyasong@34.172.9.61 "echo ok" 2>&1
+ssh -A -i <CHOSEN_KEY> -o ConnectTimeout=5 $SERVER "echo ok" 2>&1
 ```
-- 成功 → 设置 `SSH_CMD="ssh -A -i <CHOSEN_KEY> liyasong@34.172.9.61"` 后续使用
-- 失败 → 提示联系管理员添加 SSH key
+- 成功 → 设置 `SSH_CMD="ssh -A -i <CHOSEN_KEY> $SERVER"` 后续使用
+- 失败 → 提示参考 `docs/dev-onboarding.md`
 
 ### Step 0.6: 同步模板到服务器
 
@@ -142,7 +141,7 @@ ssh -A -i <CHOSEN_KEY> -o ConnectTimeout=5 liyasong@34.172.9.61 "echo ok" 2>&1
 
 ```bash
 $SCP_CMD deploy/dev-environment/*.sh deploy/dev-environment/*.tpl \
-  liyasong@34.172.9.61:/opt/vi-agent/templates/
+  $SERVER:/opt/vi-agent/templates/
 $SSH_CMD "chmod +x /opt/vi-agent/templates/*.sh"
 ```
 
@@ -307,7 +306,7 @@ $SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <C
    Gateway:   http://34.172.9.61:<GATEWAY_PORT>
 
 🔑 SSH 访问:
-   ssh -i <YOUR_SSH_KEY> liyasong@34.172.9.61
+   ssh -i <YOUR_SSH_KEY> $SERVER
 
 📦 版本信息:
    Image Tag: <TAG>
@@ -325,7 +324,7 @@ $SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh <DEV_NAME> <BRANCH> <C
 
 ## 错误处理
 
-- SSH 连接失败: SSH key 可能还没加到服务器，联系管理员 (liyasong)
+- SSH 连接失败: SSH key 可能还没加到服务器，参考 `docs/dev-onboarding.md`
 - GitHub 拉取失败 (Permission denied): 确保本地有 GitHub SSH key 且 SSH 命令用了 `-A`
 - gcloud 命令失败: 提示用户运行 `gcloud auth login`（仅管理员操作需要）
 - 端口冲突: 从 registry 重新分配 slot

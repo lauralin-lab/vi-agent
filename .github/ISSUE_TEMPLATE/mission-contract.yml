@@ -1,20 +1,25 @@
 name: "Mission Contract"
 description: "Create a new Mission Contract (atomic task for team execution)"
-title: "[T-XXX] "
-labels: ["mission-contract", "status:queued"]
+title: ""
+labels: ["mission", "status:wip"]
+assignees: []
 body:
   - type: markdown
     attributes:
       value: |
         ## Mission Contract
         Fill in the sections below to define a clear, atomic task.
+        Note: Leader typically creates MCs via `/create-mc` which auto-fills most fields.
 
-  - type: input
+  - type: dropdown
     id: priority
     attributes:
       label: Priority
-      description: "P0 (urgent), P1 (high), P2 (normal), P3 (low)"
-      placeholder: "P1"
+      options:
+        - P0 (critical)
+        - P1 (high)
+        - P2 (medium)
+        - P3 (low)
     validations:
       required: true
 
@@ -38,10 +43,19 @@ body:
         - api-server
         - frontend
         - realtime
-        - gateway
+        - nanoclaw
         - global
         - infra
       description: "Which service/area does this primarily affect?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: "1-2 sentence summary of what this MC achieves."
+      placeholder: "Implement user authentication so members can log in securely."
     validations:
       required: true
 
@@ -70,7 +84,7 @@ body:
   - type: textarea
     id: context
     attributes:
-      label: Context
+      label: Context & References
       description: "Background, related files, technical details, references."
       placeholder: "Relevant files: src/..., Related to #..."
 

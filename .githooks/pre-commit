@@ -1,0 +1,10 @@
+#!/bin/bash
+# Teamwork v3 — local quality gate (fast)
+set -e
+CONFIG="$([ -f .teamwork/config.yml ] && echo .teamwork/config.yml || echo .teamspace/config.yml)"
+[ -f "$CONFIG" ] || exit 0
+LINT_CMD=$(grep -v '^\s*#' "$CONFIG" | grep 'lint_command:' | head -1 | sed 's/^[^:]*://' | sed 's/^ *//' | sed 's/ *#.*//' | tr -d '"')
+if [ -n "$LINT_CMD" ]; then
+  echo "Running lint..."
+  eval "$LINT_CMD"
+fi

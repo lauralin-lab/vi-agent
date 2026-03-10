@@ -1,6 +1,6 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "2.3.0"
+version: "3.0.0"
 ---
 
 # /team-ship — Deliver Mission
@@ -16,7 +16,7 @@ version: "2.3.0"
 | (empty) | Full ship flow (push, PR, CI, cleanup) |
 | `done` | Post-merge cleanup (close Issue, update labels, clean worktree) |
 | `review` | AI code review on current PR |
-| `sync` | Rebase current branch on main |
+| `sync` | Rebase current branch on base branch |
 | `help` or `-h` | Show usage guide |
 
 ---
@@ -33,7 +33,7 @@ USAGE:
   /team-ship            Push + create PR + CI check + cleanup
   /team-ship done       After PR merge: close Issue, update labels, clean worktree
   /team-ship review     AI review current PR (correctness/security/architecture/quality)
-  /team-ship sync       Rebase current branch on latest main
+  /team-ship sync       Rebase current branch on latest base branch
 
 SHIP FLOW:
   1. Pre-flight: verify branch, sub-tasks done, tests pass
@@ -44,7 +44,7 @@ SHIP FLOW:
   6. Clean up local Contract, label Issue status:review
 
 AFTER MERGE:
-  /team-ship done closes the Issue, labels status:done, returns to main.
+  /team-ship done closes the Issue, labels status:done, returns to base branch.
 ```
 
 - If `done` → jump to **Operation Done**
@@ -59,9 +59,11 @@ AFTER MERGE:
 ```bash
 # Identity
 GH_USER=$(gh api user --jq '.login' 2>/dev/null)
+if [ -z "$GH_USER" ]; then
+  echo "ERROR: Cannot get GitHub user identity. Run 'gh auth login' first."
+  exit 1
+fi
 ```
-
-- If fails → "Not authenticated. Run `gh auth login` first." → **STOP**
 
 ```bash
 # Config (support both directory names)
@@ -77,6 +79,13 @@ fi
 - If no config → "Teamwork not initialized. Run `/team` first." → **STOP**
 
 Read `$TEAMWORK_DIR/config.yml` → extract project settings, conventions, quality preferences.
+
+```bash
+# Read label prefixes from config
+STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh label_prefix.status "" 2>/dev/null)
+[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX=$(bash ~/.claude/commands/scripts/tw-config.sh labels.status_prefix "" 2>/dev/null)
+[ -z "$STATUS_PREFIX" ] && STATUS_PREFIX="status:"
+```
 
 ---
 
@@ -119,9 +128,17 @@ Extract from body:
 CURRENT_BRANCH=$(git branch --show-current)
 ```
 
-Compare with Contract's `branch` field.
-- If on wrong branch → `git checkout {contract.branch}`
-- If branch doesn't exist → "Branch {branch} not found. Cannot ship." → **STOP**
+Compare with Contract's `branch` field. If on wrong branch:
+
+```bash
+CONTRACT_BRANCH="{branch}"  # from Contract frontmatter
+# Verify branch exists and switch to it
+git checkout "$CONTRACT_BRANCH" 2>/dev/null || {
+  echo "ERROR: Branch '$CONTRACT_BRANCH' not found locally or on origin."
+  echo "Re-run /team-claim #{issue} to recreate the mission branch."
+  exit 1
+}
+```
 
 ### 2b: Verify all sub-tasks complete
 
@@ -138,34 +155,52 @@ git status --porcelain
 
 - If there are uncommitted changes → warn: "You have uncommitted changes. Committing them now."
   ```bash
-  git add -A
+  # Only stage tracked files — never use `git add -A` (risks committing secrets/.env)
+  git add -u
   git commit -m "chore: pre-ship cleanup | Mission: #{issue}"
   ```
+- If there are also untracked files, list them and ask the user which to include.
 
 ### 2d: Run tests
 
-Read `test_command` from config:
+Read config for service-aware testing:
+
 ```bash
-# From config.yml project.test_command
-{TEST_CMD}
+# Check if project has services configured
+# If project.services exists in config, run per-service tests for affected services
+# Otherwise fall back to project.test_command
+
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+
+# Determine affected services from changes
+CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD" 2>/dev/null)
 ```
 
-- If tests fail → "Tests are failing. Fix them before shipping." → **STOP**
-- If no test command configured → warn "No test command configured. Skipping pre-flight tests."
+Read `project.services` from config. For each service, check if any changed file is in that service's directory. Run the service's `test_command` for affected services. If no services configured, fall back to `project.test_command`:
+
+```bash
+TEST_CMD=$(bash ~/.claude/commands/scripts/tw-config.sh project.test_command "" 2>/dev/null)
+if [ -z "$TEST_CMD" ]; then
+  echo "⚠ No test_command configured in $TEAMWORK_DIR/config.yml — skipping pre-flight tests"
+  echo "  Add 'test_command: \"npm test\"' to $TEAMWORK_DIR/config.yml to enable this check"
+else
+  echo "Running tests: $TEST_CMD"
+  eval "$TEST_CMD"
+fi
+```
+
+- If any test command exits non-zero → "Tests are failing. Fix them before shipping." → **STOP**
 
 ---
 
 ## Step 3: Push
 
 ```bash
-git push -u origin {branch}
+bash ~/.claude/commands/scripts/tw-git.sh push {branch}
 ```
 
-- If push fails due to upstream changes → suggest:
-  ```bash
-  git pull --rebase origin {branch}
-  git push -u origin {branch}
-  ```
+- If exit code 2 → push failed. Suggest `bash ~/.claude/commands/scripts/tw-git.sh rebase` then retry push.
 - If push still fails → "Push failed. Resolve the issue manually." → **STOP**
 
 ---
@@ -175,7 +210,10 @@ git push -u origin {branch}
 ### 4a: Check for existing PR
 
 ```bash
-gh pr list --head {branch} --json number,url --limit 1
+EXISTING_PR=$(bash ~/.claude/commands/scripts/tw-pr.sh exists {branch}) && {
+  echo "PR already exists: $EXISTING_PR"
+  # Skip PR creation, use existing PR number/url
+}
 ```
 
 If a PR already exists for this branch → skip PR creation, use existing PR. Display: "PR already exists: {url}"
@@ -206,27 +244,27 @@ Closes #{issue}
 
 ### 4c: Create the PR
 
-Read `base_branch` from config conventions (default: `main`).
-
 ```bash
-gh pr create \
-  --title "{commit_type}: {contract.title}" \
-  --body "{generated PR body}" \
-  --base {base_branch} \
-  --head {branch}
-```
+# Read base branch and extract Issue title from Contract
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
+ISSUE_TITLE=$(bash ~/.claude/commands/scripts/tw-contract.sh read-field "$TEAMWORK_DIR/active/MISSION-{issue}.md" title)
 
-Determine commit type from the Contract title/objective:
-- If title contains "fix", "bug", "patch" → `fix`
-- If title contains "refactor", "restructure" → `refactor`
-- Otherwise → `feat`
+# Determine commit type from title (deterministic heuristic)
+COMMIT_TYPE=$(bash ~/.claude/commands/scripts/tw-pr.sh commit-type "$ISSUE_TITLE")
+
+# Create PR (BODY is generated by LLM from Contract content — see Step 4b)
+PR_RESULT=$(bash ~/.claude/commands/scripts/tw-pr.sh create {issue} "${COMMIT_TYPE}: {title}" "$PR_BODY" "$BASE_BRANCH" "{branch}")
+PR_NUMBER=$(echo "$PR_RESULT" | cut -d' ' -f1)
+PR_URL=$(echo "$PR_RESULT" | cut -d' ' -f2)
+```
 
 Capture the PR number and URL from the output.
 
 ### 4d: Post PR comment to Issue
 
 ```bash
-gh issue comment {issue} --body "📦 PR #{pr-number} created — {pr-url}"
+bash ~/.claude/commands/scripts/tw-pr.sh comment {issue} "📦 PR #${PR_NUMBER} created — ${PR_URL}"
 ```
 
 Non-fatal: if comment fails, warn but continue.
@@ -234,10 +272,20 @@ Non-fatal: if comment fails, warn but continue.
 ### 4e: Add labels
 
 ```bash
-gh pr edit {pr-number} --add-label "status:review"
+bash ~/.claude/commands/scripts/tw-label.sh pr-label {pr} review
 ```
 
 If this fails (label doesn't exist), warn but continue.
+
+### 4f: Notification
+
+```bash
+bash ~/.claude/commands/scripts/tw-notify.sh mc.completed \
+  --issue "$ISSUE_NUMBER" --title "$TITLE" \
+  --assignee "$GH_USER" --pr "$PR_URL"
+```
+
+Non-fatal: if notification fails, warn but continue.
 
 ---
 
@@ -247,7 +295,7 @@ Read `quality.ci` from config.
 
 If CI is enabled:
 ```bash
-gh pr checks {pr-number} --watch --interval 10
+bash ~/.claude/commands/scripts/tw-pr.sh watch {pr}
 ```
 
 - If CI passes → "CI passed ✅"
@@ -262,13 +310,10 @@ If CI is not enabled → skip this step.
 Read `quality.review_required` from config.
 
 If review is required:
-- Find the tech-lead from the team roster in config:
-  ```bash
-  # Extract tech-lead github username from config
-  ```
+- Find the tech-lead from the team roster in config (use LLM to parse config and find team member with `role: tech-lead`).
 - Request review:
   ```bash
-  gh pr edit {pr-number} --add-reviewer {tech-lead-github}
+  bash ~/.claude/commands/scripts/tw-pr.sh add-reviewer {pr} {tech-lead-github}
   ```
 - If reviewer assignment fails (permissions), warn but continue.
 
@@ -281,15 +326,22 @@ If review is not required → skip this step.
 ### 7a: Update Issue labels
 
 ```bash
-gh issue edit {issue} --remove-label "status:wip" --add-label "status:review"
+# Transition wip → review (reads prefix from config)
+bash ~/.claude/commands/scripts/tw-label.sh transition {issue} wip review
+
+# Verify the update
+bash ~/.claude/commands/scripts/tw-label.sh verify {issue} review
 ```
 
-If label operations fail, warn but continue.
+- If verify returns "VERIFIED" → "Issue labeled review ✅"
+- If verify returns "MISMATCH" → warn: "Label update incomplete"
+- If verify fails (network) → "⚠ Could not verify labels. Assume update succeeded."
+- Non-blocking in all cases: continue to 7b.
 
 ### 7b: Remove Contract
 
 ```bash
-rm $TEAMWORK_DIR/active/MISSION-{issue}.md
+bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISSION-{issue}.md"
 ```
 
 The Contract has served its purpose. The PR body now contains the essential information. If the PR is rejected and the mission needs to be reworked, re-run `/team-claim #{issue}` to regenerate a fresh Contract.
@@ -313,7 +365,7 @@ Sub-tasks delivered:
   ...
 
 Contract: cleaned up ✅
-Issue:    labeled "status:review" ✅
+Issue:    {CURRENT_LABELS from Step 7a — show actual labels, not assumed}
 ═══════════════════════════════════════
 Next steps:
   - After merge: /team-ship done (close Issue, update labels, clean worktree)
@@ -341,28 +393,37 @@ If no Issue found → "Cannot determine Issue. Provide Issue number: `/team-ship
 ### D2: Verify PR is merged
 
 ```bash
-BRANCH=$(git branch --show-current)
-gh pr list --head "$BRANCH" --state merged --json number,url --limit 1
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh current)
+bash ~/.claude/commands/scripts/tw-pr.sh verify-merged "$BRANCH"
 ```
 
-- If no merged PR found → "No merged PR found for branch `{branch}`. PR must be merged before running `done`." → **STOP**
+- If exit code 1 → "No merged PR found for branch `{branch}`. PR must be merged before running `done`." → **STOP**
 
-### D3: Close Issue
+### D3: Close Issue (fallback — usually handled by "Closes #N" in PR)
 
 ```bash
-gh issue view {ISSUE_NUMBER} --json state --jq '.state'
+ISSUE_STATE=$(gh issue view {issue} --json state --jq '.state' 2>/dev/null)
 ```
 
-If Issue is still open:
+If Issue is still open (GitHub "Closes #N" didn't fire, or PR body didn't include it):
 ```bash
-gh issue close {ISSUE_NUMBER} --reason completed
+gh issue close {issue} --reason completed
 ```
 
-### D4: Update labels
+If already closed → skip, output: `(Issue already closed — handled by PR merge)`
+
+### D4: Update labels (fallback — usually handled by post-merge Action)
 
 ```bash
-gh issue edit {ISSUE_NUMBER} --remove-label "status:review" --remove-label "status:wip" --add-label "status:done"
+ISSUE_LABELS=$(gh issue view {issue} --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)
 ```
+
+If `${STATUS_PREFIX}done` is NOT in labels (post-merge Action didn't run or failed):
+```bash
+bash ~/.claude/commands/scripts/tw-label.sh transition {issue} review done
+```
+
+If `${STATUS_PREFIX}done` already present → skip, output: `(Labels already updated — handled by post-merge Action)`
 
 ### D5: Clean up worktree (if applicable)
 
@@ -372,20 +433,20 @@ If `.mission` file exists (worktree mode):
   ```bash
   WORKTREE_PATH=$(pwd)
   cd {original_repo_path}
-  git worktree remove "$WORKTREE_PATH"
+  bash ~/.claude/commands/scripts/tw-git.sh worktree-remove "$WORKTREE_PATH"
   ```
 - If no: keep worktree, warn "Worktree kept. Remove manually with `git worktree remove {path}`."
 
-### D6: Return to main
+### D6: Return to base branch
 
 ```bash
-git checkout main && git pull
+bash ~/.claude/commands/scripts/tw-git.sh ensure-base
 ```
 
 ### D7: Clean up Contract
 
 ```bash
-rm -f $TEAMWORK_DIR/active/MISSION-{issue}.md
+bash ~/.claude/commands/scripts/tw-contract.sh delete "$TEAMWORK_DIR/active/MISSION-{issue}.md"
 ```
 
 ### D8: Output summary
@@ -397,7 +458,7 @@ Issue:     #{issue} — {title} (closed)
 PR:        {pr-url} (merged)
 Labels:    status:done
 Worktree:  {removed/kept/not applicable}
-Branch:    returned to main
+Branch:    returned to $BASE_BRANCH
 ═══════════════════════════════════════
 Next: /team-claim to pick up next mission
       /team to see dashboard
@@ -422,7 +483,7 @@ If no open PR found → "No open PR found for branch `{branch}`." → **STOP**
 ### R2: Get PR diff
 
 ```bash
-gh pr diff {PR_NUMBER}
+gh pr diff {pr}
 ```
 
 ### R3: Read changed files
@@ -455,34 +516,35 @@ options:
 ### R6: Publish review
 
 ```bash
-gh pr review {PR_NUMBER} --body "{review_body}" {--approve|--request-changes|--comment}
+gh pr review {pr} --body "{review_body}" {--approve|--request-changes|--comment}
 ```
 
-Output: "Review published on PR #{PR_NUMBER}: {approve/request-changes/comment}"
+Output: "Review published on PR #{pr}: {approve/request-changes/comment}"
 
 ---
 
-## Operation Sync (rebase on main)
+## Operation Sync (rebase on base branch)
 
-> Triggered by `/team-ship sync`. Rebases current branch on latest main.
+> Triggered by `/team-ship sync`. Rebases current branch on latest base branch.
 
 ### S1: Verify on mission branch
 
 ```bash
-BRANCH=$(git branch --show-current)
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh current)
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-main}"
 ```
 
-If on `main` → "Already on main. Nothing to sync." → **STOP**
+If on `$BASE_BRANCH` → "Already on $BASE_BRANCH. Nothing to sync." → **STOP**
 
 ### S2: Fetch and rebase
 
 ```bash
-git fetch origin main
-git rebase origin/main
+bash ~/.claude/commands/scripts/tw-git.sh rebase "$BASE_BRANCH"
 ```
 
-- If rebase succeeds → "Branch `{branch}` rebased on latest main."
-- If rebase conflicts → "Rebase conflicts detected. Resolve them, then `git rebase --continue`." → **STOP** (do not abort automatically)
+- If exit 0 → "Branch `{branch}` rebased on latest $BASE_BRANCH."
+- If exit 2 → "Rebase conflicts detected. Resolve them, then `git rebase --continue`." → **STOP** (do not abort automatically)
 
 ---
 

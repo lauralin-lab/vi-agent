@@ -1,81 +1,70 @@
-# /dev-info — 查看 Dev 环境状态
+# /dev-info — Dev Environment Status
 
-查看所有 dev 环境实例的运行状态、版本信息、部署详情和服务器磁盘用量。
+Show all dev instances, deployment history, and server state. No SSH required — everything via GitHub Actions.
 
-## 执行流程
+## Flow
 
-### Step 1: 加载 SSH 配置
+### Step 1: Show Recent Deployments
 
-```bash
-bash deploy/dev-environment/dev.sh --show-config
-```
-
-从输出中读取 `SSH_KEY`。如果 `STATUS=missing-name`，仍可继续（只需要 SSH_KEY 来连服务器）。
-
-### Step 2: 获取版本和磁盘信息
+Use `run-name` (format: "Dev: {action} {developer}") to distinguish action types.
+Only show actual **deploy** runs in the "Recent Deployments" table.
+Show status/logs/destroy runs separately if any.
 
 ```bash
-bash deploy/dev-environment/dev.sh --show-versions
+# Fetch runs — displayTitle contains "Dev: {action} {developer}" (new format)
+# or "Deploy Dev Instance" (legacy format without action info)
+gh run list --workflow=deploy-dev.yml --limit 20 \
+  --json databaseId,status,conclusion,createdAt,displayTitle \
+  --jq '.[] | "\(.createdAt[:16])  \(.status)/\(.conclusion)  \(.displayTitle)"'
 ```
 
-输出包含：
-- Docker Hub 已有 tags（含大小和更新时间）
-- 本地 git tags
-- 服务器磁盘用量（`df -h /`）
-- Docker 镜像/容器/卷总占用（`docker system df`）
-- 各实例的当前部署版本（从 registry.json 读取）
+**Parsing rules:**
+- If `displayTitle` matches `Dev: deploy *` → real deployment, show in "Recent Deployments"
+- If `displayTitle` matches `Dev: status *` or `Dev: logs *` → skip (not a deployment)
+- If `displayTitle` is legacy "Deploy Dev Instance" → check log for actual action type via
+  `gh run view {id} --log 2>&1 | grep 'Action.*\`' | head -1` to determine if it was a deploy
+- Only show confirmed deploy actions in the deployment history table
 
-### Step 3: 获取容器运行状态
+### Step 2: Trigger Server Status
 
-使用 Step 1 中的 `SSH_KEY`：
+To get live server state (running containers, ports, disk):
 
 ```bash
-SSH_KEY=<from dev.sh --show-config>
-ssh -A -i $SSH_KEY liyasong@34.172.9.61 << 'REMOTE'
-echo "===CONTAINERS==="
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
-
-echo ""
-echo "===DOCKER_STATS==="
-docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" 2>/dev/null | head -40
-REMOTE
+gh workflow run deploy-dev.yml --ref pre-launch \
+  -f developer="_all" \
+  -f action=status
 ```
 
-### Step 4: 格式化输出
-
-结合 `--show-versions` 的实例列表和容器状态，输出：
-
-```
-## 🖥 服务器状态
-   IP: 34.172.9.61 | 磁盘: {used}/{total} ({pct}%) | Docker: {images}GB images / {containers}MB containers
-
-## 📦 实例列表 ({count} 个运行中)
-
-| Name | Frontend (HTTPS) | Frontend (HTTP) | API | Gateway | Tag | Status | 内存 |
-|------|------------------|-----------------|-----|---------|-----|--------|------|
-| liya | https://34.172.9.61:3110 | http://34.172.9.61:3100 | :3101 | :3102 | dev-20260303-... | ✅ | ~660M |
-
-## 📊 资源详情
-   每实例约 650M-1.1G 内存
-   可用容量: 还能部署约 {N} 个实例
-
-## ⚠️ 注意事项
-   (如有: 内存接近 limit、服务 unhealthy、磁盘 >80% 等)
+Wait for completion:
+```bash
+sleep 5
+RUN_ID=$(gh run list --workflow=deploy-dev.yml --event=workflow_dispatch --limit 1 \
+  --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN_ID" --exit-status
 ```
 
-**关键**: 访问链接必须是完整 URL。HTTPS 端口 = Frontend HTTP 端口 + 10（如 3100 → 3110）。
-
-### Step 5: 磁盘告警（可选）
-
-如果 `docker system df` 显示镜像占用超过 20GB，提示用户：
-```
-⚠️ Docker 镜像占用 {N}GB。运行以下命令清理旧 tag：
-   bash deploy/dev-environment/dev.sh --cleanup --keep 5 --dry-run
-   # 确认后去掉 --dry-run 实际执行
+Read status output:
+```bash
+gh run view "$RUN_ID" --log 2>&1 | grep -A 50 "=== Dev Instances ===" | head -60
 ```
 
-## 错误处理
+### Step 3: Format Output
 
-- SSH 连接失败: 联系管理员添加 SSH key
-- 无运行中的容器: 提示先运行 `/dev` 部署实例
-- registry.json 为空: 正常（旧实例），从 docker ps 解析容器信息
+```
+## Active Instances (from workflow log output)
+| Name | Frontend | API | Tag | Deployed |
+|------|----------|-----|-----|----------|
+| (parse from log output — don't hardcode server IP) |
+
+## Recent Deployments (last 10)
+| Time | Status | Description |
+|------|--------|-------------|
+| ...  | ...    | ...         |
+```
+
+### Step 4: Warnings
+
+Flag if:
+- Disk usage > 80%
+- Any instance unhealthy
+- Docker images > 20GB total

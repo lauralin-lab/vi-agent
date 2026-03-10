@@ -1,6 +1,6 @@
 ---
 description: "Execute mission from Contract. Try: /team-drive help"
-version: "2.3.0"
+version: "3.0.0"
 ---
 
 # /team-drive — Execute Mission
@@ -84,24 +84,16 @@ Extract from body:
 Check whether the Issue has been modified since the Contract was generated.
 
 ```bash
-# Fetch current Issue content
-ISSUE_DATA=$(gh issue view {issue} --json title,body 2>/dev/null)
+CONTRACT_PATH="$TEAMWORK_DIR/active/MISSION-{issue}.md"
+FRESHNESS=$(bash ~/.claude/commands/scripts/tw-contract.sh check-freshness "$CONTRACT_PATH" {issue} 2>/dev/null) || true
 ```
 
-- If `gh issue view` fails (network error, offline) → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
+- Exit 0 + "FRESH" → Issue unchanged, continue
+- Exit 0 + "NETWORK_ERROR" → warn "Could not check Issue freshness (network error). Continuing with existing Contract." → **continue** (non-fatal)
+- Exit 2 + "NO_HASH" → pre-v2.3.0 Contract, skip check, continue
+- Exit 1 + "STALE" → Issue modified since claim:
 
-If fetch succeeds:
-
-```bash
-# Compute hash of current Issue content
-CURRENT_HASH=$(echo "${ISSUE_TITLE}${ISSUE_BODY}" | shasum -a 256 | cut -d' ' -f1)
-# Compare with Contract's issue_content_hash
-CONTRACT_HASH=$(grep 'issue_content_hash:' $CONTRACT_PATH | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"')
-```
-
-If `issue_content_hash` is not in Contract (pre-v2.3.0 Contract) → skip check, continue.
-
-If `CURRENT_HASH ≠ CONTRACT_HASH`:
+If `FRESHNESS` is `STALE`:
 
 Display the current Issue body to the user:
 ```
@@ -169,6 +161,19 @@ If all sub-tasks are already checked → "All sub-tasks complete. Run `/team-shi
 
 ---
 
+## Step 2b: Branch Safety Check
+
+Before executing any code changes, verify you are NOT on a protected branch.
+
+```bash
+bash ~/.claude/commands/scripts/tw-git.sh protect-check
+```
+
+- If exit code 3 → on protected branch, output "Switch to a feature branch first: /team-claim #{issue}" → **STOP**
+- If exit code 0 → on correct feature branch → continue
+
+---
+
 ## Step 3: Execution Loop
 
 For each unchecked sub-task in order:
@@ -185,7 +190,22 @@ Read the files listed in **Context Files** section of the Contract. Use `Glob` a
 Write the code, make the changes. Follow the project's existing patterns and conventions.
 
 ### 3d: Verify
-Run the test command from the Contract (or from config):
+
+#### Test Strategy
+
+Read config. If `project.services` exists (array of {name, language, test_command, lint_command}):
+  1. Determine which services are affected by current changes:
+     ```bash
+     BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+     BASE_BRANCH="${BASE_BRANCH:-main}"
+     CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD")
+     ```
+  2. For each service in `project.services`, check if any changed file starts with the service directory path
+  3. For each affected service, run its `test_command`
+  4. If no service-specific command matches, fall back to `project.test_command`
+
+If no `project.services` in config:
+  Run `project.test_command` (existing behavior, unchanged):
 ```bash
 # From Contract's Test Command field, or fall back to config
 {TEST_CMD}
@@ -195,8 +215,19 @@ If tests fail → fix the issue and verify again. Do not move on until verificat
 
 ### 3e: Update Contract
 After completing a sub-task, update the Contract file:
-- Change `- [ ]` to `- [x]` for the completed task
-- Add timestamp: `- [x] {task description} — {HH:MM}`
+```bash
+# Check off the Nth unchecked subtask (1-indexed) with timestamp
+bash ~/.claude/commands/scripts/tw-contract.sh toggle-task "$CONTRACT_PATH" {N}
+```
+
+### 3e2: Sync sub-task completion back to GitHub Issue (bidirectional)
+
+```bash
+# Update the corresponding checkbox in the GitHub Issue body so teammates see real-time progress
+bash ~/.claude/commands/scripts/tw-contract.sh sync-checkbox $ISSUE_NUMBER "$SUBTASK_TEXT"
+```
+
+Note: `$SUBTASK_TEXT` is the exact text of the completed sub-task (without `- [ ] ` prefix). This is a best-effort sync — if the Issue body format doesn't match exactly, it's non-fatal and mission continues.
 
 ### 3f: Commit
 ```bash
@@ -229,6 +260,20 @@ Go through each acceptance criterion from the Contract. For each one:
 - If not met → identify what's missing, add it as a new sub-task in the Contract, implement it
 
 ### 4b: Run full test suite
+
+Apply the same service-aware test strategy as Step 3d:
+
+Read config. If `project.services` exists:
+  1. Determine affected services from all changes on this branch:
+     ```bash
+     BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
+     BASE_BRANCH="${BASE_BRANCH:-main}"
+     CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD")
+     ```
+  2. For each affected service, run its `test_command`
+  3. If no service-specific command matches, fall back to `project.test_command`
+
+If no `project.services` in config:
 ```bash
 {TEST_CMD from config}
 ```
@@ -238,10 +283,7 @@ All tests must pass.
 ### 4c: Self-review
 Read through all changes made during this session:
 ```bash
-# Use the branch name from Contract frontmatter (not hardcoded)
-BASE_BRANCH=$(grep 'base_branch:' $TEAMWORK_DIR/config.yml | sed 's/^[^:]*://' | sed 's/^ *//' | tr -d '"' || echo "main")
-git log --oneline ${BASE_BRANCH}..HEAD
-git diff ${BASE_BRANCH}...HEAD --stat
+bash ~/.claude/commands/scripts/tw-git.sh log-since
 ```
 
 Check for:
@@ -279,7 +321,7 @@ MISSION EXECUTION COMPLETE
 ═══════════════════════════════════════
 Issue:    #{issue} — {title}
 Status:   All sub-tasks done
-Commits:  {N} commits on branch {branch}
+Commits:  {count} commits on branch {branch}
 
 Sub-tasks completed:
   [x] {task 1} — {time}
@@ -312,7 +354,7 @@ Next: /team-ship to create PR and deliver
 This skill provides a **lightweight drive-like experience** focused on the Mission Contract. For full drive mode (with Phase 0 briefing, team assembly, wave decomposition), use `/drive` directly and pass the Contract path as context:
 
 ```
-/drive Execute the mission defined in $TEAMWORK_DIR/active/MISSION-{N}.md
+/drive Execute the mission defined in $TEAMWORK_DIR/active/MISSION-{issue}.md
 ```
 
 `/team-drive` is the **quick path** — it skips Phase 0 (the Contract IS the briefing) and executes directly. Use it for straightforward missions. Use full `/drive` for complex missions that need deeper planning.

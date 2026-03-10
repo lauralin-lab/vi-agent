@@ -1,0 +1,139 @@
+name: Deploy Dev Instance
+run-name: "Dev: ${{ inputs.action }} ${{ inputs.developer }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      developer:
+        description: 'Developer GitHub username'
+        required: true
+      ref:
+        description: 'Git ref to deploy (branch/tag/SHA)'
+        default: 'pre-launch'
+      action:
+        description: 'Action to perform'
+        type: choice
+        options: [deploy, destroy, status, logs]
+        default: deploy
+      service:
+        description: 'Service name for logs action (empty = all services)'
+        default: ''
+      lines:
+        description: 'Number of log lines (for logs action)'
+        default: '100'
+
+env:
+  DOCKER_ORG: collov
+
+jobs:
+  # Build images (only for deploy action)
+  build:
+    if: inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    strategy:
+      matrix:
+        service: [api-server, frontend, nanoclaw, realtime]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          echo "image_tag=dev-${SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_ORG }}/vi-agent-${{ matrix.service }}:${{ steps.meta.outputs.image_tag }}
+          build-args: |
+            ${{ matrix.service == 'frontend' && 'VITE_API_URL=' || '' }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # Execute action on server
+  execute:
+    needs: [build]
+    if: always() && (inputs.action != 'deploy' || needs.build.result == 'success')
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          echo "image_tag=dev-${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Copy deploy scripts to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEV_SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: >-
+            deploy/dev-environment/deploy-instance.sh,
+            deploy/dev-environment/docker-compose.instance-image.yml.tpl,
+            deploy/dev-environment/test-instance.sh
+          target: /opt/vi-agent/templates/
+          strip_components: 2
+
+      - name: Set script permissions
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEV_SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: chmod +x /opt/vi-agent/templates/*.sh
+
+      - name: Execute action
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEV_SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: LIVEKIT_URL,LIVEKIT_API_KEY,LIVEKIT_API_SECRET,GOOGLE_API_KEY,ANTHROPIC_API_KEY,GCS_BUCKET
+          script: |
+            set -e
+            export LIVEKIT_URL="${{ secrets.LIVEKIT_URL }}"
+            export LIVEKIT_API_KEY="${{ secrets.LIVEKIT_API_KEY }}"
+            export LIVEKIT_API_SECRET="${{ secrets.LIVEKIT_API_SECRET }}"
+            export GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY }}"
+            export ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
+            export GCS_BUCKET="${{ secrets.GCS_BUCKET }}"
+
+            bash /opt/vi-agent/templates/deploy-instance.sh \
+              "${{ inputs.action }}" \
+              "${{ inputs.developer }}" \
+              "${{ steps.meta.outputs.image_tag }}" \
+              "${{ inputs.service }}" \
+              "${{ inputs.lines }}"
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "### Dev Instance — ${{ inputs.action }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Developer | \`${{ inputs.developer }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Action | \`${{ inputs.action }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Ref | \`${{ inputs.ref }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Tag | \`${{ steps.meta.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | \`${{ job.status }}\` |" >> "$GITHUB_STEP_SUMMARY"

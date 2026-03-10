@@ -35,7 +35,7 @@ create_mc() {
   local extra_labels="${7:-}"
   local state="${8:-open}"
 
-  local labels="mission-contract,status:queued,priority:${priority},size:${size}"
+  local labels="mission,status:wip,priority:${priority},size:${size}"
   [ -n "$domain" ] && labels="${labels},domain:${domain}"
   [ -n "$version" ] && labels="${labels},version:${version}"
   [ -n "$extra_labels" ] && labels="${labels},${extra_labels}"
@@ -82,7 +82,7 @@ create_mc "[T-056] UC-1: Food calorie card full pipeline" "P0" "L" "global" "v0.
 - [ ] Voice narration of results
 
 ### Context
-V0.1 Use Case 1. See: .claude/drive/v0.1-definition/v0.1-spec.md
+V0.1 Use Case 1. See: .teamwork/local/drive/v0.1-definition/v0.1-spec.md
 
 ### Verification
 Run the full pipeline: photo → recognition → card display"
@@ -103,7 +103,7 @@ create_mc "[T-057] UC-2: Plant detection card full pipeline" "P0" "L" "global" "
 - [ ] Voice narration
 
 ### Context
-V0.1 Use Case 2. See: .claude/drive/v0.1-definition/v0.1-spec.md
+V0.1 Use Case 2. See: .teamwork/local/drive/v0.1-definition/v0.1-spec.md
 
 ### Verification
 Run the full pipeline: photo → recognition → card display"
@@ -123,7 +123,7 @@ create_mc "[T-058] UC-3a: Hand-drawn UI to interactive demo" "P0" "L" "gateway" 
 - [ ] Interactive demo rendering
 
 ### Context
-V0.1 Use Case 3a. See: .claude/drive/v0.1-definition/v0.1-spec.md"
+V0.1 Use Case 3a. See: .teamwork/local/drive/v0.1-definition/v0.1-spec.md"
 
 create_mc "[T-059] UC-3b: Hand-drawn mind map to visualization" "P0" "L" "gateway" "v0.1" \
 "## Mission Contract
@@ -139,7 +139,7 @@ create_mc "[T-059] UC-3b: Hand-drawn mind map to visualization" "P0" "L" "gatewa
 - [ ] Visualization rendering (D3/SVG)
 
 ### Context
-V0.1 Use Case 3b. See: .claude/drive/v0.1-definition/v0.1-spec.md"
+V0.1 Use Case 3b. See: .teamwork/local/drive/v0.1-definition/v0.1-spec.md"
 
 create_mc "[T-060] Core loop performance targets" "P0" "M" "global" "v0.1" \
 "## Mission Contract
@@ -156,7 +156,7 @@ create_mc "[T-060] Core loop performance targets" "P0" "M" "global" "v0.1" \
 - [ ] Verify all targets met
 
 ### Context
-V0.1 quality gates. See: .claude/drive/v0.1-definition/v0.1-spec.md"
+V0.1 quality gates. See: .teamwork/local/drive/v0.1-definition/v0.1-spec.md"
 
 echo ""
 echo "── V0.1 Queued Tasks (P1) ──"
@@ -284,4 +284,4 @@ create_mc "[T-049] Claude Code skill system setup" "P2" "M" "infra" "" \
 echo ""
 echo "🎉 Migration complete!"
 echo ""
-echo "Run: ./scripts/sync-board.sh  to generate the new board.md"
+echo "Run: /team   to view the dashboard"

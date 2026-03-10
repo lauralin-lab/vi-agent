@@ -3,7 +3,7 @@
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import TEST_USER_EMAIL, TEST_USER_PASSWORD, TEST_USER_DISPLAY_NAME
+from tests.conftest import TEST_USER_EMAIL, TEST_USER_PASSWORD
 
 
 class TestSignup:

@@ -51,7 +51,7 @@ services:
 
   api-server:
     build:
-      context: /opt/vi-agent/repo/api-server
+      context: __REPO_DIR__/api-server
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -80,6 +80,9 @@ services:
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
       - VI_AGENT_NAME=vi-__DEV_NAME__
       - IMAGE_TAG=__SLOT__-build
+      - USER_DATA_DIR=/data/users
+    volumes:
+      - api_user_data:/data/users
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,11 +108,12 @@ services:
 
   frontend:
     build:
-      context: /opt/vi-agent/repo/frontend
+      context: __REPO_DIR__/frontend
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=
         - VITE_LIVEKIT_URL=
+        - VITE_DEFAULT_USER_ID=${NANOCLAW_USER_ID:-dev-user}
     restart: unless-stopped
     ports:
       - "__FRONTEND_PORT__:80"
@@ -132,28 +136,36 @@ services:
     networks:
       - vi-network
 
-  vi-gateway:
+  nanoclaw:
     build:
-      context: /opt/vi-agent/repo/gateway
+      context: __REPO_DIR__/nanoclaw
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "__GATEWAY_PORT__:18789"
+      - "__NANOCLAW_PORT__:3100"
     environment:
-      - LIVEKIT_URL=${LIVEKIT_URL}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - API_BASE_URL=http://api-server:8000
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - API_SERVER_URL=http://api-server:8000
+      - USER_ID=${NANOCLAW_USER_ID:-dev-user}
+      - USER_DATA_DIR=/workspace
+      - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+    volumes:
+      - nanoclaw_workspace:/workspace
+      - __REPO_DIR__/packages:/packages:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      api-server:
+        condition: service_healthy
     deploy:
       resources:
         limits:
-          cpus: '0.25'
-          memory: 384M
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -167,24 +179,26 @@ services:
 
   vi-realtime:
     build:
-      context: /opt/vi-agent/repo/realtime
+      context: __REPO_DIR__/realtime
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
       - LIVEKIT_URL=${LIVEKIT_URL}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - API_BASE_URL=http://api-server:8000
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
-      - GATEWAY_URL=http://vi-gateway:18789
       - VI_AGENT_NAME=vi-__DEV_NAME__
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2g
     logging:
       driver: json-file
       options:
@@ -196,6 +210,8 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  nanoclaw_workspace:
+  api_user_data:
 
 networks:
   vi-network:

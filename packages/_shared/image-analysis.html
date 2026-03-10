@@ -1,0 +1,62 @@
+<!--
+  image-analysis template
+  Slots: photo_url, title, description, detected_objects[], tags[]
+-->
+<style>
+  .ia-card { position: relative; border-radius: 16px; overflow: hidden; }
+  .ia-hero-wrap { position: relative; }
+  .ia-hero {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover;
+    display: block; border: none; border-radius: 0;
+  }
+  .ia-scrim {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 20px 16px 14px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  }
+  .ia-title {
+    color: #fff; font-size: var(--text-lg); font-weight: 600;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .ia-body { padding: 14px 4px; }
+  .ia-desc {
+    color: rgba(0,0,0,0.6); font-size: var(--text-sm);
+    margin-bottom: 12px; line-height: 1.6;
+  }
+  .ia-objects { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .ia-object {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 12px; border-radius: 100px;
+    background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.06);
+    font-size: var(--text-sm); color: rgba(0,0,0,0.7); font-weight: 500;
+  }
+  .ia-object-conf { opacity: 0.45; font-size: var(--text-xs); }
+  .ia-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ia-tag {
+    display: inline-flex; padding: 2px 8px; border-radius: 100px;
+    background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05);
+    font-size: var(--text-xs); color: rgba(0,0,0,0.45);
+  }
+</style>
+
+<div class="ia-card">
+  <div class="ia-hero-wrap">
+    <img class="ia-hero" src="{{photo_url}}" alt="{{title}}"/>
+    <div class="ia-scrim">
+      <div class="ia-title">{{title}}</div>
+    </div>
+  </div>
+  <div class="ia-body">
+    <div class="ia-desc">{{description}}</div>
+    <div class="ia-objects">
+      {{#detected_objects}}
+      <span class="ia-object">{{label}}<span class="ia-object-conf">{{confidence_pct}}%</span></span>
+      {{/detected_objects}}
+    </div>
+    <div class="ia-tags">
+      {{#tags}}
+      <span class="ia-tag">{{.}}</span>
+      {{/tags}}
+    </div>
+  </div>
+</div>

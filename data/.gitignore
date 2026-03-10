@@ -1,0 +1,17 @@
+# Keep directory structure, ignore user data
+dev/user/media/*
+dev/user/artifacts/*
+dev/user/sessions/active/*
+dev/user/.cache/*
+dev/user/tokens/*
+!**/.gitkeep
+
+# Keep template files that define the user data structure
+!dev/user/CLAUDE.md
+!dev/user/memory/identity/profile.md
+!dev/user/memory/semantic/preferences.md
+
+# Ignore runtime-generated files
+*.enc.json
+*.cache
+*.tmp

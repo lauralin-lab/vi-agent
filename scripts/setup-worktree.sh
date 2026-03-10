@@ -22,11 +22,8 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKTREE_PATH="$(dirname "$PROJECT_ROOT")/vi-wt-${TASK_SLUG}"
 
 # Determine branch name
-# Try to find the task ID from board.md
+# Task ID (can be passed as part of slug, e.g., "T-042-fix-camera")
 TASK_ID=""
-if [ -f "$PROJECT_ROOT/.teamspace/board.md" ]; then
-    TASK_ID=$(grep -o "T-[0-9]\{3\}" "$PROJECT_ROOT/.teamspace/board.md" | grep -m1 "" || echo "")
-fi
 BRANCH_NAME="feature/${TASK_ID:+${TASK_ID}-}${TASK_SLUG}"
 
 # Auto-detect port offset if not specified

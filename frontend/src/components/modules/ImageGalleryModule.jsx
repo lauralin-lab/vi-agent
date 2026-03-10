@@ -54,7 +54,7 @@ function Lightbox({ images, startIndex, onClose }) {
       {/* Close button */}
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 text-white/60 hover:text-white/90 transition-colors z-10"
+        className="absolute top-4 right-4 p-2 text-black/50 hover:text-black/80 transition-colors z-10"
       >
         <X size={24} />
       </button>
@@ -64,13 +64,13 @@ function Lightbox({ images, startIndex, onClose }) {
         <>
           <button
             onClick={(e) => { e.stopPropagation(); prev(); }}
-            className="absolute left-3 top-1/2 -translate-y-1/2 p-2 text-white/40 hover:text-white/80 transition-colors"
+            className="absolute left-3 top-1/2 -translate-y-1/2 p-2 text-black/30 hover:text-black/70 transition-colors"
           >
             <ChevronLeft size={28} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); next(); }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-white/40 hover:text-white/80 transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-black/30 hover:text-black/70 transition-colors"
           >
             <ChevronRight size={28} />
           </button>
@@ -90,7 +90,7 @@ function Lightbox({ images, startIndex, onClose }) {
 
       {/* Caption */}
       {img.caption && (
-        <p className="text-white/60 mt-3 text-center px-6" style={{ fontSize: 'var(--text-sm)' }}>
+        <p className="text-black/50 mt-3 text-center px-6" style={{ fontSize: 'var(--text-sm)' }}>
           {img.caption}
         </p>
       )}
@@ -106,9 +106,7 @@ function Lightbox({ images, startIndex, onClose }) {
 }
 
 export default function ImageGalleryModule({ data, onAction }) {
-  if (!data) return null;
-
-  const { title, images = [] } = data;
+  const { title, images = [] } = data || {};
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const scrollRef = useRef(null);
@@ -122,7 +120,7 @@ export default function ImageGalleryModule({ data, onAction }) {
     setActiveIndex(Math.round(scrollLeft / (itemWidth + gap)));
   }, []);
 
-  if (images.length === 0) return null;
+  if (!data || images.length === 0) return null;
 
   return (
     <GlassCard>
@@ -142,7 +140,7 @@ export default function ImageGalleryModule({ data, onAction }) {
             style={{ scrollSnapAlign: 'center', width: images.length === 1 ? '100%' : '85%' }}
             onClick={() => setLightboxIndex(i)}
           >
-            <div className="rounded-xl overflow-hidden border border-white/[0.06] group-hover:border-white/[0.12] transition-colors">
+            <div className="rounded-xl overflow-hidden border border-black/[0.06] group-hover:border-black/[0.12] transition-colors">
               <img
                 src={img.url}
                 alt={img.alt || img.caption || ''}
@@ -150,7 +148,7 @@ export default function ImageGalleryModule({ data, onAction }) {
               />
             </div>
             {img.caption && (
-              <p className="text-white/40 mt-1.5 truncate" style={{ fontSize: 'var(--text-xs)' }}>
+              <p className="text-black/30 mt-1.5 truncate" style={{ fontSize: 'var(--text-xs)' }}>
                 {img.caption}
               </p>
             )}

@@ -1,0 +1,28 @@
+{
+  "$id": "shopping-list",
+  "category": "act",
+  "renderer": "react",
+  "component": "ShoppingListModule",
+  "mutable": true,
+  "streamable": true,
+  "slots": {
+    "title": { "type": "string", "default": "Shopping List" },
+    "items": {
+      "type": "array",
+      "streamable": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "quantity": { "type": "string" },
+          "category": { "type": "string" },
+          "checked": { "type": "boolean", "default": false },
+          "price_estimate": { "type": "string" }
+        }
+      }
+    },
+    "total_estimate": { "type": "string" },
+    "store_suggestion": { "type": "string" }
+  },
+  "mutable_slots": ["items", "total_estimate"]
+}

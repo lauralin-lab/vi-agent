@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import HistoryView from './components/HistoryView';
 import DeviceFrame from './components/DeviceFrame';
+import ActivePiP from './components/ActivePiP';
 
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
@@ -11,6 +12,7 @@ import MemoryView from './components/MemoryView';
 import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useRealtimeEvents } from './hooks/useRealtimeEvents';
+import { useNanoClawResults } from './hooks/useNanoClawResults';
 import { api } from './services/api';
 import './utils/videoPreloader'; // side-effect: preload promo video at app boot
 
@@ -89,6 +91,9 @@ function App() {
   // LiveKit state
   const livekit = useLiveKit();
 
+  // V4: NanoClaw results from SSE
+  const nanoClaw = useNanoClawResults();
+
   // View state
   const [viewState, setViewState] = useState(() => {
     const path = window.location.pathname;
@@ -154,7 +159,7 @@ function App() {
   // ── SSE real-time events (global — active on ALL pages when LiveKit is disconnected) ──
   const viUserId = api.getViUserId();
   const livekitConnected = livekit.connectionState === 'connected';
-  const { events: sseEvents, sseConnected } = useRealtimeEvents(viUserId, livekitConnected);
+  const { events: sseEvents, sseConnected } = useRealtimeEvents(viUserId, livekitConnected, nanoClaw.processEvent);
 
   // Process SSE events for global toast/badge notifications
   const lastSseRef = useRef(0);
@@ -193,14 +198,20 @@ function App() {
   }, []); // Intentional: only on mount
 
   // --- Camera enable/disable based on view ---
+  // V5: Keep camera enabled during live-session for PiP
   useEffect(() => {
     if (!livekit.setCameraEnabled) return;
-    if (viewState === 'camera') {
+    if (viewState === 'camera' || viewState === 'live-session') {
       livekit.setCameraEnabled(true);
     } else {
       livekit.setCameraEnabled(false);
     }
   }, [viewState, livekit.setCameraEnabled]);
+
+  // V5: Return to full camera from PiP
+  const handleReturnToCamera = useCallback(() => {
+    setViewState('camera');
+  }, []);
 
   // D.1: Send page context to agent when view changes
   useEffect(() => {
@@ -340,6 +351,7 @@ function App() {
                 intention={lastIntention}
                 onBack={handleBackToHistory}
                 livekit={livekit}
+                nanoClaw={nanoClaw}
                 sessionData={sessionData}
                 onAddPhoto={handleAddPhotoToSession}
                 sessionCacheRef={sessionCacheRef}
@@ -390,6 +402,16 @@ function App() {
               />
             )}
           </AnimatePresence>
+
+          {/* V5: Camera PiP overlay during session view */}
+          {viewState === 'live-session' && (
+            <ActivePiP
+              localVideoTrack={livekit.localVideoTrack}
+              onReturnToCamera={handleReturnToCamera}
+              onCapture={handleAddPhotoToSession}
+              visible={true}
+            />
+          )}
 
           {/* Global toast notifications */}
           <NotificationManager toasts={toasts} onDismiss={dismissToast} />

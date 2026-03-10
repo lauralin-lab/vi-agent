@@ -1,0 +1,28 @@
+{
+  "$id": "quiz",
+  "category": "interact",
+  "renderer": "react",
+  "component": "QuizModule",
+  "mutable": true,
+  "streamable": false,
+  "slots": {
+    "question": { "type": "string", "required": true },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string" },
+          "correct": { "type": "boolean" }
+        }
+      },
+      "required": true
+    },
+    "explanation": { "type": "string" },
+    "selected_option": { "type": "string" },
+    "revealed": { "type": "boolean", "default": false },
+    "image_url": { "type": "string" }
+  },
+  "mutable_slots": ["selected_option", "revealed", "explanation"]
+}

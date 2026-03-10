@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronLeft, Sparkles, Loader2, Mic, MicOff,
+  ChevronLeft, Sparkles, Loader2,
   X, Maximize2, ChevronDown, ChevronUp, Plus, ArrowUp,
   Camera, ImagePlus as ImageIcon, MessageCircle
 } from 'lucide-react';
@@ -11,6 +11,20 @@ import { getShortTitle } from '../utils/text';
 import PersistentHtmlRenderer from './PersistentHtmlRenderer';
 import ModuleRenderer, { extractModuleTitle } from './modules/ModuleRenderer';
 import { IFRAME_DESIGN_CSS } from './iframeDesignSystem';
+import { IntentionCardStrip } from './IntentionCard';
+import { resolveTemplate } from './TemplateEngine';
+
+// ── STT noise filter ──
+// Deepgram/Google STT sometimes transcribes silence as literal noise tokens.
+const NOISE_PATTERN = /^\s*[<[(]?\s*noise\s*[>).]?\s*$/i;
+function isNoiseTranscript(text) {
+  if (!text || text.trim().length === 0) return true;
+  if (NOISE_PATTERN.test(text)) return true;
+  // Also catch repeated noise tokens like "<noise> <noise>"
+  const stripped = text.replace(/[<[(>).\s]/g, '');
+  if (/^(noise)+$/i.test(stripped)) return true;
+  return false;
+}
 
 // ═══════════════════════════════════════════════════════════
 // Canvas-First Session View
@@ -39,8 +53,8 @@ function Toast({ message, onDone }) {
   );
 }
 
-// ── Default spinner HTML for reserved gateway blocks ──
-const GATEWAY_SPINNER_HTML = '<div style="display:flex;align-items:center;gap:8px;padding:16px;color:rgba(255,255,255,0.5);font-family:system-ui,sans-serif;font-size:14px;"><div style="width:16px;height:16px;border:2px solid rgba(255,255,255,0.15);border-top-color:rgba(168,85,247,0.7);border-radius:50%;animation:spin 0.8s linear infinite;"></div> Preparing...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+// ── Default spinner HTML for loading blocks ──
+const LOADING_SPINNER_HTML = '<div style="display:flex;align-items:center;gap:8px;padding:16px;color:rgba(0,0,0,0.4);font-family:system-ui,sans-serif;font-size:14px;"><div style="width:16px;height:16px;border:2px solid rgba(0,0,0,0.1);border-top-color:rgba(168,85,247,0.7);border-radius:50%;animation:spin 0.8s linear infinite;"></div> Preparing...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
 
 // ── ICS download helper ──
 function downloadICS({ title, start, location, end }) {
@@ -125,7 +139,7 @@ function StaticHtmlBlock({ block, onAction }) {
       if (el) el.classList.toggle('hidden');
     }
   });
-<\/script>`;
+</script>`;
 
   const wrappedHtml = useMemo(() => {
     if (!block.content) return '';
@@ -134,7 +148,7 @@ function StaticHtmlBlock({ block, onAction }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <style>${IFRAME_DESIGN_CSS}</style>
   ${bridgeScript}
 </head>
@@ -201,6 +215,17 @@ function HtmlBlock({ block, onAction, isActive, streamingChunks, isPlaceholder }
     return (
       <div className="px-3 py-2" style={{ borderRadius: 16, background: '#fff', border: '1px solid rgba(0,0,0,0.04)' }}>
         <span style={{ fontSize: 'var(--text-xs)', color: 'rgba(0,0,0,0.2)' }}>Content rendered earlier</span>
+      </div>
+    );
+  }
+  // Empty content on a done block — show fallback instead of blank iframe
+  if (!block.content && block.status === 'done') {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 rounded-xl"
+        style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.04)' }}>
+        <p className="font-light" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.3)' }}>
+          Content unavailable
+        </p>
       </div>
     );
   }
@@ -446,7 +471,7 @@ function ChatPanel({ messages, open, onClose, scrollRef }) {
           </div>
 
           {/* Scrollable messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-3 space-y-1.5"
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-16 space-y-1.5"
             style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
             {messages.map((msg) => (
               <motion.div
@@ -534,12 +559,16 @@ function ActionBar({ actionCard, onSelect }) {
 // ═══════════════════════════════════════════════════════════
 
 function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut }) {
+  const shouldHide = hasCanvasContent || sessionTimedOut;
   const [showProgress, setShowProgress] = useState(false);
   useEffect(() => {
-    if (hasCanvasContent || sessionTimedOut) { setShowProgress(false); return; }
+    if (shouldHide) return;
     const timer = setTimeout(() => setShowProgress(true), 4000);
     return () => clearTimeout(timer);
-  }, [hasCanvasContent, sessionTimedOut]);
+  }, [shouldHide]);
+  useEffect(() => {
+    if (shouldHide) queueMicrotask(() => setShowProgress(false));
+  }, [shouldHide]);
   if (!showProgress) return null;
   const message = taskProgress?.message || infoBar?.message || 'Analyzing...';
   return (
@@ -566,7 +595,7 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
 // Main Component
 // ═══════════════════════════════════════════════════════════
 
-export default function LiveSessionView({ result, photos, intention, onBack, livekit, sessionData, onAddPhoto, sessionCacheRef }) {
+export default function LiveSessionView({ result, photos, intention, onBack, livekit, nanoClaw, sessionData, onAddPhoto, sessionCacheRef }) {
   const { play } = useSound();
   const scrollContainerRef = useRef(null);
   const headerRef = useRef(null);
@@ -575,6 +604,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   const imageScrollerRef = useRef(null);
   const fromHome = sessionData?.fromHome;
   const cacheKey = sessionData?.sessionId;
+  const [dispatchingSlug, setDispatchingSlug] = useState(null);
 
   // ── Chat Input ──
   const [chatText, setChatText] = useState('');
@@ -604,16 +634,18 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   const streamingChunksRef = useRef(new Map());
   const [streamingChunksVersion, setStreamingChunksVersion] = useState(0);
 
-  // Source priority: vi-gateway > gateway_html_stream > lastResult > sessionRichText
+  // Source priority: nanoclaw > lastResult > sessionRichText
   const activeSourceRef = useRef(null);
 
   // ── Session timeout detection ──
+  // V5: Don't show "Connection issue" if NanoClaw has active tasks
+  const hasActiveTasks = nanoClaw?.tasks && Object.values(nanoClaw.tasks).some(t => t.status === 'running' || t.status === 'pending');
   const [sessionTimedOut, setSessionTimedOut] = useState(false);
   useEffect(() => {
-    if (blocks.length > 0) { setSessionTimedOut(false); return; }
+    if (blocks.length > 0 || hasActiveTasks) { setSessionTimedOut(false); return; }
     const timer = setTimeout(() => setSessionTimedOut(true), 60000);
     return () => clearTimeout(timer);
-  }, [blocks.length]);
+  }, [blocks.length, hasActiveTasks]);
 
   // Save blocks to session cache on unmount
   useEffect(() => {
@@ -682,24 +714,11 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       });
     }
 
+    // V5: Dispatch via REST → Redis → NanoClaw (replaces LiveKit RPC)
     try {
-      const result = await livekit?.sendMessage?.(text, images);
-      if (result && typeof result === 'string') {
-        try {
-          const parsed = JSON.parse(result);
-          if (parsed.ok === false) {
-            upsertBlock({
-              id: `error_${Date.now()}`,
-              type: 'bubble',
-              status: 'done',
-              content: `Failed to send: ${parsed.error || 'Unknown error'}`,
-              role: 'system',
-            });
-          }
-        } catch { /* not JSON */ }
-      }
+      await api.dispatchExec({ prompt: text, mediaUrls: images });
     } catch (e) {
-      console.error('[Session] Failed to send message:', e);
+      console.error('[Session] Failed to dispatch exec:', e);
       upsertBlock({
         id: `error_${Date.now()}`,
         type: 'bubble',
@@ -708,7 +727,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         role: 'system',
       });
     }
-  }, [chatText, chatImages, livekit, play, upsertBlock]);
+  }, [chatText, chatImages, play, upsertBlock]);
 
   // ── File select handler ──
   const handleFileSelect = useCallback(async (e) => {
@@ -735,21 +754,115 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
 
 
   // ══════════════════════════════════════════
-  // Listen to livekit state → blocks
-  // (All existing data ingestion unchanged)
+  // Listen to livekit + NanoClaw state → blocks
   // ══════════════════════════════════════════
 
-  // Legacy: last result → html block
+  // V5: NanoClaw cards → canvas blocks (Card Template Protocol)
+  const prevCardsRef = useRef({});
+  useEffect(() => {
+    if (!nanoClaw?.cards) return;
+    const cards = nanoClaw.cards;
+    const orderedIds = nanoClaw.orderedCardIds || [];
+
+    let chunksChanged = false;
+
+    for (const cardId of orderedIds) {
+      const card = cards[cardId];
+      if (!card) continue;
+
+      const prev = prevCardsRef.current[cardId];
+      if (prev && prev.updatedAt === card.updatedAt) continue;
+
+      activeSourceRef.current = 'nanoclaw';
+      const blockId = `nc_${cardId}`;
+      const templateEntry = resolveTemplate(card.template);
+      const blockStatus = card.status === 'finalized' ? 'done' : card.status === 'streaming' ? 'streaming' : 'loading';
+
+      if (templateEntry.renderer === 'react' && templateEntry.component) {
+        // React-rendered card → module block
+        upsertBlock({
+          id: blockId,
+          type: 'module',
+          module_type: card.template,
+          data: card.data,
+          status: blockStatus,
+          content: '',
+          source: 'nanoclaw',
+        });
+      } else if (card.htmlContent) {
+        // HTML content card (freeform-html, html_stream, or html-rendered template)
+        const htmlContent = card.htmlContent;
+        const prevHtml = prev?.htmlContent || '';
+        if (card.status === 'streaming' && htmlContent.length > prevHtml.length) {
+          const newChunk = htmlContent.slice(prevHtml.length);
+          const chunks = streamingChunksRef.current.get(blockId) || [];
+          chunks.push(newChunk);
+          streamingChunksRef.current.set(blockId, chunks);
+          chunksChanged = true;
+        }
+        upsertBlock({
+          id: blockId,
+          type: 'html',
+          status: blockStatus,
+          content: htmlContent || LOADING_SPINNER_HTML,
+          source: 'nanoclaw',
+        });
+      } else if (card.data && Object.keys(card.data).length > 0) {
+        // Data-slot card (e.g., thinking-process with structured data) → render as module
+        upsertBlock({
+          id: blockId,
+          type: 'module',
+          module_type: card.template,
+          data: card.data,
+          status: blockStatus,
+          content: '',
+          source: 'nanoclaw',
+        });
+      } else {
+        // Empty or loading card
+        upsertBlock({
+          id: blockId,
+          type: 'html',
+          status: 'loading',
+          content: LOADING_SPINNER_HTML,
+          source: 'nanoclaw',
+        });
+      }
+    }
+
+    prevCardsRef.current = Object.fromEntries(
+      Object.entries(cards).map(([id, c]) => [id, { updatedAt: c.updatedAt, htmlContent: c.htmlContent || '' }])
+    );
+    if (chunksChanged) {
+      setStreamingChunksVersion(v => v + 1);
+    }
+  }, [nanoClaw?.cards, nanoClaw?.orderedCardIds, upsertBlock]);
+
+  // V5: NanoClaw task errors → error blocks
+  const prevTaskErrorsRef = useRef({});
+  useEffect(() => {
+    if (!nanoClaw?.tasks) return;
+    for (const [taskId, task] of Object.entries(nanoClaw.tasks)) {
+      if (task.status !== 'error') continue;
+      if (prevTaskErrorsRef.current[taskId]) continue;
+      prevTaskErrorsRef.current[taskId] = true;
+      upsertBlock({
+        id: `nc_error_${taskId}`,
+        type: 'html',
+        status: 'done',
+        content: `<div style="color:#f87171;font-family:system-ui;padding:16px;border:1px solid rgba(248,113,113,0.3);border-radius:12px;background:rgba(248,113,113,0.05);">${task.error || 'Unknown error'}</div>`,
+        source: 'nanoclaw',
+      });
+    }
+  }, [nanoClaw?.tasks, upsertBlock]);
+
+  // Legacy: last result → html block (fallback when NanoClaw is not active)
   useEffect(() => {
     if (!livekit.lastResult) return;
-    if (activeSourceRef.current === 'vi-gateway') return;
+    if (activeSourceRef.current === 'nanoclaw') return;
     const currentBlocks = blocksRef.current;
-    const streamBlock = currentBlocks.find(b => b.id === 'streaming_html');
-    if (streamBlock && streamBlock.content) return;
-    const hasGatewayDone = currentBlocks.some(b => (b.id.startsWith('gateway_') || b.id.startsWith('gw_')) && b.status === 'done');
-    if (hasGatewayDone) return;
-    const hasGwBlock = currentBlocks.some(b => b.id.startsWith('gw_'));
-    if (hasGwBlock) return;
+    const hasNcBlock = currentBlocks.some(b => b.id.startsWith('nc_'));
+    if (hasNcBlock) return;
 
     upsertBlock({
       id: 'result_main',
@@ -760,66 +873,6 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         : `<div style="color:white;font-family:var(--font-primary);padding:8px;">${JSON.stringify(livekit.lastResult)}</div>`,
     });
   }, [livekit.lastResult, upsertBlock]);
-
-  // Legacy: streaming HTML → html block with chunk tracking
-  const prevStreamingHtmlLenRef = useRef(0);
-  useEffect(() => {
-    if (livekit.streamingHtml) {
-      if (activeSourceRef.current === 'vi-gateway') return;
-      activeSourceRef.current = 'legacy-stream';
-      const hasGwBlocks = blocksRef.current.some(b => b.id.startsWith('gw_'));
-      if (hasGwBlocks) return;
-
-      const blockId = 'streaming_html';
-      const fullContent = livekit.streamingHtml;
-      const prevLen = prevStreamingHtmlLenRef.current;
-
-      if (fullContent.length > prevLen) {
-        const newChunk = fullContent.slice(prevLen);
-        const chunks = streamingChunksRef.current.get(blockId) || [];
-        chunks.push(newChunk);
-        streamingChunksRef.current.set(blockId, chunks);
-        prevStreamingHtmlLenRef.current = fullContent.length;
-        setStreamingChunksVersion(v => v + 1);
-      }
-
-      if (fullContent.length < prevLen) {
-        streamingChunksRef.current.set(blockId, [fullContent]);
-        prevStreamingHtmlLenRef.current = fullContent.length;
-        setStreamingChunksVersion(v => v + 1);
-      }
-
-      upsertBlock({
-        id: blockId,
-        type: 'html',
-        status: livekit.isHtmlStreaming ? 'streaming' : 'done',
-        content: fullContent,
-      });
-
-      if (!livekit.isHtmlStreaming) {
-        prevStreamingHtmlLenRef.current = 0;
-      }
-    }
-  }, [livekit.isHtmlStreaming, livekit.streamingHtml, upsertBlock]);
-
-  // Legacy: streamed text → html block
-  useEffect(() => {
-    if (livekit.streamedText) {
-      // Skip if a higher-priority source (vi-gateway) is active
-      if (activeSourceRef.current === 'vi-gateway') return;
-      // Skip if gateway blocks already exist (they contain the proper HTML)
-      const currentBlocks = blocksRef.current;
-      const hasGwBlock = currentBlocks.some(b => b.id.startsWith('gw_'));
-      if (hasGwBlock) return;
-
-      upsertBlock({
-        id: 'streamed_text',
-        type: 'html',
-        status: livekit.isTextStreaming ? 'streaming' : 'done',
-        content: `<div style="color:white;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${livekit.streamedText}</div>`,
-      });
-    }
-  }, [livekit.isTextStreaming, livekit.streamedText, upsertBlock]);
 
   // Legacy: session plan → bubble blocks
   useEffect(() => {
@@ -841,118 +894,16 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     if (!livekit.sessionRichText) return;
     if (activeSourceRef.current) return;
     const currentBlocks = blocksRef.current;
-    const streamBlock = currentBlocks.find(b => b.id === 'streaming_html');
-    if (streamBlock && streamBlock.content) return;
-    const hasGatewayDone = currentBlocks.some(b => (b.id.startsWith('gateway_') || b.id.startsWith('gw_')) && b.status === 'done');
-    if (hasGatewayDone) return;
-    const hasGwBlock = currentBlocks.some(b => b.id.startsWith('gw_'));
-    if (hasGwBlock) return;
+    const hasNcBlock = currentBlocks.some(b => b.id.startsWith('nc_'));
+    if (hasNcBlock) return;
 
     upsertBlock({
       id: 'rich_text_summary',
       type: 'html',
       status: 'done',
-      content: `<div style="color:white;font-family:var(--font-primary);padding:12px;">${livekit.sessionRichText}</div>`,
+      content: `<div style="color:#000;font-family:var(--font-primary);padding:12px;">${livekit.sessionRichText}</div>`,
     });
   }, [livekit.sessionRichText, upsertBlock]);
-
-  // Gateway block lifecycle — legacy single block
-  useEffect(() => {
-    if (!livekit.gatewayBlock) return;
-    if (activeSourceRef.current === 'vi-gateway') return;
-    const { id, status, html } = livekit.gatewayBlock;
-    const blockId = `gateway_${id}`;
-
-    if (status === 'reserved') {
-      upsertBlock({ id: blockId, type: 'html', status: 'loading', content: html || GATEWAY_SPINNER_HTML });
-    } else if (status === 'loading') {
-      upsertBlock({ id: blockId, type: 'html', status: 'loading', content: html || GATEWAY_SPINNER_HTML });
-    } else if (status === 'done') {
-      upsertBlock({ id: blockId, type: 'html', status: 'done', content: html });
-    }
-  }, [livekit.gatewayBlock, upsertBlock]);
-
-  // vi-gateway DataChannel: per-session gateway blocks
-  const prevGatewayBlocksRef = useRef(new Map());
-  const prevGatewayContentLenRef = useRef(new Map());
-  useEffect(() => {
-    if (!livekit.gatewayBlocks || livekit.gatewayBlocks.size === 0) return;
-
-    activeSourceRef.current = 'vi-gateway';
-    let chunksChanged = false;
-
-    for (const [sessionId, block] of livekit.gatewayBlocks) {
-      const prev = prevGatewayBlocksRef.current.get(sessionId);
-      if (prev && prev._ts === block._ts) continue;
-
-      const blockId = `gw_${sessionId}`;
-
-      if (block.status === 'loading') {
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'loading',
-          content: block.content || GATEWAY_SPINNER_HTML,
-          source: 'vi-gateway',
-        });
-        if (!streamingChunksRef.current.has(blockId)) {
-          streamingChunksRef.current.set(blockId, []);
-          prevGatewayContentLenRef.current.set(blockId, 0);
-        }
-      } else if (block.status === 'streaming') {
-        const prevLen = prevGatewayContentLenRef.current.get(blockId) || 0;
-        const fullContent = block.content || '';
-        if (fullContent.length > prevLen) {
-          const newChunk = fullContent.slice(prevLen);
-          const chunks = streamingChunksRef.current.get(blockId) || [];
-          chunks.push(newChunk);
-          streamingChunksRef.current.set(blockId, chunks);
-          prevGatewayContentLenRef.current.set(blockId, fullContent.length);
-          chunksChanged = true;
-        }
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'streaming',
-          content: block.content,
-          source: 'vi-gateway',
-        });
-      } else if (block.status === 'done') {
-        const prevLen = prevGatewayContentLenRef.current.get(blockId) || 0;
-        const fullContent = block.content || '';
-        if (fullContent.length > prevLen) {
-          const newChunk = fullContent.slice(prevLen);
-          const chunks = streamingChunksRef.current.get(blockId) || [];
-          chunks.push(newChunk);
-          streamingChunksRef.current.set(blockId, chunks);
-          chunksChanged = true;
-        }
-        prevGatewayContentLenRef.current.delete(blockId);
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'done',
-          content: block.content,
-          source: 'vi-gateway',
-        });
-      } else if (block.status === 'error') {
-        streamingChunksRef.current.delete(blockId);
-        prevGatewayContentLenRef.current.delete(blockId);
-        upsertBlock({
-          id: blockId,
-          type: 'html',
-          status: 'done',
-          content: `<div style="color:#f87171;font-family:system-ui;padding:16px;border:1px solid rgba(248,113,113,0.3);border-radius:12px;background:rgba(248,113,113,0.05);">${block.error || 'Session failed'}</div>`,
-          source: 'vi-gateway',
-        });
-      }
-    }
-
-    prevGatewayBlocksRef.current = new Map(livekit.gatewayBlocks);
-    if (chunksChanged) {
-      setStreamingChunksVersion(v => v + 1);
-    }
-  }, [livekit.gatewayBlocks, upsertBlock]);
 
   // Legacy: agent text → bubble (deduplicate by content)
   const lastAgentBubbleRef = useRef('');
@@ -993,6 +944,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     for (const entry of newEntries) {
       if (entry.type !== 'user') continue; // agent transcripts already handled by lastAgentText
       if (!entry.content) continue;
+      if (isNoiseTranscript(entry.content)) continue; // Skip STT noise artifacts
       if (recentUserBubblesRef.current.has(entry.content)) continue;
       // Also skip if the same text was already typed by user (handleSendMessage)
       if (recentBubblesRef.current.has(entry.content)) continue;
@@ -1024,15 +976,15 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     if (initialBlocks.length > 0) return;
 
     // Reconstruct conversation timeline from persisted data.
-    // Only include user and agent messages; skip gateway entries since
+    // Only include user and agent messages; skip execution entries since
     // their content is already in the HTML result block (canvas card).
     const timeline = sessionData?.timeline || [];
     if (timeline.length > 0) {
       timeline
         .sort((a, b) => (a.ts || 0) - (b.ts || 0))
         .forEach((entry, i) => {
-          // Skip gateway responses — they duplicate the HTML canvas content
-          if (entry.type === 'gateway') return;
+          // Skip execution responses — they duplicate the HTML canvas content
+          if (entry.type === 'gateway' || entry.type === 'exec') return;
           const role = entry.type === 'user' ? 'user' : 'agent';
           upsertBlock({
             id: `tl_${i}`,
@@ -1069,6 +1021,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // ── Action Runtime ──
   const handleAction = useCallback((data) => {
     const { action, ...payload } = data;
+
+    // V5: Card actions — send upstream to NanoClaw for living card interactions
+    if (payload.cardId) {
+      api.sendCardAction(payload.cardId, action, payload).catch(e =>
+        console.error('[CardAction] Failed to send:', e)
+      );
+    }
+
     switch (action) {
       case 'open_url':
         window.open(payload.url, '_blank');
@@ -1100,13 +1060,22 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       case 'deep_link':
         window.location.href = payload.href;
         break;
+      // V5 card interaction actions
+      case 'item_checked':
+      case 'option_selected':
+      case 'rating_set':
+      case 'form_submitted':
+      case 'marker_tapped':
+      case 'slide_changed':
+      case 'message_sent':
+        showToast('Done');
+        break;
       case 'vi_select': {
-        // Action card button clicked in gateway HTML — forward to LiveKit agent
         const selected = payload.option || '';
         const title = payload.title || '';
         const allOptions = (payload.allOptions || '').split('|').filter(Boolean);
         const optionsStr = allOptions.length ? ` (options: ${allOptions.join(', ')})` : '';
-        livekit?.sendMessage?.(`[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}`);
+        api.dispatchExec({ prompt: `[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}` }).catch(() => {});
         showToast(selected || 'Selected');
         break;
       }
@@ -1115,11 +1084,11 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       default:
         showToast('Done');
     }
-  }, [showToast, livekit]);
+  }, [showToast]);
 
   // ── Action card handler ──
   const handleActionSelect = useCallback((option) => {
-    livekit?.sendMessage?.(option);
+    api.dispatchExec({ prompt: option }).catch(() => {});
     livekit?.dismissActionCard?.();
   }, [livekit]);
 
@@ -1162,22 +1131,19 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   // ── Split blocks into canvas vs conversation ──
   const canvasBlocks = useMemo(() => {
     const all = blocks.filter(b => b.type === 'html' || b.type === 'image' || b.type === 'module');
-    // When proper gateway HTML blocks exist, filter out legacy/fallback text blocks
-    // that duplicate the same content as raw text.
-    const hasGatewayBlocks = all.some(b => b.id.startsWith('gw_'));
-    if (hasGatewayBlocks) {
-      const legacyIds = new Set(['streamed_text', 'rich_text_summary', 'home_result']);
+    // When NanoClaw card blocks exist, filter out legacy fallback blocks
+    const hasNcBlocks = all.some(b => b.id.startsWith('nc_'));
+    if (hasNcBlocks) {
+      const legacyIds = new Set(['rich_text_summary', 'home_result', 'result_main']);
       return all.filter(b => !legacyIds.has(b.id));
     }
     return all;
-  },
-    [blocks]
-  );
+  }, [blocks]);
   const conversationMessages = useMemo(() =>
     blocks.filter(b => b.type === 'bubble'),
     [blocks]
   );
-  const hasCanvasContent = canvasBlocks.some(b => b.type === 'module' || b.status !== 'loading' || (b.content && !b.content.includes('animation:spin')));
+  const hasCanvasContent = canvasBlocks.some(b => b.type === 'module' || (b.content && b.content.trim() && !b.content.includes('animation:spin')) || (b.status !== 'loading' && b.status !== 'done'));
 
   // Auto-scroll on new canvas blocks
   useEffect(() => {
@@ -1328,6 +1294,33 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
           </div>
         )}
 
+      {/* ═══ INTENTION CARDS — NanoClaw suggestions ═══ */}
+        {nanoClaw?.intentions?.length > 0 && (
+          <IntentionCardStrip
+            intentions={nanoClaw.intentions}
+            loadingSlug={dispatchingSlug}
+            onTapIntention={async (intention) => {
+              const slug = intention.skill_slug || intention.title;
+              if (dispatchingSlug) return; // prevent double-tap
+              setDispatchingSlug(slug);
+              try {
+                await api.dispatchExec({
+                  prompt: [intention.title, intention.description].filter(Boolean).join(' '),
+                  skillSlug: intention.skill_slug,
+                  mediaUrls: intention.params?.media_urls || [],
+                  sessionId: sessionData?.sessionId,
+                  priority: 'thorough',
+                  params: intention.params,
+                });
+              } catch (err) {
+                console.error('[IntentionCard] dispatchExec failed:', err);
+              } finally {
+                setDispatchingSlug(null);
+              }
+            }}
+          />
+        )}
+
       {/* ═══ CANVAS ZONE ═══ */}
         <div className="px-5 pt-4">
         {/* Canvas cards: stacked artifacts */}
@@ -1340,18 +1333,46 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
             const isPlaceholder = isDone && !isActive && !staticWithIframes.has(block.id);
             const chunks = isActive ? (streamingChunksRef.current.get(block.id) || []) : null;
 
+            // V5: Task progress from nanoClaw.tasks for this card's task
+            const cardEntry = nanoClaw?.cards?.[block.id.startsWith('nc_') ? block.id.slice(3) : null];
+            const taskProgress = cardEntry?.taskId ? nanoClaw?.tasks?.[cardEntry.taskId]?.progress : null;
+
             return (
-              <CanvasCard
-                key={block.id}
-                block={block}
-                expanded={isExpanded}
-                isLatest={isLatest}
-                onToggle={() => toggleCardExpanded(block.id)}
-                onAction={handleAction}
-                isActive={isActive}
-                streamingChunks={chunks}
-                isPlaceholder={isPlaceholder}
-              />
+              <div key={block.id}>
+                <CanvasCard
+                  block={block}
+                  expanded={isExpanded}
+                  isLatest={isLatest}
+                  onToggle={() => toggleCardExpanded(block.id)}
+                  onAction={handleAction}
+                  isActive={isActive}
+                  streamingChunks={chunks}
+                  isPlaceholder={isPlaceholder}
+                />
+                {taskProgress && (
+                  <div className="flex items-center gap-1.5 mb-3 -mt-1 px-1">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      className="flex items-center gap-1.5"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        background: 'rgba(168,85,247,0.06)',
+                        border: '1px solid rgba(168,85,247,0.1)',
+                        fontSize: 12,
+                        color: 'rgba(0,0,0,0.45)',
+                      }}
+                    >
+                      <span style={{ fontSize: 11, color: 'rgba(168,85,247,0.5)', fontWeight: 600 }}>
+                        {taskProgress.step}/{taskProgress.total}
+                      </span>
+                      <span>{taskProgress.message || 'Processing...'}</span>
+                    </motion.div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </AnimatePresence>
@@ -1372,7 +1393,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
             <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(255,59,48,0.08)' }}>
               <X size={24} style={{ color: 'rgba(255,59,48,0.5)' }} />
             </div>
-            <p className="font-light" style={{ fontSize: 'var(--text-base)', color: 'rgba(255,59,48,0.6)' }}>Connection issue</p>
+            <p className="font-light" style={{ fontSize: 'var(--text-base)', color: 'rgba(255,59,48,0.6)' }}>No response received</p>
             <p className="mt-1" style={{ fontSize: 'var(--text-sm)', color: 'rgba(0,0,0,0.2)' }}>Go back and try again</p>
           </div>
         )}

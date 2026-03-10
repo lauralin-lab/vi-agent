@@ -6,6 +6,7 @@ import {
   Search, Languages, Eye, Sparkles, Receipt, ShoppingBag,
   RefreshCw
 } from 'lucide-react';
+import MatrixScanOverlay from './MatrixScanOverlay';
 
 // Map detected intent → icon component for dynamic shutter
 const INTENT_ICONS = {
@@ -96,11 +97,12 @@ export default function LiveCameraView({
   // Media capture state
   const [capturedMedia, setCapturedMedia] = useState([]);
   const capturedMediaRef = useRef(capturedMedia);
-  capturedMediaRef.current = capturedMedia;
+  useEffect(() => { capturedMediaRef.current = capturedMedia; }, [capturedMedia]);
   // Track pending upload promises so handleDone can wait for them
   const uploadPromisesRef = useRef([]);
   const [showGallery, setShowGallery] = useState(false);
   const [isStackExpanded, setIsStackExpanded] = useState(false);
+  const [stackBounce, setStackBounce] = useState(false);
   const stackLongPressRef = useRef(null);
 
   // ── Agent Status State Machine ──
@@ -108,7 +110,7 @@ export default function LiveCameraView({
     agentIdentity: livekit.agentIdentity,
     greetingReceived: livekit.greetingReceived,
     userSpeaking: false, // TODO: wire up actual VAD signal; isMicOn is mic-enabled, not speaking
-    agentGenerating: livekit.isHtmlStreaming || livekit.isTextStreaming || !!livekit.taskProgress,
+    agentGenerating: !!livekit.taskProgress,
     cameraActive: !!livekit.localVideoTrack,
     connectionQuality: livekit.connectionQuality,
   });
@@ -155,10 +157,10 @@ export default function LiveCameraView({
   const overlayTimerRef = useRef(null);
 
   // Pre-compute emoji rain positions/sizes once per rain trigger (avoids re-randomizing on re-render)
-  const emojiRainParticles = useRef([]);
+  const [emojiRainParticles, setEmojiRainParticles] = useState([]);
   useEffect(() => {
     if (emojiRain) {
-      emojiRainParticles.current = Array.from({ length: 25 }, (_, i) => ({
+      setEmojiRainParticles(Array.from({ length: 25 }, (_, i) => ({
         x: Math.random() * 90 + 5,
         scale: 0.5 + Math.random(),
         fontSize: 20 + Math.random() * 20,
@@ -166,7 +168,7 @@ export default function LiveCameraView({
         duration: 2 + Math.random() * 2,
         rotate: Math.random() * 360,
         emojiIndex: i % emojiRain.emojis.length,
-      }));
+      })));
     }
   }, [emojiRain]);
 
@@ -190,7 +192,7 @@ export default function LiveCameraView({
     switch (livekit.connectionState) {
       case 'connected':
         setIsScanning(true);
-        scanTimerRef.current = setTimeout(() => setIsScanning(false), 2000);
+        scanTimerRef.current = setTimeout(() => setIsScanning(false), 2500);
         break;
       case 'connecting':
         if (!livekit.lastAgentText) {
@@ -468,7 +470,9 @@ export default function LiveCameraView({
         if (photoSrc) {
           // Use functional update to avoid stale closure over capturedMedia
           setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
-          uploadToS3(photoSrc);
+          setStackBounce(true);
+          setTimeout(() => setStackBounce(false), 400);
+          // Upload deferred to handleDone
         }
       }, 600);
     }
@@ -523,7 +527,9 @@ export default function LiveCameraView({
       const photoSrc = await capturePhotoFromVideo();
       if (photoSrc) {
         setCapturedMedia(prev => [{ type: 'photo', src: photoSrc }, ...prev].slice(0, 8));
-        uploadToS3(photoSrc);
+        setStackBounce(true);
+        setTimeout(() => setStackBounce(false), 400);
+        // Upload deferred to handleDone
       }
     }, 600);
   };
@@ -537,36 +543,69 @@ export default function LiveCameraView({
   const handleDone = async () => {
     if (doneClickedRef.current) return;
     doneClickedRef.current = true;
-    play('camera.shutter');
+    play('session.send');
 
     // User-edited intention takes priority, then agent intention, then card text
     const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
 
-    // Navigate to session immediately — loading happens in session view (optimistic)
+    // Capture refs before navigation unmounts this component
+    const dispatch = livekit.sendDispatch;
+    const mediaSnapshot = capturedMediaRef.current.slice();
+
+    // Trigger uploads for any media not yet uploaded
+    for (const item of capturedMediaRef.current) {
+      if (!item.s3Url && item.src) {
+        if (item.type === 'video' && item.blob) {
+          uploadVideoToS3(item.blob, 'webm', item.src);
+        } else {
+          uploadToS3(item.src);
+        }
+      }
+    }
+
+    // Navigate immediately — session view streams content via LiveKit data channel
     play('session.enter');
     onViewResult(null, capturedMedia, finalIntention);
 
-    // Capture sendDispatch ref before potential unmount
-    const dispatch = livekit.sendDispatch;
-
-    // Wait for all pending uploads to complete (max 10s), then dispatch once with all URLs
+    // Wait for all uploads to complete (max 10s), collect URLs from promises directly
+    // (capturedMediaRef won't update after navigation unmounts this component)
     const pendingPromises = [...uploadPromisesRef.current];
+    let allUrls = [];
     if (pendingPromises.length > 0) {
-      await Promise.race([
+      const results = await Promise.race([
         Promise.allSettled(pendingPromises),
         new Promise(resolve => setTimeout(resolve, 10000)),
       ]);
+      if (Array.isArray(results)) {
+        allUrls = results
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => r.value);
+      }
     }
 
-    // Collect all successfully uploaded S3 URLs
-    const allUrls = capturedMediaRef.current.filter(m => m.s3Url).map(m => m.s3Url);
-    dispatch(finalIntention, allUrls);
+    // Fallback: if promises didn't yield URLs, try the snapshot (which captured refs before unmount)
+    if (allUrls.length === 0 && mediaSnapshot.length > 0) {
+      allUrls = mediaSnapshot.filter(m => m.s3Url).map(m => m.s3Url);
+    }
+
+    // V5: Dispatch exec request via REST → Redis → NanoClaw.
+    const prompt = finalIntention || 'Analyze this photo';
+    try {
+      await api.dispatchExec({
+        prompt,
+        mediaUrls: allUrls,
+        priority: 'thorough',
+      });
+      console.log('[redis][frontend] Exec dispatched:', prompt, allUrls.length, 'media files');
+    } catch (e) {
+      console.error('[redis][frontend] Failed to dispatch exec:', e);
+    }
   };
 
   // ── Action card option handler ──
   const handleActionCardOption = (option) => {
-    livekit.sendMessage(option);
-    livekit.dismissActionCard();
+    api.dispatchExec({ prompt: option }).catch(e => console.error('[action] dispatch failed:', e));
+    livekit.dismissActionCard?.();
   };
 
   // ── Mic toggle ──
@@ -664,70 +703,85 @@ export default function LiveCameraView({
           </div>
         )}
 
-        {/* Image/Video Stack — collapsed */}
+        {/* Image/Video Stack — float + bounce */}
         <AnimatePresence mode="wait">
           {capturedMedia.length > 0 && !isStackExpanded && (
             <motion.div
-              key="media-stack-collapsed"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
+              key="media-stack"
+              initial={{ opacity: 0, scale: 0.5, y: 20 }}
+              animate={{
+                opacity: 1,
+                scale: stackBounce ? [1, 1.15, 0.95, 1.05, 1] : 1,
+                y: 0
+              }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className="absolute z-10 below-top-controls"
-              style={{ top: 'calc(env(safe-area-inset-top, 0.75rem) + 52px)', right: '1.5rem' }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              onClick={() => { if (capturedMedia.length > 1) setIsStackExpanded(true); }}
+              className="absolute w-11 h-11 cursor-pointer z-30 float-drift"
+              style={{ bottom: '130px', left: '1.5rem' }}
             >
-              <div
-                className="relative w-14 h-14 cursor-pointer"
-                onPointerDown={() => {
-                  stackLongPressRef.current = setTimeout(() => setIsStackExpanded(true), 500);
-                }}
-                onPointerUp={() => clearTimeout(stackLongPressRef.current)}
-                onPointerLeave={() => clearTimeout(stackLongPressRef.current)}
-              >
-                {capturedMedia.slice(0, 4).map((item, index) => (
-                  <div
-                    key={index}
-                    className="absolute w-11 h-11 rounded-lg border border-white/25 bg-black/40 backdrop-blur-md overflow-hidden shadow-md flex items-center justify-center"
-                    style={{
-                      transform: `rotate(${index * 5 - 4}deg) translate(${index * 2}px, ${index * 3}px) scale(${1 - index * 0.04})`,
-                      zIndex: 4 - index,
-                      top: 0,
-                      right: 0,
-                    }}
-                  >
-                    <img src={item.src} alt="" className="w-full h-full object-cover opacity-80 absolute inset-0" />
-                    {item.type === 'video' && (
-                      <div className="z-10 w-4 h-4 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                        <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <div className="absolute -bottom-1.5 -right-1.5 bg-yellow-500 text-black font-bold w-5 h-5 rounded-full flex items-center justify-center z-10 shadow-sm border border-black/20" style={{ fontSize: 'var(--text-2xs)' }}>
-                  {capturedMedia.length}
+              {capturedMedia.slice(0, 4).map((item, index) => (
+                <div
+                  key={index}
+                  className="absolute top-0 left-0 w-11 h-11 rounded-xl border border-white/20 bg-black/30 backdrop-blur-md overflow-hidden shadow-lg flex items-center justify-center"
+                  style={{
+                    transform: `rotate(${index * 4}deg) scale(${1 - index * 0.05})`,
+                    zIndex: 4 - index,
+                  }}
+                >
+                  <img src={item.src} alt="" className="w-full h-full object-cover opacity-80 absolute inset-0" />
+                  {item.type === 'video' && (
+                    <div className="z-10 w-4 h-4 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                      <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
+                    </div>
+                  )}
                 </div>
-              </div>
+              ))}
 
-              <button
-                onClick={(e) => { e.stopPropagation(); play('media.delete'); setCapturedMedia([]); }}
-                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center z-30 shadow-md border border-red-400/50 transition-colors"
+              {/* Delete button — only show when single item */}
+              {capturedMedia.length === 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    play('media.delete');
+                    setCapturedMedia([]);
+                  }}
+                  className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center z-20 hover:bg-black/80 active:scale-90 transition-all"
+                >
+                  <span className="text-white/80 text-[10px] font-bold leading-none">✕</span>
+                </button>
+              )}
+
+              {/* Count badge — white bg + black text, spring animation */}
+              <motion.div
+                key={capturedMedia.length}
+                initial={{ scale: 0.5 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500 }}
+                className="absolute -bottom-1 -right-1 bg-white text-black font-bold rounded-full flex items-center justify-center z-10 shadow-md border border-black/10"
+                style={{ fontSize: '9px', minWidth: '18px', minHeight: '18px', width: '18px', height: '18px' }}
               >
-                <X size={10} strokeWidth={3} className="text-white" />
-              </button>
+                {capturedMedia.length}
+              </motion.div>
 
+              {/* Stack Status Indicator */}
               <AnimatePresence mode="wait">
                 {stackStatus === 'UPLOADING' && (
-                  <motion.div key="uploading" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center z-20 shadow-md border border-blue-400">
-                    <Upload size={10} strokeWidth={3} className="text-white animate-bounce" />
+                  <motion.div key="uploading" initial={{ opacity: 0, scale: 0.5, rotate: -90 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 400 }}
+                    className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-white/70 backdrop-blur-md flex items-center justify-center z-20 shadow-md border border-white/30">
+                    <Upload size={10} strokeWidth={3} className="text-black animate-bounce" />
                   </motion.div>
                 )}
                 {stackStatus === 'ANALYZING' && (
-                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center z-20 shadow-md border border-cyan-400">
-                    <ScanLine size={10} strokeWidth={3} className="text-white animate-pulse" />
+                  <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 400 }}
+                    className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-white/50 backdrop-blur-md flex items-center justify-center z-20 shadow-md border border-white/20">
+                    <ScanLine size={10} strokeWidth={3} className="text-black animate-pulse" />
                   </motion.div>
                 )}
                 {stackStatus === 'READY' && (
-                  <motion.div key="ready" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: [1, 1.2, 1] }} exit={{ opacity: 0, scale: 0.5 }} transition={{ scale: { duration: 0.3 } }} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center z-20 shadow-md border border-green-400">
-                    <Check size={10} strokeWidth={3} className="text-white" />
+                  <motion.div key="ready" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: [1, 1.3, 1] }} exit={{ opacity: 0, scale: 0.5 }} transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                    className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center z-20 shadow-md border border-white/30">
+                    <Check size={10} strokeWidth={3} className="text-black" />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -739,44 +793,40 @@ export default function LiveCameraView({
         <AnimatePresence>
           {isStackExpanded && capturedMedia.length > 0 && (
             <motion.div
-              key="media-expanded"
+              key="expanded-strip"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center"
-              onClick={() => setIsStackExpanded(false)}
+              transition={{ duration: 0.2 }}
+              className="absolute right-0 left-0 z-40 px-5"
+              style={{ bottom: '130px' }}
             >
-              <div className="absolute top-4 right-4 flex gap-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); play('media.delete'); setCapturedMedia([]); setIsStackExpanded(false); }}
-                  className="px-3 py-1.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 font-medium backdrop-blur-md hover:bg-red-500/30 transition-colors"
-                  style={{ fontSize: 'var(--text-xs)' }}
-                >
-                  Clear All
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setIsStackExpanded(false); }}
-                  className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-md hover:bg-white/20 transition-colors"
-                >
-                  <X size={14} className="text-white/80" />
-                </button>
-              </div>
+              {/* Backdrop to close */}
+              <div
+                className="fixed inset-0 z-[-1]"
+                onClick={() => setIsStackExpanded(false)}
+              />
 
-              <div className="flex gap-3 px-6 overflow-x-auto max-w-full py-4" onClick={(e) => e.stopPropagation()}>
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                className="flex gap-2 overflow-x-auto no-scrollbar pt-3 pb-2 px-2 rounded-2xl bg-black/50 backdrop-blur-2xl border border-white/[0.1]"
+              >
                 {capturedMedia.map((item, index) => (
                   <motion.div
                     key={index}
-                    initial={{ opacity: 0, y: 20, scale: 0.8 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.5 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="relative shrink-0 w-20 h-20 rounded-xl border border-white/20 bg-black/40 overflow-hidden shadow-lg group"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: index * 0.05, type: 'spring', stiffness: 400 }}
+                    className="relative shrink-0 w-14 h-14 rounded-xl border border-white/20 bg-black/30"
                   >
-                    <img src={item.src} alt="" className="w-full h-full object-cover" />
+                    <img src={item.src} alt="" className="w-full h-full object-cover rounded-xl absolute inset-0" />
                     {item.type === 'video' && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
-                          <div className="w-0 h-0 border-t-[4px] border-t-transparent border-l-[7px] border-l-white border-b-[4px] border-b-transparent ml-0.5" />
+                        <div className="w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">
+                          <div className="w-0 h-0 border-t-[3px] border-t-transparent border-l-[5px] border-l-white border-b-[3px] border-b-transparent ml-0.5" />
                         </div>
                       </div>
                     )}
@@ -786,18 +836,25 @@ export default function LiveCameraView({
                         play('media.delete');
                         setCapturedMedia(prev => {
                           const next = prev.filter((_, i) => i !== index);
-                          if (next.length === 0) setIsStackExpanded(false);
+                          if (next.length <= 1) setIsStackExpanded(false);
                           return next;
                         });
                       }}
-                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center shadow-md transition-colors"
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 flex items-center justify-center z-10 hover:bg-red-500/60 active:scale-90 transition-all"
                     >
-                      <X size={10} strokeWidth={3} className="text-white" />
+                      <span className="text-white/90 text-[9px] font-bold leading-none">✕</span>
                     </button>
                   </motion.div>
                 ))}
-              </div>
-              <p className="text-white/40 mt-2" style={{ fontSize: 'var(--text-xs)' }}>Tap outside to close</p>
+
+                {/* Collapse button */}
+                <button
+                  onClick={() => setIsStackExpanded(false)}
+                  className="shrink-0 w-14 h-14 rounded-xl border border-white/10 bg-white/[0.05] flex items-center justify-center hover:bg-white/[0.1] active:scale-90 transition-all"
+                >
+                  <span className="text-white/50 text-[10px] font-medium">Done</span>
+                </button>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -818,35 +875,14 @@ export default function LiveCameraView({
         {/* Status text removed — card + top icon already show connection state */}
 
 
-        {/* AI Scanning Effect */}
-        <AnimatePresence>
-          {isScanning && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-20 pointer-events-none overflow-hidden"
-            >
-              <motion.div
-                initial={{ top: '0%' }}
-                animate={{ top: '100%' }}
-                transition={{ duration: 1.8, ease: 'linear', repeat: 0 }}
-                className="absolute left-0 right-0 h-[2px]"
-                style={{
-                  background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.7), rgba(147,197,253,1), rgba(59,130,246,0.7), transparent)',
-                  boxShadow: '0 0 30px 6px rgba(59,130,246,0.4), 0 0 80px 12px rgba(59,130,246,0.2)'
-                }}
-              />
-              <div className="absolute inset-0 bg-blue-500/[0.03]" />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* AI Matrix Scan Effect */}
+        <MatrixScanOverlay active={isScanning} duration={2500} columns={24} />
 
         {/* Emoji Rain Overlay */}
         <AnimatePresence>
           {emojiRain && (
             <div className="absolute inset-0 z-[25] pointer-events-none overflow-hidden">
-              {emojiRainParticles.current.map((p, i) => (
+              {emojiRainParticles.map((p, i) => (
                 <motion.div
                   key={`emoji-${emojiRain.emojis.join('')}-${i}`}
                   initial={{ y: -50, x: `${p.x}%`, opacity: 1, scale: p.scale }}
@@ -898,12 +934,12 @@ export default function LiveCameraView({
               />
               <motion.div
                 initial={{
-                  top: '40%', left: '30%', width: '40%', height: '30%',
+                  top: '45%', left: '30%', width: '40%', height: '30%',
                   borderRadius: '8px', opacity: 1,
                 }}
                 animate={{
-                  top: ['40%', '15%', '3%'],
-                  left: ['30%', '65%', '82%'],
+                  top: ['45%', '65%', '78%'],
+                  left: ['30%', '10%', '4%'],
                   width: ['40%', '18%', '10%'],
                   height: ['30%', '14%', '8%'],
                   borderRadius: ['8px', '6px', '4px'],
@@ -919,7 +955,6 @@ export default function LiveCameraView({
             </>
           )}
         </AnimatePresence>
-
 
         {/* Action Card Overlay */}
         <AnimatePresence>
@@ -954,109 +989,121 @@ export default function LiveCameraView({
         </AnimatePresence>
       </div>
 
-      {/* Top Controls Area — floating glass overlay */}
-      <div className="safe-area-top absolute top-0 left-0 right-0 pb-2 px-4 flex justify-between items-center z-20 pointer-events-none">
-        <button
-          onClick={() => { play('nav.history'); onOpenHistory(); }}
-          className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.10] backdrop-blur-xl active:scale-90 transition-all pointer-events-auto"
-          style={{ background: 'rgba(255,255,255,0.07)' }}
-        >
-          <ArrowLeft size={18} strokeWidth={2} className="text-white/80" />
-        </button>
-
-        {/* AI Connection Signal — centered */}
-        <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto">
-          <div
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-xl border border-white/[0.08]"
-            style={{ background: 'rgba(0,0,0,0.35)' }}
+      {/* Top Controls + AI Card — vertical flex, card always 12px below buttons */}
+      <div className="safe-area-top absolute top-0 left-0 right-0 px-4 z-20 pointer-events-none flex flex-col">
+        {/* Row 1: Back button + Connection Signal + Flip Camera */}
+        <div className="flex justify-between items-center pb-2">
+          <button
+            onClick={() => { play('nav.history'); onOpenHistory(); }}
+            className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.10] backdrop-blur-xl active:scale-90 transition-all pointer-events-auto"
+            style={{ background: 'rgba(255,255,255,0.07)' }}
           >
-            <AnimatePresence mode="wait">
-              {connectionIcon === 'connecting' && (
-                <motion.div key="connecting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-                  <Loader2 size={11} className="text-blue-400 animate-spin" />
-                  <span className="font-mono text-blue-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Connecting</span>
-                </motion.div>
-              )}
-              {connectionIcon === 'connected' && (
-                <motion.div key="connected" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                  <span className="font-mono text-green-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Live</span>
-                </motion.div>
-              )}
-              {connectionIcon === 'weak' && (
-                <motion.div key="weak" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                  <span className="font-mono text-yellow-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Weak</span>
-                </motion.div>
-              )}
-              {connectionIcon === 'offline' && (
-                <motion.div key="offline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-400/60" />
-                  <span className="font-mono text-red-400/60 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Offline</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <ArrowLeft size={18} strokeWidth={2} className="text-white/80" />
+          </button>
+
+          {/* AI Connection Signal — centered */}
+          <div className="pointer-events-auto">
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-xl border border-white/[0.08]"
+              style={{ background: 'rgba(0,0,0,0.35)' }}
+            >
+              <AnimatePresence mode="wait">
+                {connectionIcon === 'connecting' && (
+                  <motion.div key="connecting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                    <Loader2 size={11} className="text-blue-400 animate-spin" />
+                    <span className="font-mono text-blue-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Connecting</span>
+                  </motion.div>
+                )}
+                {connectionIcon === 'connected' && (
+                  <motion.div key="connected" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                    <span className="font-mono text-green-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Live</span>
+                  </motion.div>
+                )}
+                {connectionIcon === 'weak' && (
+                  <motion.div key="weak" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                    <span className="font-mono text-yellow-400/80 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Weak</span>
+                  </motion.div>
+                )}
+                {connectionIcon === 'offline' && (
+                  <motion.div key="offline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-400/60" />
+                    <span className="font-mono text-red-400/60 tracking-[0.12em] uppercase" style={{ fontSize: '9px' }}>Offline</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Flip Camera */}
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            <button
+              onClick={() => livekit.switchCamera?.()}
+              className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.08] backdrop-blur-xl active:scale-90 transition-all"
+              style={{ background: 'rgba(255,255,255,0.06)' }}
+            >
+              <RefreshCw size={16} strokeWidth={1.8} className="text-white/50" />
+            </button>
           </div>
         </div>
 
-        {/* Flip Camera */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          <button
-            onClick={() => livekit.switchCamera?.()}
-            className="w-10 h-10 rounded-full flex items-center justify-center border border-white/[0.08] backdrop-blur-xl active:scale-90 transition-all"
-            style={{ background: 'rgba(255,255,255,0.06)' }}
-          >
-            <RefreshCw size={16} strokeWidth={1.8} className="text-white/50" />
-          </button>
-        </div>
-      </div>
-
-      {/* Card + Bottom Controls — floating glass overlay */}
-      <div className="absolute bottom-0 left-0 right-0 z-30">
-        <div className="relative w-full flex items-start justify-center px-4 pt-1">
+        {/* Row 2: AI Card — 12px below buttons */}
+        <div className="pointer-events-auto" style={{ marginTop: '12px' }}>
           <AnimatePresence mode="wait">
             {livekit.intentionText || editedIntention ? (
-              /* ── Intention Card: editable, replaces Card when agent sends intention ── */
+              /* ── Intention Card ── */
               <motion.div
                 key="intention-card"
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
+                exit={{ opacity: 0, y: -10 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                className="w-full max-w-[90%]"
+                className="w-full"
               >
                 <div
-                  className="rounded-2xl px-4 py-3"
+                  className="relative rounded-2xl overflow-hidden"
                   style={{
-                    background: 'rgba(0,0,0,0.50)',
-                    backdropFilter: 'blur(28px)',
-                    border: '1px solid rgba(255,255,255,0.10)',
-                    boxShadow: '0 4px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 0 0.5px rgba(255,255,255,0.06)',
                   }}
                 >
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Edit3 size={11} className="text-white/40" />
-                    <span className="font-mono font-semibold text-white/40 tracking-[0.15em] uppercase" style={{ fontSize: '9px' }}>
-                      Intention
-                    </span>
+                  <div className="absolute inset-0 rounded-2xl" style={{
+                    backdropFilter: 'blur(24px) saturate(180%)',
+                    WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
+                  }} />
+                  <div className="absolute inset-0 rounded-2xl" style={{
+                    background: 'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.55) 100%)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }} />
+                  <div className="absolute top-0 left-[10%] right-[10%] h-px" style={{
+                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)',
+                  }} />
+                  <div className="relative px-4 py-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Edit3 size={11} className="text-white/40" />
+                      <span className="font-mono font-semibold text-white/50 tracking-[0.06em] uppercase" style={{ fontSize: '11px' }}>
+                        Intention
+                      </span>
+                    </div>
+                    <textarea
+                      ref={intentionInputRef}
+                      value={editedIntention}
+                      onChange={(e) => {
+                        setEditedIntention(e.target.value);
+                        setIsIntentionEdited(true);
+                      }}
+                      placeholder="What should VI do with your photos?"
+                      rows={2}
+                      className="w-full bg-transparent text-white/90 font-medium leading-relaxed resize-none outline-none placeholder:text-white/25"
+                      style={{ fontSize: 'var(--text-base)', textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}
+                    />
                   </div>
-                  <textarea
-                    ref={intentionInputRef}
-                    value={editedIntention}
-                    onChange={(e) => {
-                      setEditedIntention(e.target.value);
-                      setIsIntentionEdited(true);
-                    }}
-                    placeholder="What should VI do with your photos?"
-                    rows={2}
-                    className="w-full bg-transparent text-white/90 font-medium leading-relaxed resize-none outline-none placeholder:text-white/25"
-                    style={{ fontSize: 'var(--text-base)', textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}
-                  />
                 </div>
               </motion.div>
             ) : (
-              /* ── Default Card: connection/agent status ── */
-              <motion.div key="status-card" className="h-28 flex items-start justify-center w-full">
+              /* ── Default Card: AI observation ── */
+              <motion.div key="status-card" className="w-full">
                 <Card
                   isVisible={showCard}
                   text={cardText}
@@ -1069,7 +1116,10 @@ export default function LiveCameraView({
             )}
           </AnimatePresence>
         </div>
+      </div>
 
+      {/* Bottom Controls — floating glass overlay */}
+      <div className="absolute bottom-0 left-0 right-0 z-30">
         <div className="w-full flex items-center justify-center px-6 py-4 gap-6">
           {/* Mic Toggle */}
           <motion.button
@@ -1088,37 +1138,34 @@ export default function LiveCameraView({
             }
           </motion.button>
 
-          {/* Unified Shutter / Go Button */}
+          {/* Shutter Button — always captures photo */}
           {(() => {
-            const hasMedia = capturedMedia.length > 0;
             const agentAction = livekit.actionSuggestion?.action;
             const glowAction = (agentAction && agentAction !== 'dispatch' && agentAction !== 'ready' && agentAction !== 'done') ? agentAction : null;
-            const glow = hasMedia ? ACTION_GLOW['dispatch'] : (ACTION_GLOW[glowAction] || null);
+            const glow = ACTION_GLOW[glowAction] || null;
             const glowBorder = glow ? glow.border : 'border-white/40';
             const glowShadow = glow ? glow.shadow : 'none';
-            const ShutterIcon = hasMedia ? CheckCircle2 : ((glowAction && INTENT_ICONS[glowAction]) || ScanLine);
+            const ShutterIcon = (glowAction && INTENT_ICONS[glowAction]) || ScanLine;
 
             return (
               <div className="relative">
                 <button
-                  onClick={hasMedia ? handleDone : handleShutterClick}
-                  onPointerDown={hasMedia ? undefined : handleShutterDown}
-                  onPointerUp={hasMedia ? undefined : handleShutterUp}
+                  onClick={handleShutterClick}
+                  onPointerDown={handleShutterDown}
+                  onPointerUp={handleShutterUp}
                   onPointerLeave={() => { if (!isRecording) clearTimeout(longPressTimerRef.current); }}
                   disabled={connectionIcon === 'offline' && !livekit.localVideoTrack}
-                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${isRecording ? 'border-red-500/50 scale-110' :
-                      hasMedia ? 'border-green-400/60' : glowBorder
+                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${isRecording ? 'border-red-500/50 scale-110' : glowBorder
                     } active:scale-95 select-none touch-none disabled:opacity-30`}
                   style={{ boxShadow: isRecording ? 'none' : glowShadow }}
                 >
                   {isRecording ? (
                     <div className="w-7 h-7 rounded-md bg-red-500 animate-pulse transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
                   ) : (
-                    <div className={`w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] ${hasMedia ? 'bg-green-500' : 'bg-white'
-                      }`}>
+                    <div className="w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] bg-white">
                       <AnimatePresence mode="wait">
                         <motion.div
-                          key={hasMedia ? 'go' : (ShutterIcon.displayName || ShutterIcon.name || 'icon')}
+                          key={ShutterIcon.displayName || ShutterIcon.name || 'icon'}
                           initial={{ opacity: 0, scale: 0.7 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.7 }}
@@ -1127,7 +1174,7 @@ export default function LiveCameraView({
                           <ShutterIcon
                             size={28}
                             strokeWidth={2}
-                            className={hasMedia ? 'text-white drop-shadow-sm' : 'text-black/70 drop-shadow-sm'}
+                            className="text-black/70 drop-shadow-sm"
                           />
                         </motion.div>
                       </AnimatePresence>
@@ -1138,8 +1185,29 @@ export default function LiveCameraView({
             );
           })()}
 
-          {/* Spacer — replaces old Done button slot */}
-          <div className="w-14 h-14" />
+          {/* Done Button — appears only when photos are captured */}
+          <AnimatePresence>
+            {capturedMedia.length > 0 ? (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                onClick={handleDone}
+                whileTap={{ scale: 0.88 }}
+                className="w-14 h-14 rounded-full flex items-center justify-center border transition-all backdrop-blur-xl"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(34,197,94,0.85), rgba(16,185,129,0.85))',
+                  borderColor: 'rgba(255,255,255,0.25)',
+                  boxShadow: '0 0 24px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
+                }}
+              >
+                <CheckCircle2 size={22} strokeWidth={2} className="text-white drop-shadow-sm" />
+              </motion.button>
+            ) : (
+              <div className="w-14 h-14" />
+            )}
+          </AnimatePresence>
         </div>
         <div className="w-full h-2 md:h-8 shrink-0" />
       </div>

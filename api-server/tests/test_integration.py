@@ -4,7 +4,6 @@ These tests exercise the real FastAPI app with a SQLite test database,
 verifying multi-step user journeys end-to-end.
 """
 
-import uuid
 from datetime import datetime, timezone
 
 import pytest

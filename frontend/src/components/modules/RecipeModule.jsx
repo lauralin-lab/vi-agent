@@ -11,12 +11,10 @@ import {
 } from './shared';
 
 export default function RecipeModule({ data, onAction }) {
-  if (!data) return null;
-
   const {
     title, image_url, prep_time, cook_time,
     servings, ingredients = [], steps = [],
-  } = data;
+  } = data || {};
 
   const [checkedIngredients, setCheckedIngredients] = useState({});
 
@@ -31,6 +29,8 @@ export default function RecipeModule({ data, onAction }) {
     navigator.clipboard?.writeText(text);
     onAction?.({ type: 'copy_ingredients' });
   }, [ingredients, onAction]);
+
+  if (!data) return null;
 
   return (
     <GlassCard padding={false}>
@@ -49,20 +49,20 @@ export default function RecipeModule({ data, onAction }) {
         {(prep_time || cook_time || servings != null) && (
           <div className="flex flex-wrap gap-3 mb-4">
             {prep_time && (
-              <div className="flex items-center gap-1.5 text-white/50" style={{ fontSize: 'var(--text-xs)' }}>
+              <div className="flex items-center gap-1.5 text-black/40" style={{ fontSize: 'var(--text-xs)' }}>
                 <Clock size={13} className="text-purple-400/70" />
                 <span>Prep {prep_time}</span>
               </div>
             )}
             {cook_time && (
-              <div className="flex items-center gap-1.5 text-white/50" style={{ fontSize: 'var(--text-xs)' }}>
+              <div className="flex items-center gap-1.5 text-black/40" style={{ fontSize: 'var(--text-xs)' }}>
                 <Clock size={13} className="text-amber-400/70" />
                 <span>Cook {cook_time}</span>
               </div>
             )}
             {servings != null && (
-              <div className="flex items-center gap-1.5 text-white/50" style={{ fontSize: 'var(--text-xs)' }}>
-                <Users size={13} className="text-white/40" />
+              <div className="flex items-center gap-1.5 text-black/40" style={{ fontSize: 'var(--text-xs)' }}>
+                <Users size={13} className="text-black/30" />
                 <span>{servings} serving{servings !== 1 ? 's' : ''}</span>
               </div>
             )}
@@ -76,14 +76,14 @@ export default function RecipeModule({ data, onAction }) {
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <p
-                className="text-white/40 font-medium uppercase tracking-wider"
+                className="text-black/30 font-medium uppercase tracking-wider"
                 style={{ fontSize: 'var(--text-xs)' }}
               >
                 Ingredients
               </p>
               <button
                 onClick={copyIngredients}
-                className="text-white/30 hover:text-white/60 transition-colors"
+                className="text-black/25 hover:text-black/50 transition-colors"
                 title="Copy ingredients"
               >
                 <Copy size={14} />
@@ -120,7 +120,7 @@ export default function RecipeModule({ data, onAction }) {
         {steps.length > 0 && (
           <div>
             <p
-              className="text-white/40 font-medium uppercase tracking-wider mb-2"
+              className="text-black/30 font-medium uppercase tracking-wider mb-2"
               style={{ fontSize: 'var(--text-xs)' }}
             >
               Instructions

@@ -1,0 +1,39 @@
+{
+  "id": "nutrition-analyzer",
+  "version": "1.0.0",
+  "name": "Nutrition Analyzer",
+  "description": "Analyze food photos for nutritional content, calories, and macro breakdown",
+  "icon": "🥗",
+  "category": "health",
+
+  "trigger": {
+    "visual_cues": ["food", "meal", "plate", "dish", "snack", "beverage", "drink", "fruit", "vegetable"],
+    "voice_keywords": ["calories", "nutrition", "healthy", "protein", "carbs", "macros", "diet"],
+    "intention_level": "L1"
+  },
+
+  "skill": {
+    "prompt": "skill.md",
+    "model": "claude-sonnet-4-6",
+    "max_turns": 5,
+    "max_tokens": 8192
+  },
+
+  "templates": {
+    "bundled": ["nutrition-card"],
+    "shared": ["thinking-process", "image-analysis", "comparison-table"]
+  },
+
+  "tools": {
+    "bundled": [],
+    "builtin": ["web_search", "web_fetch", "memory_update", "publish_result"]
+  },
+
+  "apis": {},
+
+  "output": {
+    "card_sequence": ["thinking-process", "image-analysis", "nutrition-card"],
+    "estimated_time": "10-20s",
+    "estimated_cost": "$0.02-0.05"
+  }
+}

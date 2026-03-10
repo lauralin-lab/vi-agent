@@ -40,11 +40,10 @@ ensure_label() {
 }
 
 echo "── Type ──"
-ensure_label "mission-contract" "0E8A16" "This issue is a Mission Contract"
+ensure_label "mission" "0075ca" "Team mission contract"
 
 echo ""
 echo "── Status ──"
-ensure_label "status:queued"   "C5DEF5" "Queued — ready to be claimed"
 ensure_label "status:wip"      "FBCA04" "In Progress — actively being worked on"
 ensure_label "status:review"   "1D76DB" "In Review — PR submitted"
 ensure_label "status:done"     "0E8A16" "Done — merged to main"
@@ -81,5 +80,4 @@ echo ""
 echo "🎉 Label taxonomy setup complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Run: ./scripts/migrate-board-to-issues.sh  (migrate existing tasks)"
-echo "  2. Run: ./scripts/sync-board.sh               (generate board.md from Issues)"
+echo "  Run: /team init   (or .claude/commands/scripts/setup-github-labels.sh)"

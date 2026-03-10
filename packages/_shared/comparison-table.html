@@ -1,0 +1,83 @@
+<!--
+  comparison-table template
+  Slots: title, items[], features[], verdict
+  items[]: { name, image_url, highlight }
+  features[]: { label, values[], category }
+-->
+<style>
+  .ct-container { padding: 4px 0; }
+  .ct-title { font-size: var(--text-lg); font-weight: 600; color: #000; margin-bottom: 10px; }
+  .ct-scroll {
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    margin: 0 -4px; padding: 0 4px;
+  }
+  .ct-scroll::-webkit-scrollbar { display: none; }
+  .ct-table { min-width: 100%; border-collapse: separate; border-spacing: 0; }
+  .ct-table thead th {
+    text-align: center; padding: 8px 12px;
+    font-size: var(--text-sm); font-weight: 600; color: rgba(0,0,0,0.7);
+    background: rgba(0,0,0,0.02); border-bottom: 1px solid rgba(0,0,0,0.06);
+    vertical-align: bottom;
+  }
+  .ct-table thead th:first-child { text-align: left; min-width: 80px; }
+  .ct-th-highlight { border-bottom: 2px solid #000 !important; }
+  .ct-th-img {
+    width: 36px; height: 36px; border-radius: 8px;
+    object-fit: cover; margin: 0 auto 4px; display: block; border: none;
+  }
+  .ct-table tbody td {
+    padding: 7px 12px; border-bottom: 1px solid rgba(0,0,0,0.03);
+    font-size: var(--text-sm); color: rgba(0,0,0,0.6); text-align: center;
+  }
+  .ct-table tbody td:first-child {
+    text-align: left; font-weight: 500; color: rgba(0,0,0,0.6);
+  }
+  .ct-table tbody tr:last-child td { border-bottom: none; }
+  .ct-highlight-val { font-weight: 500; color: #000; }
+  .ct-cat-row td {
+    padding: 10px 12px 4px !important; font-weight: 600 !important;
+    color: rgba(0,0,0,0.35) !important; font-size: var(--text-xs) !important;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    background: rgba(0,0,0,0.015); text-align: left !important;
+  }
+  .ct-verdict {
+    margin-top: 12px; padding: 12px 14px;
+    background: rgba(0,0,0,0.02); border-radius: 12px;
+    color: rgba(0,0,0,0.6); font-size: var(--text-sm); line-height: 1.5;
+  }
+</style>
+
+<div class="ct-container">
+  <div class="ct-title">{{title}}</div>
+  <div class="ct-scroll">
+    <table class="ct-table">
+      <thead>
+        <tr>
+          <th></th>
+          {{#items}}
+          <th class="{{#highlight}}ct-th-highlight{{/highlight}}">
+            {{#image_url}}<img class="ct-th-img" src="{{image_url}}" alt="{{name}}"/>{{/image_url}}
+            {{name}}
+          </th>
+          {{/items}}
+        </tr>
+      </thead>
+      <tbody>
+        {{#features}}
+        {{#category_header}}
+        <tr class="ct-cat-row"><td colspan="{{col_count}}">{{category}}</td></tr>
+        {{/category_header}}
+        <tr>
+          <td>{{label}}</td>
+          {{#values}}
+          <td class="{{#is_highlight}}ct-highlight-val{{/is_highlight}}">{{value}}</td>
+          {{/values}}
+        </tr>
+        {{/features}}
+      </tbody>
+    </table>
+  </div>
+  {{#verdict}}
+  <div class="ct-verdict">{{verdict}}</div>
+  {{/verdict}}
+</div>

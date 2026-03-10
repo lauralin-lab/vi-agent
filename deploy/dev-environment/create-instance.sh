@@ -13,6 +13,7 @@ BRANCH="${2:-main}"
 COMMIT="$3"
 BUILD_MODE="${4:-build}"
 IMAGE_TAG="${5:-latest}"
+REPO_DIR="${REPO_DIR:-/home/$(whoami)/vi-agent-repos/$DEV_NAME}"
 
 if [ -z "$DEV_NAME" ]; then
     echo "ERROR: Developer name required"
@@ -65,12 +66,13 @@ fi
 FRONTEND_PORT=$((3000 + SLOT * 100))
 FRONTEND_HTTPS_PORT=$((FRONTEND_PORT + 10))
 API_PORT=$((3000 + SLOT * 100 + 1))
-GATEWAY_PORT=$((3000 + SLOT * 100 + 2))
+NANOCLAW_PORT=$((3000 + SLOT * 100 + 2))
 REALTIME_PORT=$((3000 + SLOT * 100 + 3))
 POSTGRES_PORT=$((5432 + SLOT))
 REDIS_PORT=$((6379 + SLOT))
 
-echo "Ports: frontend=$FRONTEND_PORT, https=$FRONTEND_HTTPS_PORT, api=$API_PORT, gateway=$GATEWAY_PORT, postgres=$POSTGRES_PORT, redis=$REDIS_PORT"
+echo "Ports: frontend=$FRONTEND_PORT, https=$FRONTEND_HTTPS_PORT, api=$API_PORT, nanoclaw=$NANOCLAW_PORT, postgres=$POSTGRES_PORT, redis=$REDIS_PORT"
+echo "Repo:  $REPO_DIR"
 
 # --- Create instance directory ---
 mkdir -p "$INSTANCE_DIR"
@@ -95,16 +97,18 @@ else
 fi
 
 # --- Generate docker-compose from template ---
+REPO_DIR_ESCAPED=$(echo "$REPO_DIR" | sed 's|/|\\/|g')
 sed -e "s/__DEV_NAME__/$DEV_NAME/g" \
     -e "s/__SLOT__/$SLOT/g" \
     -e "s/__FRONTEND_PORT__/$FRONTEND_PORT/g" \
     -e "s/__FRONTEND_HTTPS_PORT__/$FRONTEND_HTTPS_PORT/g" \
     -e "s/__API_PORT__/$API_PORT/g" \
-    -e "s/__GATEWAY_PORT__/$GATEWAY_PORT/g" \
+    -e "s/__NANOCLAW_PORT__/$NANOCLAW_PORT/g" \
     -e "s/__REALTIME_PORT__/$REALTIME_PORT/g" \
     -e "s/__POSTGRES_PORT__/$POSTGRES_PORT/g" \
     -e "s/__REDIS_PORT__/$REDIS_PORT/g" \
     -e "s/__IMAGE_TAG__/$IMAGE_TAG/g" \
+    -e "s/__REPO_DIR__/$REPO_DIR_ESCAPED/g" \
     "$TEMPLATE_DIR/$TEMPLATE_FILE" > "$INSTANCE_DIR/docker-compose.yml"
 
 # --- Generate .env if it doesn't exist (preserve existing secrets on update) ---
@@ -141,7 +145,11 @@ if [ "$BUILD_MODE" = "image" ]; then
     docker compose pull
 fi
 echo "Starting services..."
-docker compose up -d
+if [ "$BUILD_MODE" = "image" ]; then
+    docker compose up -d
+else
+    docker compose up -d --build
+fi
 
 # --- Wait for health ---
 echo "Waiting for API server..."
@@ -167,7 +175,7 @@ r['instances']['$DEV_NAME'] = {
         'frontend': $FRONTEND_PORT,
         'frontend_https': $FRONTEND_HTTPS_PORT,
         'api': $API_PORT,
-        'gateway': $GATEWAY_PORT,
+        'nanoclaw': $NANOCLAW_PORT,
         'realtime': $REALTIME_PORT,
         'postgres': $POSTGRES_PORT,
         'redis': $REDIS_PORT
@@ -189,7 +197,7 @@ with open('$REGISTRY','w') as f: json.dump(r,f,indent=2)
 echo ""
 echo "Running deployment tests..."
 if [ -f "$TEMPLATE_DIR/test-instance.sh" ]; then
-    bash "$TEMPLATE_DIR/test-instance.sh" "$SERVER_IP" "$FRONTEND_PORT" "$API_PORT" "$GATEWAY_PORT" "$FRONTEND_HTTPS_PORT"
+    bash "$TEMPLATE_DIR/test-instance.sh" "$SERVER_IP" "$FRONTEND_PORT" "$API_PORT" "$NANOCLAW_PORT" "$FRONTEND_HTTPS_PORT"
     TEST_EXIT=$?
     if [ $TEST_EXIT -ne 0 ]; then
         echo "WARNING: Some tests failed. Instance is running but may have issues."
@@ -205,7 +213,7 @@ echo "  Frontend:   https://$SERVER_IP:$FRONTEND_HTTPS_PORT  (HTTPS — camera w
 echo "  Frontend:   http://$SERVER_IP:$FRONTEND_PORT  (HTTP fallback)"
 echo "  API:        http://$SERVER_IP:$API_PORT"
 echo "  API Docs:   http://$SERVER_IP:$API_PORT/docs"
-echo "  Gateway:    http://$SERVER_IP:$GATEWAY_PORT"
+echo "  NanoClaw:   http://$SERVER_IP:$NANOCLAW_PORT"
 echo "  Image Tag:  $IMAGE_TAG"
 echo "  Build Mode: $BUILD_MODE"
 echo "  Deployed:   $DEPLOYED_AT"

@@ -1,0 +1,25 @@
+{
+  "$id": "calendar-event",
+  "category": "act",
+  "renderer": "html",
+  "mutable": true,
+  "streamable": false,
+  "slots": {
+    "title": { "type": "string", "required": true },
+    "start_time": { "type": "string", "format": "datetime" },
+    "end_time": { "type": "string", "format": "datetime" },
+    "location": { "type": "string" },
+    "description": { "type": "string" },
+    "attendees": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reminder_minutes": { "type": "number", "default": 15 },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "added", "declined"],
+      "default": "pending"
+    }
+  },
+  "mutable_slots": ["status", "reminder_minutes"]
+}

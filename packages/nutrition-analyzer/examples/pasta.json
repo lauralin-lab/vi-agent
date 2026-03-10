@@ -1,0 +1,84 @@
+{
+  "input": {
+    "photo_url": "https://example.com/photos/pasta-carbonara.jpg",
+    "user_message": "How many calories is this?"
+  },
+  "expected_output": {
+    "cards": [
+      {
+        "op": "create",
+        "template": "thinking-process",
+        "data": {
+          "title": "Analyzing your meal...",
+          "steps": [
+            { "label": "Identifying food", "content": "I see a plate of pasta carbonara with creamy sauce, bacon pieces, and grated parmesan.", "status": "done" },
+            { "label": "Estimating portions", "content": "Based on the plate size (~10 inch), this appears to be approximately 350g of pasta with 80g of sauce.", "status": "done" },
+            { "label": "Calculating nutrition", "content": "Looking up USDA values for spaghetti carbonara with pancetta and egg-based sauce.", "status": "done" }
+          ],
+          "conclusion": "Analysis complete — see nutrition breakdown below."
+        }
+      },
+      {
+        "op": "create",
+        "template": "image-analysis",
+        "data": {
+          "photo_url": "https://example.com/photos/pasta-carbonara.jpg",
+          "title": "Pasta Carbonara",
+          "description": "A serving of spaghetti carbonara with egg-based cream sauce, pancetta, and grated Parmigiano-Reggiano.",
+          "detected_objects": [
+            { "label": "spaghetti", "confidence": 0.95 },
+            { "label": "carbonara sauce", "confidence": 0.88 },
+            { "label": "pancetta", "confidence": 0.82 },
+            { "label": "parmesan cheese", "confidence": 0.79 }
+          ],
+          "tags": ["Italian", "pasta", "dinner", "high-carb"]
+        }
+      },
+      {
+        "op": "create",
+        "template": "nutrition-card",
+        "data": {
+          "title": "Nutrition Analysis",
+          "items": [
+            {
+              "name": "Spaghetti (cooked)",
+              "portion": "280g",
+              "calories": 390,
+              "protein": 14.0,
+              "carbs": 74.8,
+              "fat": 2.3,
+              "fiber": 3.4
+            },
+            {
+              "name": "Carbonara sauce (egg, cream, cheese)",
+              "portion": "80g",
+              "calories": 195,
+              "protein": 8.5,
+              "carbs": 2.1,
+              "fat": 17.0,
+              "fiber": 0.0
+            },
+            {
+              "name": "Pancetta",
+              "portion": "40g",
+              "calories": 165,
+              "protein": 6.2,
+              "carbs": 0.0,
+              "fat": 15.5,
+              "fiber": 0.0
+            }
+          ],
+          "totals": {
+            "calories": 750,
+            "protein": 28.7,
+            "carbs": 76.9,
+            "fat": 34.8,
+            "fiber": 3.4
+          },
+          "health_score": 4.5,
+          "recommendation": "Add a side salad or steamed vegetables to increase fiber and micronutrient intake. Consider a smaller portion (~200g pasta) to bring the meal closer to 550 calories."
+        }
+      }
+    ]
+  }
+}

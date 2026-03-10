@@ -314,7 +314,7 @@ class MemoryCenter:
 
         await db.commit()
         await publish_event(redis, vi_user_id, {
-            "event_type": "memory_update",
+            "type": "memory_update",
             "filename": filename,
             "layer": layer,
             "action": "upsert",
@@ -366,7 +366,7 @@ class MemoryCenter:
 
         await db.commit()
         await publish_event(redis, vi_user_id, {
-            "event_type": "memory_update",
+            "type": "memory_update",
             "filename": filename,
             "layer": layer,
             "action": "append",
@@ -412,7 +412,7 @@ class MemoryCenter:
 
         if redis and vi_user_id:
             await publish_event(redis, vi_user_id, {
-                "event_type": "memory_update",
+                "type": "memory_update",
                 "filename": memory.filename,
                 "layer": memory.layer,
                 "action": "update",
@@ -436,7 +436,7 @@ class MemoryCenter:
             await db.delete(memory)
             await db.commit()
             await publish_event(redis, vi_user_id, {
-                "event_type": "memory_update",
+                "type": "memory_update",
                 "filename": filename,
                 "action": "delete",
             })
@@ -463,7 +463,7 @@ class MemoryCenter:
         await db.commit()
         if redis and vi_user_id:
             await publish_event(redis, vi_user_id, {
-                "event_type": "memory_update",
+                "type": "memory_update",
                 "filename": filename,
                 "action": "delete",
             })

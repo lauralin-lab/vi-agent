@@ -1,0 +1,6 @@
+#!/bin/bash
+# Teamwork v3 — pre-push quality gate
+# For monorepos with external dependencies (DB, Redis), tests run in CI.
+# This hook only runs type checks / build checks that work locally.
+set -e
+echo "Pre-push: lint checked on commit. Full tests run in CI."

@@ -6,13 +6,11 @@ import { useImagePreloader } from '../hooks/useImagePreloader';
 import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
 import PromotionBlock from './PromotionBlock';
+import { IOS_SPRING } from '../constants';
 
 
 const POLL_INTERVAL = 10000;
 const POLL_INTERVAL_SSE_ACTIVE = 30000;
-
-// ── iOS spring config ──
-const IOS_SPRING = { type: 'spring', stiffness: 340, damping: 32 };
 
 function extractPhotos(session) {
     const photos = [];
@@ -34,14 +32,14 @@ function extractPhotos(session) {
 // ── Active session card — iOS light ──
 function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
     const photos = extractPhotos(session);
-    const [, forceUpdate] = useState(0);
+    const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
-        const timer = setInterval(() => forceUpdate(n => n + 1), 15000);
+        const timer = setInterval(() => setNow(Date.now()), 15000);
         return () => clearInterval(timer);
     }, []);
 
-    const elapsed = session.created_at ? Date.now() - new Date(session.created_at).getTime() : 0;
+    const elapsed = session.created_at ? now - new Date(session.created_at).getTime() : 0;
     const isStale = elapsed > 600000;
 
     const statusLabel = session.status === 'pending' ? 'Queued' : 'Processing';
@@ -139,7 +137,7 @@ function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
 // ─── Main component ─────────────────────────────────────────────────────────
 export default function HistoryView({
     onBack, onOpenCamera, onSelectSession, onProfileTap, onClearSessionCache,
-    isAuthenticated, user, isHome, livekit, onNotification, memoryBadge,
+    isAuthenticated, user, isHome, livekit, onNotification,
     sseEvents = [], sseConnected = false,
 }) {
     const { play } = useSound();
@@ -260,25 +258,36 @@ export default function HistoryView({
         }
     }, [livekit?.sessionId, fetchSessions, liveSessions.length]);
 
-    // LiveKit DataChannel task events
+    // LiveKit DataChannel task events — process ALL unprocessed events
+    const lastProcessedTaskEventIdx = useRef(0);
     useEffect(() => {
         if (!livekit?.taskEvents || livekit.taskEvents.length === 0) return;
-        const latest = livekit.taskEvents[livekit.taskEvents.length - 1];
-        if (!latest) return;
+        const events = livekit.taskEvents;
+        const startIdx = lastProcessedTaskEventIdx.current;
+        if (startIdx >= events.length) return;
+        lastProcessedTaskEventIdx.current = events.length;
 
-        if (latest.type === 'task_started') {
-            setLiveSessions(prev => {
-                if (prev.some(t => t.id === latest.task_id)) return prev;
-                return [{ id: latest.task_id, prompt: latest.description, status: 'pending', created_at: new Date().toISOString() }, ...prev];
-            });
-        } else if (latest.type === 'task_progress') {
-            setLiveSessions(prev => prev.map(t => t.id === latest.task_id ? { ...t, status: 'progress' } : t));
-        } else if (latest.type === 'task_result') {
-            setLiveSessions(prev => prev.map(t =>
-                t.id === latest.task_id ? { ...t, status: latest.status || 'complete', result: latest.result } : t
-            ));
+        let needsFetch = false;
+        for (let i = startIdx; i < events.length; i++) {
+            const ev = events[i];
+            if (!ev) continue;
+
+            if (ev.type === 'task_started') {
+                setLiveSessions(prev => {
+                    if (prev.some(t => t.id === ev.task_id)) return prev;
+                    return [{ id: ev.task_id, prompt: ev.description, status: 'pending', created_at: new Date().toISOString() }, ...prev];
+                });
+            } else if (ev.type === 'task_progress') {
+                setLiveSessions(prev => prev.map(t => t.id === ev.task_id ? { ...t, status: 'progress' } : t));
+            } else if (ev.type === 'task_result') {
+                setLiveSessions(prev => prev.map(t =>
+                    t.id === ev.task_id ? { ...t, status: ev.status || 'complete', result: ev.result } : t
+                ));
+                needsFetch = true;
+            }
         }
-    }, [livekit?.taskEvents]);
+        if (needsFetch) fetchSessions(false);
+    }, [livekit?.taskEvents, fetchSessions]);
 
     // SSE real-time events
     const lastSseEventRef = useRef(0);
@@ -354,11 +363,18 @@ export default function HistoryView({
         if (!dateStr) return 'Earlier';
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return 'Earlier';
+
         const now = new Date();
-        const diff = now - d;
-        if (diff < 86400000) return 'Today';
-        if (diff < 172800000) return 'Yesterday';
-        if (diff < 604800000) return 'This Week';
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        const startOfWeek = new Date(startOfToday);
+        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+
+        if (d >= startOfToday) return 'Today';
+        if (d >= startOfYesterday) return 'Yesterday';
+        if (d >= startOfWeek) return 'This Week';
         return 'Earlier';
     };
 

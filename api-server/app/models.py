@@ -3,15 +3,15 @@ from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, MetaData, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import DateTime as _DateTime
+
+from .config import settings
 
 # Use timezone-aware TIMESTAMP WITH TIME ZONE for all datetime columns
 DateTime = _DateTime(timezone=True)
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, relationship
-
-from .config import settings
 
 engine = create_async_engine(settings.DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
@@ -120,6 +120,30 @@ class AgentMemory(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "filename", name="uq_agent_memories_user_filename"),
+    )
+
+
+class OAuthToken(Base):
+    """V4 OAuth token metadata."""
+    __tablename__ = "oauth_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider = Column(String(50), nullable=False)
+    scopes = Column(ARRAY(Text), default=list)
+    status = Column(String(20), default="active")
+    connected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime)
+    last_refreshed_at = Column(DateTime)
+
+    user = relationship("User", backref="oauth_tokens")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_oauth_tokens_user_provider"),
     )
 
 

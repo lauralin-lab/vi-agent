@@ -2,11 +2,10 @@
 
 import uuid as _uuid
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import JSON, String as SAString
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -39,6 +38,8 @@ def _patch_pg_types():
                     col.default.arg = lambda *_args: str(_uuid.uuid4())
             elif isinstance(col.type, JSONB):
                 col.type = JSON()
+            elif isinstance(col.type, PG_ARRAY):
+                col.type = JSON()  # Store arrays as JSON in SQLite
 
 
 # ---------------------------------------------------------------------------
@@ -70,14 +71,25 @@ async def db_session():
 # ---------------------------------------------------------------------------
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession):
-    """Provide an HTTPX AsyncClient bound to the FastAPI app with test DB."""
+    """Provide an HTTPX AsyncClient bound to the FastAPI app with test DB.
+
+    We create a fresh FastAPI app WITHOUT the production lifespan to avoid
+    background tasks (event aggregator, stale session cleanup) that would
+    keep the event loop alive and hang pytest.
+    """
     from app.deps import get_db
     from app.main import app
+
+    # Disable lifespan for tests — background tasks cause hangs
+    app.router.lifespan_context = None
 
     async def _override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
+
+    # Provide a mock redis on app.state so routes that check it don't crash
+    app.state.redis = None
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

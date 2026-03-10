@@ -8,6 +8,7 @@
 #   --show-config              Print current config and exit
 #   --save-config              Save --name and/or --key to .dev.local and exit
 #   --name  NAME               Developer team handle (e.g. casey, alice)
+#   --user  USER               SSH username for server (default: from .dev.local or $(whoami))
 #   --key   PATH               SSH key path (auto-detected if omitted)
 #
 # Version options:
@@ -31,10 +32,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
 CONFIG_FILE="$REPO_ROOT/.dev.local"
 
-SERVER_IP="34.172.9.61"
-SERVER_USER="liyasong"
+SERVER_IP="${SERVER_IP:-34.172.9.61}"  # can be set in .dev.local
+SERVER_USER=""  # resolved below: .dev.local → --user → $(whoami)
 DOCKER_ORG="collov"
-SERVICES=(api-server frontend gateway realtime)
+SERVICES=(api-server frontend nanoclaw realtime)
 
 # ----------- Load saved config -----------
 DEV_NAME=""
@@ -42,6 +43,11 @@ SSH_KEY=""
 if [ -f "$CONFIG_FILE" ]; then
   # shellcheck source=/dev/null
   source "$CONFIG_FILE"
+fi
+
+# Default SERVER_USER if not set by .dev.local
+if [ -z "$SERVER_USER" ]; then
+  SERVER_USER="$(whoami)"
 fi
 
 # ----------- Parse args -----------
@@ -58,6 +64,7 @@ KEY_EXPLICITLY_SET=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --name)          DEV_NAME="$2";     shift 2 ;;
+    --user)          SERVER_USER="$2";  shift 2 ;;
     --key)           SSH_KEY="$2"; KEY_EXPLICITLY_SET=true; shift 2 ;;
     --tag)           IMAGE_TAG="$2";    shift 2 ;;
     --mode)          BUILD_MODE="$2";   shift 2 ;;
@@ -126,10 +133,12 @@ if $SAVE_CONFIG; then
 # Dev environment local config — NOT committed to git (covered by *.local in .gitignore)
 DEV_NAME=$DEV_NAME
 SSH_KEY=${SSH_KEY:-}
+SERVER_USER=$SERVER_USER
 EOF
   echo "Saved to $CONFIG_FILE"
   echo "  DEV_NAME=$DEV_NAME"
   echo "  SSH_KEY=${SSH_KEY:-<auto-detect on next run>}"
+  echo "  SERVER_USER=$SERVER_USER"
   exit 0
 fi
 
@@ -360,13 +369,6 @@ else
   BUILD_MODE_SERVER="image"
 fi
 
-# ----------- Save config (persist resolved values) -----------
-cat > "$CONFIG_FILE" << EOF
-# Dev environment local config — NOT committed to git (covered by *.local in .gitignore)
-DEV_NAME=$DEV_NAME
-SSH_KEY=$SSH_KEY
-EOF
-
 echo "=== /dev Deployment ==="
 echo "  Developer: $DEV_NAME"
 echo "  Mode:      $BUILD_MODE"
@@ -381,7 +383,7 @@ if ! $SSH_CMD -o ConnectTimeout=5 "echo ok" > /dev/null 2>&1; then
   echo "ERROR: SSH connection failed." >&2
   echo "  Server: ${SERVER_USER}@${SERVER_IP}" >&2
   echo "  Key:    $SSH_KEY" >&2
-  echo "  → Your SSH key may not be added to the server. Contact admin (liyasong)." >&2
+  echo "  → Your SSH key may not be added to the server. Contact admin or see docs/dev-onboarding.md." >&2
   exit 1
 fi
 echo "SSH OK"
@@ -409,7 +411,7 @@ echo ""
 echo "--- Syncing deploy templates to server ---"
 $SCP_CMD "$SCRIPT_DIR"/*.sh "$SCRIPT_DIR"/*.tpl \
   "${SERVER_USER}@${SERVER_IP}:/opt/vi-agent/templates/" 2>&1
-$SSH_CMD "chmod +x /opt/vi-agent/templates/*.sh"
+$SSH_CMD "chmod +x /opt/vi-agent/templates/*.sh" 2>/dev/null || echo "WARNING: Could not chmod templates (owned by another user). Continuing."
 echo "Templates synced."
 
 # ----------- Read and upload API keys from local .env -----------
@@ -463,15 +465,40 @@ $SSH_CMD "
 "
 echo "API keys uploaded."
 
-# ----------- Build on server (if needed) -----------
-if [ "$BUILD_MODE" = "build" ] || [ "$BUILD_MODE" = "head" ]; then
-  echo ""
-  echo "--- Building images on server ---"
-  echo "This may take several minutes..."
+# ----------- Resolve branch and repo dir -----------
+BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+SERVER_REPO_DIR="/home/${SERVER_USER}/vi-agent-repos/${DEV_NAME}"
 
+# ----------- Build on server (if needed) -----------
+if [ "$BUILD_MODE" = "head" ]; then
+  # Head mode: push current branch, pull on server, build locally (no Docker Hub)
+  echo ""
+  echo "--- Pushing branch '$BRANCH' ---"
+  git -C "$REPO_ROOT" push origin "$BRANCH" 2>&1 || true
+
+  echo ""
+  echo "--- Pulling branch on server ---"
   $SSH_CMD "
     set -e
-    REPO_DIR=~/vi-agent-repos/$DEV_NAME
+    REPO_DIR='$SERVER_REPO_DIR'
+    if [ ! -d \"\$REPO_DIR/.git\" ]; then
+      echo 'Cloning repository...'
+      git clone git@github.com:flair-home-stylist/vi_agent.git \"\$REPO_DIR\"
+    fi
+    cd \"\$REPO_DIR\"
+    git fetch origin '$BRANCH'
+    git checkout '$BRANCH' 2>/dev/null || git checkout -b '$BRANCH' origin/'$BRANCH'
+    git reset --hard origin/'$BRANCH'
+    echo \"Server repo at: \$(git log --oneline -1)\"
+  "
+
+elif [ "$BUILD_MODE" = "build" ]; then
+  echo ""
+  echo "--- Building images on server (tag: $IMAGE_TAG) ---"
+  echo "This may take several minutes..."
+  $SSH_CMD "
+    set -e
+    REPO_DIR='$SERVER_REPO_DIR'
     if [ ! -d \"\$REPO_DIR/.git\" ]; then
       echo 'Cloning repository...'
       git clone git@github.com:flair-home-stylist/vi_agent.git \"\$REPO_DIR\"
@@ -483,8 +510,7 @@ fi
 # ----------- Deploy instance -----------
 echo ""
 echo "--- Deploying instance ---"
-BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-$SSH_CMD "bash /opt/vi-agent/templates/create-instance.sh \
+$SSH_CMD "REPO_DIR='$SERVER_REPO_DIR' bash /opt/vi-agent/templates/create-instance.sh \
   '$DEV_NAME' '$BRANCH' 'HEAD' '$BUILD_MODE_SERVER' '$IMAGE_TAG'"
 
 echo ""

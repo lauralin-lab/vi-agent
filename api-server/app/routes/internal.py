@@ -8,9 +8,9 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 
-import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -18,15 +18,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_db, get_redis
 from ..models import Session, User
+from ..schemas.redis_events import ExecRequest
 from ..services.memory_center import memory_center
 from ..services.gcs_service import GCS_BUCKET, get_gcs_bucket, get_signing_kwargs
 from ..services.session_center import session_center
 
 logger = logging.getLogger(__name__)
 
-INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "vi-internal-dev-token")
-if INTERNAL_API_TOKEN == "vi-internal-dev-token":
-    logger.warning("INTERNAL_API_TOKEN is using default value. Set a secure token in production!")
+INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")
+if not INTERNAL_API_TOKEN:
+    INTERNAL_API_TOKEN = "vi-internal-dev-token"
+    logger.critical(
+        "INTERNAL_API_TOKEN not set — falling back to insecure default. "
+        "Set INTERNAL_API_TOKEN in environment for production!"
+    )
 
 
 async def verify_internal_token(
@@ -148,9 +153,9 @@ async def create_memory(
     db: AsyncSession = Depends(get_db),
     redis=Depends(get_redis),
 ):
-    """Persist a memory from the gateway/agent.
+    """Persist a memory from the agent.
 
-    Called fire-and-forget by the gateway when the agent writes a memory update.
+    Called fire-and-forget by the agent when it writes a memory update.
     Appends into the user's agent-memory.md file.
     Uses type and source from request for proper layer inference.
     """
@@ -201,9 +206,9 @@ async def batch_memory_updates(
 ):
     """Batch upsert/append multiple memory files.
 
-    Called by the Gateway after task execution to persist memory_updates,
+    Called by NanoClaw after task execution to persist memory_updates,
     or by the Agent at session end for auto-summary.
-    V3: supports layer, source_channel, source_session_id fields.
+    Supports layer, source_channel, source_session_id fields.
     """
     results = []
     for item in req.updates:
@@ -411,33 +416,6 @@ async def fail_session(
     return {"ok": True}
 
 
-# --- Gateway Lazy Join proxy ---
-
-GATEWAY_URL = os.getenv("GATEWAY_URL", "http://vi-gateway:18789")
-
-
-class GatewayJoinRequest(BaseModel):
-    room_name: str
-
-
-@router.post("/gateway/join")
-async def gateway_join(req: GatewayJoinRequest):
-    """Proxy a Lazy Join request to the vi-gateway service.
-
-    Called by the vi-realtime agent when it needs the gateway to join a room
-    for task execution via Room RPC.
-    """
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            resp = await client.post(
-                f"{GATEWAY_URL}/join",
-                json={"room_name": req.room_name},
-            )
-            return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Gateway join failed: {e}")
-
-
 # --- GCS signed GET URL ---
 
 # Pattern to extract GCS key from a full GCS URL
@@ -457,8 +435,6 @@ async def presign_get_urls(body: PresignGetRequest):
     Accepts {"urls": ["https://storage.googleapis.com/vi-uploads/photos/..."]}
     Returns {"urls": {"<original>": "<signed>"}}
     """
-    from datetime import timedelta
-
     urls = body.urls
     if not urls:
         return {"urls": {}}
@@ -489,3 +465,104 @@ async def presign_get_urls(body: PresignGetRequest):
         except Exception:
             result[url] = url  # fallback to original
     return {"urls": result}
+
+
+# --- Internal presigned PUT URL for keyframe/frame uploads ---
+
+
+@router.get("/storage/presign-put")
+async def presign_put_url(
+    ext: str = Query(default="jpg", pattern="^(jpg|jpeg|png|webp)$"),
+    prefix: str = Query(default="frames"),
+):
+    """Generate a signed PUT URL for internal services to upload files to GCS.
+
+    Used by the realtime keyframe sampler to upload captured frames.
+    Returns presigned PUT URL and the public GET URL.
+    """
+    bucket = get_gcs_bucket()
+    file_id = uuid.uuid4().hex[:12]
+    date_prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    key = f"{prefix}/{date_prefix}/{file_id}.{ext}"
+
+    content_type = {
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png", "webp": "image/webp",
+    }.get(ext, "image/jpeg")
+
+    blob = bucket.blob(key)
+    signing = get_signing_kwargs()
+
+    put_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=5),
+        method="PUT",
+        content_type=content_type,
+        **signing,
+    )
+    get_url = f"https://storage.googleapis.com/{GCS_BUCKET}/{key}"
+
+    return {
+        "put_url": put_url,
+        "public_url": get_url,
+        "key": key,
+        "content_type": content_type,
+    }
+
+
+# --- Exec dispatch to NanoClaw via Redis ---
+
+
+class ExecDispatchRequest(BaseModel):
+    """Dispatch a task to NanoClaw for execution via Redis vi:exec:{uid}."""
+    vi_user_id: str
+    prompt: str
+    session_id: str | None = None
+    skill_slug: str | None = None
+    media_urls: list[str] | None = None
+    priority: Literal["fast", "thorough"] = "thorough"
+    params: dict | None = None
+
+
+@router.post("/exec")
+async def dispatch_exec(
+    req: ExecDispatchRequest,
+    redis=Depends(get_redis),
+):
+    """Dispatch an execution request to NanoClaw via Redis vi:exec:{uid}.
+
+    This bridges the gap between API Server REST endpoints and NanoClaw's
+    Redis-based task consumption. Used by frontend skill taps, API triggers,
+    and any non-LiveKit dispatch path.
+    """
+    if redis is None:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    task_id = f"exec-{uuid.uuid4().hex[:12]}"
+    session_id = req.session_id or f"session-{uuid.uuid4().hex[:12]}"
+
+    exec_msg = ExecRequest(
+        taskId=task_id,
+        sessionId=session_id,
+        prompt=req.prompt,
+        priority=req.priority,
+        skillSlug=req.skill_slug,
+        mediaUrls=req.media_urls or [],
+        params=req.params,
+        userId=req.vi_user_id,
+    )
+
+    channel = f"vi:exec:{req.vi_user_id}"
+    await redis.publish(channel, exec_msg.model_dump_json())
+
+    logger.info(
+        "Dispatched exec to %s: task=%s skill=%s",
+        channel, task_id, req.skill_slug,
+    )
+
+    return {
+        "ok": True,
+        "taskId": task_id,
+        "sessionId": session_id,
+        "channel": channel,
+    }

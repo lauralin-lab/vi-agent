@@ -14,21 +14,24 @@ export default function PromotionBlock({ onOpenCamera, onOpenProfile, user, isAu
         const container = videoContainerRef.current;
         if (container) {
             container.appendChild(video);
+            // Browsers pause videos removed from DOM — resume after re-attach
+            video.play().catch(() => {});
         }
         // On unmount: detach but don't destroy — keeps buffered & playing
         return () => { video.remove(); };
     }, []);
 
-    // Sync video ready state
+    // Sync video ready state — collapse when video becomes visible
     useEffect(() => {
-        if (videoVisible) {
-            setExpanded(false);
-            return;
-        }
+        if (videoVisible) return;
         onVideoReady(() => {
             setVideoVisible(true);
-            setExpanded(false);
         });
+    }, [videoVisible]);
+
+    // Collapse when video becomes visible (separate effect to avoid sync setState)
+    useEffect(() => {
+        if (videoVisible) queueMicrotask(() => setExpanded(false));
     }, [videoVisible]);
 
     useEffect(() => {

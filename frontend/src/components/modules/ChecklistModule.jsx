@@ -11,9 +11,7 @@ import {
 } from './shared';
 
 export default function ChecklistModule({ data, onAction }) {
-  if (!data) return null;
-
-  const { title, items: initialItems = [] } = data;
+  const { title, items: initialItems = [] } = data || {};
   const [checkedMap, setCheckedMap] = useState(() => {
     const map = {};
     initialItems.forEach((item, i) => {
@@ -53,9 +51,6 @@ export default function ChecklistModule({ data, onAction }) {
     return groups;
   }, [initialItems]);
 
-  const categoryKeys = Object.keys(grouped);
-  const hasCategories = categoryKeys.length > 1 || (categoryKeys.length === 1 && categoryKeys[0] !== '');
-
   const copyList = useCallback(() => {
     const text = initialItems
       .map((item, i) => `${checkedMap[i] ? '[x]' : '[ ]'} ${item.text}`)
@@ -72,6 +67,11 @@ export default function ChecklistModule({ data, onAction }) {
     onAction?.({ type: 'share' });
   }, [initialItems, title, onAction]);
 
+  if (!data) return null;
+
+  const categoryKeys = Object.keys(grouped);
+  const hasCategories = categoryKeys.length > 1 || (categoryKeys.length === 1 && categoryKeys[0] !== '');
+
   return (
     <GlassCard>
       <ModuleHeader
@@ -81,7 +81,7 @@ export default function ChecklistModule({ data, onAction }) {
       >
         <button
           onClick={toggleAll}
-          className="text-white/40 hover:text-purple-400 transition-colors p-1"
+          className="text-black/30 hover:text-purple-400 transition-colors p-1"
           title={allChecked ? 'Uncheck all' : 'Check all'}
         >
           <ListChecks size={18} />
@@ -89,7 +89,7 @@ export default function ChecklistModule({ data, onAction }) {
       </ModuleHeader>
 
       {/* Progress bar */}
-      <div className="h-1 bg-white/[0.06] rounded-full mb-4 overflow-hidden">
+      <div className="h-1 bg-black/[0.06] rounded-full mb-4 overflow-hidden">
         <div
           className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all duration-300"
           style={{ width: `${initialItems.length > 0 ? (checkedCount / initialItems.length) * 100 : 0}%` }}
@@ -103,7 +103,7 @@ export default function ChecklistModule({ data, onAction }) {
               <div key={cat}>
                 {cat && (
                   <p
-                    className="text-white/40 font-medium uppercase tracking-wider mt-3 mb-1 first:mt-0"
+                    className="text-black/30 font-medium uppercase tracking-wider mt-3 mb-1 first:mt-0"
                     style={{ fontSize: 'var(--text-xs)' }}
                   >
                     {cat}
@@ -117,7 +117,7 @@ export default function ChecklistModule({ data, onAction }) {
                   >
                     <span>{item.text}</span>
                     {item.note && (
-                      <span className="block text-white/30 mt-0.5" style={{ fontSize: 'var(--text-xs)' }}>
+                      <span className="block text-black/25 mt-0.5" style={{ fontSize: 'var(--text-xs)' }}>
                         {item.note}
                       </span>
                     )}
@@ -133,7 +133,7 @@ export default function ChecklistModule({ data, onAction }) {
               >
                 <span>{item.text}</span>
                 {item.note && (
-                  <span className="block text-white/30 mt-0.5" style={{ fontSize: 'var(--text-xs)' }}>
+                  <span className="block text-black/25 mt-0.5" style={{ fontSize: 'var(--text-xs)' }}>
                     {item.note}
                   </span>
                 )}

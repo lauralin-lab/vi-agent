@@ -11,7 +11,21 @@ class ApiClient {
   constructor() {
     this.baseUrl = API_URL;
     this.token = sessionStorage.getItem('vi-token');
-    this._viUserId = localStorage.getItem('vi-user-id');
+    // Single-tenant override: if VITE_DEFAULT_USER_ID is set, always use it
+    // so the frontend publishes to the same Redis channels NanoClaw listens on.
+    const defaultUserId = import.meta.env.VITE_DEFAULT_USER_ID;
+    if (defaultUserId) {
+      this._viUserId = defaultUserId;
+      localStorage.setItem('vi-user-id', defaultUserId);
+    } else {
+      this._viUserId = localStorage.getItem('vi-user-id');
+      // Derive viUserId from deviceId if not yet set (matches backend formula)
+      if (!this._viUserId && !this.token) {
+        const deviceId = this.getDeviceId();
+        this._viUserId = `vi-${deviceId.slice(0, 16)}`;
+        localStorage.setItem('vi-user-id', this._viUserId);
+      }
+    }
   }
 
   // --- Device ID management ---
@@ -37,6 +51,20 @@ class ApiClient {
     } else {
       localStorage.removeItem('vi-user-id');
     }
+  }
+
+  // --- Standard headers builder ---
+
+  _headers() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const deviceId = this.getDeviceId();
+    if (deviceId) {
+      headers['X-Device-Id'] = deviceId;
+    }
+    return headers;
   }
 
   // --- Auth token management ---
@@ -235,19 +263,12 @@ class ApiClient {
     );
   }
 
-  async getMemoryContext() {
-    return this.request('/api/users/memories/context');
-  }
-
   // S3 Upload endpoints
   async getPresignedUploadUrl(ext = 'jpg') {
     const params = new URLSearchParams({ ext });
-    // For anonymous users (no JWT), attach vi_user_id so the backend
-    // can authenticate via device-based auth.
-    if (!this.token) {
-      const viUserId = this.getViUserId();
-      if (viUserId) params.set('vi_user_id', viUserId);
-    }
+    // Always attach vi_user_id for device-based auth fallback
+    const viUserId = this.getViUserId();
+    if (viUserId) params.set('vi_user_id', viUserId);
     return this.request(`/api/upload/presign?${params.toString()}`);
   }
 
@@ -277,6 +298,28 @@ class ApiClient {
     throw lastErr;
   }
 
+  /**
+   * Notify API server that an upload is complete.
+   * This publishes a vi:media:{uid} event to Redis so NanoClaw can auto-trigger.
+   */
+  async _notifyUploadComplete(publicUrl, key, mediaType) {
+    try {
+      const viUserId = this.getViUserId();
+      const qs = viUserId ? `?vi_user_id=${encodeURIComponent(viUserId)}` : '';
+      await this.request(`/api/upload/complete${qs}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          key: key || '',
+          media_type: mediaType,
+          media_url: publicUrl,
+        }),
+      });
+      console.log(`[redis][frontend] Upload complete notified: ${mediaType}`);
+    } catch (err) {
+      console.warn('[redis][frontend] Failed to notify upload complete:', err);
+    }
+  }
+
   async uploadDataUrl(dataUrl) {
     const resp = await fetch(dataUrl);
     const blob = await resp.blob();
@@ -286,6 +329,58 @@ class ApiClient {
 
   async uploadBlob(blob, ext = 'webm') {
     return this._uploadToS3(blob, ext);
+  }
+
+  /**
+   * Dispatch a task to NanoClaw via REST.
+   * Use when LiveKit RPC is unavailable (e.g., skill tap without active session).
+   * Results stream back via SSE.
+   */
+  async dispatchExec({ prompt, skillSlug, mediaUrls, sessionId, priority, params } = {}) {
+    const viUserId = this.getViUserId();
+    const body = { prompt };
+    if (skillSlug) body.skill_slug = skillSlug;
+    if (mediaUrls) body.media_urls = mediaUrls;
+    if (sessionId) body.session_id = sessionId;
+    if (priority) body.priority = priority;
+    if (params) body.params = params;
+
+    return this.request(`/api/users/exec?vi_user_id=${viUserId}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Send a card action upstream to NanoClaw (V5 Card Template Protocol).
+   * Used when users interact with living cards (check items, select options, etc.).
+   */
+  async sendCardAction(cardId, action, payload = {}) {
+    const viUserId = this.getViUserId();
+    const body = {
+      cardId,
+      action,
+      payload,
+      timestamp: new Date().toISOString(),
+    };
+    return this.request(`/api/users/card-action?vi_user_id=${viUserId}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // OAuth token endpoints
+
+  async getTokenStatus(provider) {
+    return this.request(`/api/tokens/${encodeURIComponent(provider)}/status`);
+  }
+
+  async connectToken(provider) {
+    return this.request(`/api/tokens/connect/${encodeURIComponent(provider)}`, { method: 'POST' });
+  }
+
+  async disconnectToken(provider) {
+    return this.request(`/api/tokens/${encodeURIComponent(provider)}`, { method: 'DELETE' });
   }
 
   logout() {

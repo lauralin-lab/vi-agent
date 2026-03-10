@@ -1,12 +1,11 @@
 """Tests for user routes: sessions."""
 
-import uuid
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Session, User
+from app.models import Session
 
 
 class TestGetSessions:

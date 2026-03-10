@@ -25,15 +25,15 @@ function conditionGradient(condition) {
 }
 
 export default function WeatherModule({ data, onAction }) {
-  if (!data) return null;
-
-  const { location, current, forecast } = data;
+  const { location, current, forecast } = data || {};
   const scrollRef = useRef(null);
 
   const gradient = useMemo(
     () => conditionGradient(current?.condition),
     [current?.condition],
   );
+
+  if (!data) return null;
 
   return (
     <GlassCard padding={false}>
@@ -50,10 +50,10 @@ export default function WeatherModule({ data, onAction }) {
             <div className="flex items-center gap-3">
               <WeatherIcon condition={current.icon || current.condition} size={48} />
               <div>
-                <div className="text-white/90 font-light" style={{ fontSize: '2.5rem', lineHeight: 1 }}>
+                <div className="text-black/80 font-light" style={{ fontSize: '2.5rem', lineHeight: 1 }}>
                   <AnimatedValue value={`${Math.round(current.temp)}°`} />
                 </div>
-                <p className="text-white/50 mt-1" style={{ fontSize: 'var(--text-sm)' }}>
+                <p className="text-black/40 mt-1" style={{ fontSize: 'var(--text-sm)' }}>
                   {current.condition}{current.unit ? ` · °${current.unit}` : ''}
                 </p>
               </div>
@@ -65,14 +65,14 @@ export default function WeatherModule({ data, onAction }) {
         {current && (current.humidity != null || current.wind) && (
           <div className="flex gap-4 mb-2">
             {current.humidity != null && (
-              <div className="flex items-center gap-1.5 text-white/50" style={{ fontSize: 'var(--text-sm)' }}>
+              <div className="flex items-center gap-1.5 text-black/40" style={{ fontSize: 'var(--text-sm)' }}>
                 <Droplets size={14} className="text-blue-400/70" />
                 <span>{current.humidity}%</span>
               </div>
             )}
             {current.wind && (
-              <div className="flex items-center gap-1.5 text-white/50" style={{ fontSize: 'var(--text-sm)' }}>
-                <Wind size={14} className="text-white/40" />
+              <div className="flex items-center gap-1.5 text-black/40" style={{ fontSize: 'var(--text-sm)' }}>
+                <Wind size={14} className="text-black/30" />
                 <span>{current.wind}</span>
               </div>
             )}
@@ -86,7 +86,7 @@ export default function WeatherModule({ data, onAction }) {
       {forecast?.length > 0 && (
         <div className="px-4 pb-4 pt-3">
           <p
-            className="text-white/40 font-medium uppercase tracking-wider mb-2"
+            className="text-black/30 font-medium uppercase tracking-wider mb-2"
             style={{ fontSize: 'var(--text-xs)' }}
           >
             Forecast
@@ -101,13 +101,13 @@ export default function WeatherModule({ data, onAction }) {
                 key={i}
                 className="shrink-0 flex flex-col items-center gap-1.5 min-w-[72px]"
               >
-                <span className="text-white/50" style={{ fontSize: 'var(--text-xs)' }}>
+                <span className="text-black/40" style={{ fontSize: 'var(--text-xs)' }}>
                   {day.day}
                 </span>
                 <WeatherIcon condition={day.icon || day.condition} size={24} />
                 <div className="flex gap-1.5" style={{ fontSize: 'var(--text-xs)' }}>
-                  <span className="text-white/80">{Math.round(day.high)}°</span>
-                  <span className="text-white/30">{Math.round(day.low)}°</span>
+                  <span className="text-black/70">{Math.round(day.high)}°</span>
+                  <span className="text-black/25">{Math.round(day.low)}°</span>
                 </div>
               </GlassSection>
             ))}

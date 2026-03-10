@@ -1,142 +1,123 @@
-# /dev — 创建个人 Dev 环境
+# /dev — Deploy Dev Environment
 
-你是一个 Dev 环境部署助手。大部分逻辑已内置在 `deploy/dev-environment/dev.sh` 脚本中。
-**你的工作只是：读取脚本输出 → 处理需要用户决策的部分 → 调用脚本执行。**
+Deploy personal dev instance via GitHub Actions. Zero local config, zero SSH, zero server accounts.
 
----
-
-## 配置
-
-- **服务器 IP**: `34.172.9.61`
-- **服务器用户**: `liyasong`（所有人都通过此账户 SSH，通过各自的私钥鉴权）
-- **本地持久化配置**: `.dev.local`（已在 `.gitignore` 的 `*.local` 规则中，不会提交）
-- **脚本入口**: `deploy/dev-environment/dev.sh`
+**Identity = `gh api user`**, branch = current HEAD. That's all.
 
 ---
 
-## 执行流程
+## Flow
 
-### Step 1: 加载或初始化本地配置
+### Step 1: Identity + Target
 
 ```bash
-bash deploy/dev-environment/dev.sh --show-config
+DEVELOPER=$(gh api user --jq .login)
+REF=$(git rev-parse --abbrev-ref HEAD)
 ```
 
-输出示例：
-```
-STATUS=ok          # 或 STATUS=missing-name
-DEV_NAME=casey
-SSH_KEY=/Users/casey/.ssh/id_ed25519
-SERVER=liyasong@34.172.9.61
-CONFIG_FILE=/path/to/.dev.local
-```
+Tell user: "Will deploy `$REF` as `$DEVELOPER`."
 
-**如果 `STATUS=missing-name`**：使用 AskUserQuestion 询问：
+If user specified a different branch/tag/SHA, use that instead.
 
-1. **你的团队 handle 是什么？**（仅小写字母，如 casey, alice, bob）
-   - 用于命名容器、数据库、端口分配、代码目录
-
-然后保存：
-```bash
-bash deploy/dev-environment/dev.sh --save-config --name <NAME>
-```
-
-如果检测到多个 SSH key，用 AskUserQuestion 让用户选择，再加 `--key /path/to/key`。
-
----
-
-### Step 2: 选择版本
+### Step 2: Trigger GitHub Actions
 
 ```bash
-bash deploy/dev-environment/dev.sh --show-versions
+gh workflow run deploy-dev.yml \
+  --ref pre-launch \
+  -f developer="$DEVELOPER" \
+  -f ref="$REF" \
+  -f action=deploy
 ```
 
-输出显示：Docker Hub 已有 tags + 本地 git tags。
+> `--ref pre-launch` = workflow file location. `-f ref=` = code to build.
 
-**使用 AskUserQuestion 询问**（如果用户没有直接说明版本）：
+### Step 3: Wait for Completion
 
-1. **部署哪个版本？**
-   - 选项 A: Docker Hub 已有镜像（最快，秒级）→ 选具体 tag
-   - 选项 B: 从 git tag 构建新镜像（服务器上 build + push，需要几分钟）
-   - 选项 C: 从当前 HEAD 构建（无需打 tag，自动生成 `head-YYYYMMDD-COMMIT`）
-
----
-
-### Step 3: 部署
-
-调用一条命令完成所有操作（SSH 测试、pre-flight、模板同步、.env 上传、构建（如需）、部署、测试）：
-
-**Mode A — Docker Hub pull（推荐）:**
 ```bash
-bash deploy/dev-environment/dev.sh --tag <TAG> --mode image
+# Wait for the run to appear (workflow_dispatch is async)
+sleep 5
+
+# Get the run ID — filter by workflow + event type + recency
+# The most recent workflow_dispatch run for this workflow is ours
+RUN_ID=$(gh run list --workflow=deploy-dev.yml --event=workflow_dispatch --limit 1 \
+  --json databaseId --jq '.[0].databaseId')
+
+echo "Run ID: $RUN_ID"
+echo "URL: https://github.com/$(gh repo view --json nameWithOwner --jq .nameWithOwner)/actions/runs/$RUN_ID"
 ```
 
-**Mode B — 从 git tag 在服务器构建:**
+Poll until done:
 ```bash
-bash deploy/dev-environment/dev.sh --tag <GIT_TAG> --mode build
+gh run watch "$RUN_ID" --exit-status
 ```
 
-**Mode C — 从当前 HEAD 构建:**
+If `gh run watch` is unavailable or hangs, poll manually:
 ```bash
-bash deploy/dev-environment/dev.sh --mode head
+while true; do
+  STATUS=$(gh run view "$RUN_ID" --json status,conclusion --jq '.status')
+  echo "Status: $STATUS"
+  [ "$STATUS" = "completed" ] && break
+  sleep 10
+done
+gh run view "$RUN_ID" --json conclusion --jq '.conclusion'
 ```
 
-脚本会自动处理：
-- 验证 SSH 连接（失败则提示联系管理员 liyasong）
-- pre-flight（检查未提交/未推送的代码）
-- 同步最新 deploy 脚本到服务器
-- 从本地 `.env` 读取并上传 API keys
-- 构建镜像（Mode B/C）
-- 调用服务器端 `create-instance.sh` 部署
-- 运行 `test-instance.sh` 验证
+### Step 4: Show Results
 
----
+```bash
+gh run view "$RUN_ID" --log 2>&1 | grep -E "(Instance Ready|Frontend:|API:|NanoClaw:|Image Tag:|Deployed:)" | tail -20
+```
 
-### Step 4: 展示结果
-
-脚本输出包含访问地址和测试结果。格式化后展示给用户：
+Format output (extract URLs from log, don't hardcode server IP):
 
 ```
-✅ <DEV_NAME> 的 vi-agent 实例已部署完成！
+{DEVELOPER} dev instance deployed!
 
-📍 访问地址:
-   Frontend:  https://34.172.9.61:<FRONTEND_HTTPS_PORT>  (HTTPS — camera works)
-   Frontend:  http://34.172.9.61:<FRONTEND_PORT>
-   API:       http://34.172.9.61:<API_PORT>
-   API Docs:  http://34.172.9.61:<API_PORT>/docs
-   Gateway:   http://34.172.9.61:<GATEWAY_PORT>
+  Frontend (HTTPS): {from log}
+  Frontend (HTTP):  {from log}
+  API:              {from log}
+  API Docs:         {from log}/docs
+  NanoClaw:         {from log}
 
-📦 版本: <TAG> | 模式: <MODE> | 时间: <TIMESTAMP>
-🧪 测试: <RESULTS>
+  Branch: {REF}
+  Run:    {URL}
+```
+
+If failed, show failure logs:
+```bash
+gh run view "$RUN_ID" --log 2>&1 | grep -i -E "(error|fail|ERROR)" | tail -30
 ```
 
 ---
 
-## 首次使用（管理员一次性操作）
+## Other Actions
 
-管理员 (liyasong) 需要把新成员的 SSH 公钥加到服务器：
+### Destroy Instance
+
 ```bash
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
-  "echo '<USER_SSH_PUBLIC_KEY>' >> ~/.ssh/authorized_keys"
+gh workflow run deploy-dev.yml --ref pre-launch \
+  -f developer="$(gh api user --jq .login)" \
+  -f action=destroy
 ```
 
+### Check Status
+
+```bash
+gh workflow run deploy-dev.yml --ref pre-launch \
+  -f developer="$(gh api user --jq .login)" \
+  -f action=status
+```
+
+Then read the run logs for output.
+
 ---
 
-## 关于版本存储和磁盘膨胀
+## Error Handling
 
-- **registry.json**（服务器 `/opt/vi-agent/registry.json`）：只存每个实例的当前状态，覆盖写，无历史 → **不会膨胀**
-- **Docker Hub**：每次 build 会推送新 tag → tag 会积累。定期在 hub.docker.com 手动删除旧 tag
-- **服务器 git clone**（`~/vi-agent-repos/<name>/`）：每人一份，随时间增大。定期 `git gc` 或重新 clone
-- **查看当前版本**: `bash deploy/dev-environment/dev.sh --show-versions`
-
----
-
-## 错误处理
-
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| SSH 连接失败 | SSH key 未加到服务器 | 联系管理员 (liyasong) |
-| GitHub 拉取失败 | SSH Agent Forwarding 未生效 | 确保用了 `-A` flag (脚本已内置) |
-| Missing .env keys | 本地 `.env` 未配置 | 复制 `.env.example` 并填写 |
-| No available slots | 服务器 slot 已满（最多9个） | 先销毁一个旧实例 |
-| Docker Hub push 失败 | 服务器未登录 Docker Hub | SSH 进服务器执行 `docker login` |
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `gh: not logged in` | GitHub CLI not authenticated | `gh auth login` |
+| `could not create workflow dispatch` | No repo write access | Check permissions |
+| Build failed | Code compile error | `gh run view $RUN_ID --log` |
+| No available slots | Max 9 instances on server | Destroy an old instance first |
+| Workflow not found | Wrong `--ref` or workflow file missing | Use `--ref pre-launch` |

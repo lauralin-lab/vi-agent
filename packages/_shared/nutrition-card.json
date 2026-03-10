@@ -1,0 +1,29 @@
+{
+  "$id": "nutrition-card",
+  "category": "perceive",
+  "renderer": "react",
+  "component": "NutritionCardModule",
+  "mutable": false,
+  "streamable": true,
+  "slots": {
+    "food_name": { "type": "string", "required": true },
+    "photo_url": { "type": "string" },
+    "calories": { "type": "number", "required": true },
+    "protein_g": { "type": "number" },
+    "carbs_g": { "type": "number" },
+    "fat_g": { "type": "number" },
+    "fiber_g": { "type": "number" },
+    "serving_size": { "type": "string" },
+    "health_score": { "type": "number", "min": 0, "max": 10 },
+    "recommendation": { "type": "string", "streamable": true },
+    "daily_percent": {
+      "type": "object",
+      "properties": {
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fat": { "type": "number" }
+      }
+    }
+  }
+}

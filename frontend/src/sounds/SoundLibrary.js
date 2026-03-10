@@ -85,13 +85,13 @@ class SoundLibrary {
 
   toggleMute() {
     this.muted = !this.muted;
-    try { localStorage.setItem(MUTED_KEY, String(this.muted)); } catch { }
+    try { localStorage.setItem(MUTED_KEY, String(this.muted)); } catch { /* ignored */ }
     return this.muted;
   }
 
   setMuted(val) {
     this.muted = !!val;
-    try { localStorage.setItem(MUTED_KEY, String(this.muted)); } catch { }
+    try { localStorage.setItem(MUTED_KEY, String(this.muted)); } catch { /* ignored */ }
   }
 
   get eventNames() {

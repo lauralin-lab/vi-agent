@@ -9,8 +9,7 @@ description: 查看 Dev 环境日志
 ## 配置
 
 - **服务器 IP**: `34.172.9.61`
-- **管理员 SSH Key**: `~/.ssh/gcp_ssh_key`
-- **管理员用户**: `liyasong`
+- **SSH 配置**: 从 `dev.sh --show-config` 获取（SERVER_USER + SSH_KEY）
 
 ## 参数
 
@@ -39,12 +38,17 @@ description: 查看 Dev 环境日志
 ### Step 2: 获取日志
 
 ```bash
+# 获取 SSH 连接信息
+CONFIG_OUTPUT=$(bash deploy/dev-environment/dev.sh --show-config 2>/dev/null)
+SSH_KEY=$(echo "$CONFIG_OUTPUT" | grep '^SSH_KEY=' | cut -d= -f2)
+SERVER=$(echo "$CONFIG_OUTPUT" | grep '^SERVER=' | cut -d= -f2)
+
 # 查看指定实例的日志
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
+ssh -A -i $SSH_KEY $SERVER \
   "cd /opt/vi-agent/instances/<NAME> && docker compose logs --tail <LINES> <SERVICE> 2>&1"
 
 # 如果是 default 实例
-ssh -i ~/.ssh/gcp_ssh_key liyasong@34.172.9.61 \
+ssh -A -i $SSH_KEY $SERVER \
   "cd /opt/vi-agent && docker compose logs --tail <LINES> <SERVICE> 2>&1"
 ```
 

@@ -1,0 +1,2 @@
+# Copy to terraform.tfvars and fill in values (NOT committed to git)
+project_id = "excellent-nexus-488404-c8"

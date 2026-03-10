@@ -9,6 +9,7 @@ COPY . .
 
 ARG VITE_API_URL=""
 ARG VITE_LIVEKIT_URL=""
+ARG VITE_DEFAULT_USER_ID=""
 
 RUN npm run build
 

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 
-from app.models import AgentMemory, User
+from app.models import User
 from app.services.memory_center import (
     ImportanceScorer,
     MemoryCenter,
@@ -542,7 +542,7 @@ class TestEventPublishing:
         call_args = mock_publish.call_args
         assert call_args[0][1] == VI_USER_ID
         event = call_args[0][2]
-        assert event["event_type"] == "memory_update"
+        assert event["type"] == "memory_update"
         assert event["action"] == "upsert"
 
     @patch("app.services.memory_center.publish_event", new_callable=AsyncMock)

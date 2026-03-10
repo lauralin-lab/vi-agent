@@ -1,0 +1,37 @@
+{
+  "$id": "map-pins",
+  "category": "act",
+  "renderer": "react",
+  "component": "MapPinsModule",
+  "mutable": true,
+  "streamable": false,
+  "slots": {
+    "title": { "type": "string" },
+    "center": {
+      "type": "object",
+      "properties": {
+        "lat": { "type": "number" },
+        "lng": { "type": "number" }
+      },
+      "required": true
+    },
+    "zoom": { "type": "number", "default": 14 },
+    "markers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "lat": { "type": "number" },
+          "lng": { "type": "number" },
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "rating": { "type": "number" },
+          "icon": { "type": "string" }
+        }
+      }
+    },
+    "selected_marker": { "type": "string" }
+  },
+  "mutable_slots": ["markers", "selected_marker", "center", "zoom"]
+}

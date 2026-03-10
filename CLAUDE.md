@@ -3,69 +3,103 @@
 ## Three Core Concepts
 
 ### 1. Mission Contract (原子任务)
-A single task represented as a **GitHub Issue** (label: `mission-contract`).
+A single task represented as a **GitHub Issue** (label: `mission`).
 Each Mission Contract has clear scope, success criteria, and is independently mergeable.
-A Role pulls one via `/get-mission`, executes it end-to-end, resolves all conflicts
-with main, creates a PR with `Closes #N`, merges, then pulls the next one.
+Create via `/team-issue`, claim via `/team-claim`, drive via `/team-drive`, ship via `/team-ship`.
 
-**Source of Truth: GitHub Issues** — not board.md (which is auto-generated).
+**Source of Truth: GitHub Issues** (label: `mission`)
 
 ### 2. Role (人 + Claude Code)
 A person paired with Claude Code forms a Role. Each Role:
 - Activates with `claude --agent feature-lead`
-- Continuously pulls Mission Contracts from the board
-- Drives each one to completion and merge
+- Receives assigned Mission Contracts from the leader
+- Drives each one to completion and submits for review
 - The human watches, the agent drives
 
-### 3. Product (main 分支)
-The product is what's on main. Every merge makes the product better.
-**The ultimate metric is: how many Mission Contracts have been merged to main.**
+### 3. Production (main 分支)
+The product is what's on `main` branch — the most stable, strictly protected version.
+Development happens on `pre-launch` — the next version integration branch.
+**The ultimate metric is: how many Mission Contracts have been merged to pre-launch, then released to main.**
+
+### Branch Model (三层分支)
+
+```
+main             (生产稳定，严格保护，只接受 RC promote)
+  ^
+  | /team-rc promote (RC 验证通过后)
+  |
+pre-launch       (下一版本集成，也要稳定，PR 合入目标)
+  ^
+  | /team-ship → PR (squash merge)
+  |
+mission/{N}-slug (特性开发，从 pre-launch 切出)
+```
+
+- **`main`**: 生产环境最稳定的版本，严格保护，不接受直接 push 或 PR
+- **`pre-launch`**: 下一个版本的所有代码，也要保持稳定。所有 MC 的 PR 都合入这里
+- **`mission/*`**: 从 `pre-launch` 切出的特性分支，完成后通过 PR 合回 `pre-launch`
+- **Milestone 完成的标志**: 所有 MC 合入 `pre-launch`
+- **发布流程**: `pre-launch` → RC 分支 → 验证 → promote 到 `main`
 
 ---
 
 ## How It Works
 
 ```
-Role opens Claude Code
+/team-issue "fix camera permission" @member
      │
      ▼
-Agent queries GitHub Issues → presents next available Mission Contract
+Member /team-claim #N → Contract + branch created
      │
      ▼
-Role claims it → worktree + branch + isolated ports
+/team-drive → implement + test + commit loop
      │
      ▼
-Agent drives end-to-end implementation
+/team-ship → rebase + push + PR (Closes #N)
      │
      ▼
-Rebase on latest main → resolve ALL conflicts
+/team-ship review → AI code review (optional)
      │
      ▼
-PR (Closes #N) → CI passes → merge to main → Issue auto-closed
+Merge PR → Issue auto-closed → /team-ship done (cleanup)
      │
      ▼
-Agent presents next Mission Contract → repeat
+/team → check dashboard for next assignment → repeat
 ```
 
 ### Start Working
 
 ```bash
-# 1. 设置身份（首次）
-/set-role
+# 1. 加入团队（首次）
+/team
 
-# 2. 领取任务
-/get-mission
+# 2. 领取任务 → 生成 Contract + 分支
+/team-claim #N
 
-# 3. 执行（用 drive 模式）
-/drive T-{xxx}
+# 3. 执行（sub-tasks → test → commit 循环）
+/team-drive
 
-# 4. 提交完成
-/complete-mission
+# 4. 提交 PR
+/team-ship
 ```
 
-或直接用 Agent 模式：
+### Leader Workflow
+
 ```bash
-claude --agent feature-lead
+# 创建里程碑（可选，批量创建 MC）
+/create-milestone
+
+# 创建并分配任务
+/team-issue fix camera permission @xxLe
+
+# 查看团队状态
+/team
+
+# AI code review
+/team-ship review
+
+# 发布到 main
+/team-rc promote
 ```
 
 ### Team Member Setup
@@ -73,7 +107,7 @@ claude --agent feature-lead
 1. Set git identity: `git config user.name "{name}"`
 2. Authenticate GitHub CLI: `gh auth login` (use your org account)
 3. Run `.claude/install.sh` (once, for hooks and notifications)
-4. Run `/set-role` to register, verify GitHub auth, and choose your domain role
+4. Run `/team` to onboard, verify GitHub auth, and see your dashboard
 
 ---
 
@@ -81,29 +115,19 @@ claude --agent feature-lead
 
 | File | Purpose |
 |------|---------|
-| **GitHub Issues** | Mission Contracts — source of truth (label: `mission-contract`) |
-| `.teamspace/board.md` | Auto-generated board view (`scripts/sync-board.sh`) |
-| `.teamspace/config.yml` | Team config, members, roles, GitHub integration |
+| **GitHub Issues** | Mission Contracts — source of truth (label: `mission`) |
+| `.teamwork/config.yml` | Team config, members, roles, notifications, GitHub integration |
 | `.github/ISSUE_TEMPLATE/mission-contract.yml` | Issue template for creating MCs |
 | `.claude/agents/feature-lead.md` | The Role agent — `claude --agent feature-lead` |
 | `.claude/agents/code-reviewer.md` | Auto PR reviewer |
-| `.claude/drive/v0.1-definition/v0.1-spec.md` | Current version quality gates |
-| `scripts/setup-worktree.sh` | One-click isolated dev environment |
-| `scripts/setup-github-labels.sh` | Create label taxonomy (run once) |
-| `scripts/sync-board.sh` | Generate board.md from GitHub Issues |
-| `scripts/migrate-board-to-issues.sh` | One-time migration of existing tasks |
-
-## Port Isolation (parallel development)
-
-Each worktree gets its own ports via `.env` — no conflicts between Roles:
-
-| Role | API | Frontend | Gateway |
-|------|-----|----------|---------|
-| Default | 8000 | 5173 | 18789 |
-| Offset +100 | 8100 | 5273 | 18889 |
-| Offset +200 | 8200 | 5373 | 18989 |
-
-`scripts/setup-worktree.sh` handles this automatically.
+| `.claude/commands/team.md` | Onboard + dashboard |
+| `.claude/commands/team-issue.md` | Create MC from natural language |
+| `.claude/commands/team-claim.md` | Claim Issue → Contract + branch |
+| `.claude/commands/team-drive.md` | Execute mission (sub-tasks → test → commit) |
+| `.claude/commands/team-ship.md` | Push + PR + review + cleanup |
+| `.claude/commands/team-rc.md` | RC lifecycle: staging → production |
+| `.claude/commands/create-milestone.md` | Leader: create milestone with batch MCs |
+| `.claude/commands/scripts/tw-*.sh` | Shared helper scripts (config, git, label, notify, etc.) |
 
 ## Skill 版本检查（主动执行）
 
@@ -123,12 +147,12 @@ Each worktree gets its own ports via `.env` — no conflicts between Roles:
 ## Code Standards
 
 - Commit: `type(scope): description`
-- Branch: `{type}/{task-id}-{slug}`
-- PR target: always `main`
+- Branch: `mission/{issue}-{slug}`
+- PR target: always `pre-launch` (development); release to `main` via `/team-rc`
 - Rebase before PR: resolve conflicts BEFORE creating PR
 - No secrets, no absolute paths in committed code
 
 ## Architecture
 
 4-service monorepo: `api-server/` (Python/FastAPI), `realtime/` (Python/LiveKit),
-`gateway/` (TypeScript/Node), `frontend/` (React/Vite). See `README.md`.
+`nanoclaw/` (TypeScript), `frontend/` (React/Vite). See `README.md`.

@@ -1,0 +1,120 @@
+schema_version: 3
+skill_version: 3.0.0
+
+team:
+  name: "VI Agent"
+  repo: flair-home-stylist/vi_agent
+
+roles:
+  - id: leader
+    level: leader
+    label: "Leader"
+    description: "Product direction, task creation, review, release"
+  - id: backend-engineer
+    level: member
+    label: "Backend Engineer"
+    description: "API server, database, backend services"
+  - id: frontend-engineer
+    level: member
+    label: "Frontend Engineer"
+    description: "React frontend, UI/UX implementation"
+  - id: realtime-engineer
+    level: member
+    label: "Realtime Engineer"
+    description: "LiveKit agent, voice pipeline, realtime services"
+  - id: infra-engineer
+    level: member
+    label: "Infra Engineer"
+    description: "CI/CD, deployment, testing infrastructure"
+  - id: fullstack-engineer
+    level: member
+    label: "Fullstack Engineer"
+    description: "Cross-service development"
+  - id: agent-engineer
+    level: member
+    label: "Agent Engineer"
+    description: "AI agent development, memory systems"
+
+members:
+  - github: caseyz-vv
+    name: "Casey"
+    role: leader
+  - github: lysfighting
+    name: "Liya Song"
+    role: infra-engineer
+  - github: yuang-yang
+    name: "yuang-yang"
+    role: backend-engineer
+  - github: initialneil
+    name: "szj"
+    role: realtime-engineer
+  - github: xxLe
+    name: "xxLe"
+    role: frontend-engineer
+  - github: FelisaChow
+    name: "Yijia Zhou"
+    role: agent-engineer
+
+project:
+  type: monorepo
+  services:
+    - name: api-server
+      language: python
+      test_command: "cd api-server && python -m pytest tests/ -v --tb=short"
+      lint_command: "cd api-server && ruff check ."
+    - name: frontend
+      language: typescript
+      test_command: "cd frontend && npm test"
+      lint_command: "cd frontend && npx eslint src/"
+      build_command: "cd frontend && npm run build"
+    - name: realtime
+      language: python
+      test_command: "cd realtime && uv run python -m pytest tests/ -v --tb=short"
+    - name: nanoclaw
+      language: typescript
+      lint_command: "cd nanoclaw && npx tsc --noEmit"
+
+conventions:
+  base_branch: pre-launch
+  production_branch: main
+  branch_pattern: "mission/{issue}-{slug}"
+  commit_format: "type(scope): description | Mission: #{issue}"
+
+labels:
+  mission: "mission"
+  status_prefix: "status:"
+  priority_prefix: "priority:"
+
+quality:
+  ci: true
+  review_required: false
+  branch_protection: true
+
+notifications:
+  enabled: true
+  channels:
+    - type: slack
+      channel: "#vi-agent-team"
+      enabled: false
+    - type: feishu
+      webhook: ""
+      enabled: false
+  events:
+    mc.created: [slack, feishu]
+    mc.completed: [slack, feishu]
+    milestone.created: [slack, feishu]
+    milestone.done: [slack, feishu]
+    review.requested: [slack, feishu]
+    review.changes_requested: [slack, feishu]
+
+versions:
+  current: "V0.1"
+
+data_sources: []
+# Future:
+# - name: "DAU"
+#   type: api
+#   url: "https://..."
+# - name: "ARR"
+#   type: api
+#   url: "https://..."

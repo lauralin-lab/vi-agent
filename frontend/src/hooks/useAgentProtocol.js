@@ -6,9 +6,6 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, JPEG_QUALITY } from '../constants';
 const CAPTURE_FALLBACK_TIMEOUT_MS = 500;
 const TRANSCRIPT_BUFFER_LIMIT = 200;
 const RESULT_BUFFER_LIMIT = 50;
-// Gateway DataChannel events use 'task_*' naming for historical reasons.
-// The task_id in these events corresponds to a session UUID in the backend.
-// We preserve this naming in the event buffer to match the wire protocol.
 const TASK_EVENT_BUFFER_LIMIT = 50;
 
 /**
@@ -99,16 +96,12 @@ function parseAgentXml(raw) {
  * photo capture, messaging, navigation/camera callbacks.
  * Accepts shared refs from the composition hook.
  *
- * NAMING NOTE (V2→V3 migration):
- * Gateway DataChannel events use "task_*" naming for historical reasons
- * (task_started, task_progress, task_result). The task_id in these events
- * corresponds to a session UUID in the backend's Session model. The "task"
- * concept was removed from the backend in V3, but the gateway wire protocol
- * retains these names. Do NOT rename them without coordinating with
- * gateway-service.ts and room-client.ts.
+ * V4: NanoClaw results arrive via SSE (useNanoClawResults), not DataChannel.
+ * This hook retains vi-agent DataChannel handlers (viewfinder_overlay,
+ * action_suggestion, etc.).
  *
- * Similarly, `sendDispatch` sends a [USER_DISPATCH] message to the agent,
- * which triggers session persistence — not a separate "task" entity.
+ * V5: All task dispatch goes through REST API → Redis → NanoClaw.
+ * LiveKit is used only for voice/video streaming and DataChannel events.
  */
 export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   // VI agent protocol state
@@ -121,13 +114,7 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   const [lastDetectedIntent, setLastDetectedIntent] = useState(null);
   const [actionSuggestion, setActionSuggestion] = useState(null);
   const [intentionText, setIntentionText] = useState('');
-  // Gateway DataChannel events — uses "task_*" naming for V2/V3 compat (see module docstring)
   const [taskEvents, setTaskEvents] = useState([]);
-
-  // HTML streaming state
-  const [streamingHtml, setStreamingHtml] = useState('');
-  const [isHtmlStreaming, setIsHtmlStreaming] = useState(false);
-  const streamingHtmlRef = useRef('');
 
   // Viewfinder overlay state
   const [viewfinderOverlay, setViewfinderOverlay] = useState(null);
@@ -136,20 +123,8 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   const [sessionPlan, setSessionPlan] = useState([]);
   const [sessionRichText, setSessionRichText] = useState('');
 
-  // Session progress state (gateway uses "task_progress" topic name)
+  // Session progress state
   const [taskProgress, setTaskProgress] = useState(null);
-
-  // Gateway block state (reserved/loading/done lifecycle from agent)
-  const [gatewayBlock, setGatewayBlock] = useState(null);
-
-  // vi-gateway DataChannel: per-session gateway blocks (keyed by task_id which IS a session UUID)
-  const [gatewayBlocks, setGatewayBlocks] = useState(new Map());
-  const gatewayHtmlAccRef = useRef(new Map()); // sessionId (gateway "task_id") → accumulated HTML string
-
-  // Text streaming state
-  const [streamedText, setStreamedText] = useState('');
-  const [isTextStreaming, setIsTextStreaming] = useState(false);
-  const streamedTextRef = useRef('');
 
   // Session header state
   const [sessionHeader, setSessionHeader] = useState(null);
@@ -157,6 +132,7 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
 
   // Agent status state machine signals
   const [greetingReceived, setGreetingReceived] = useState(false);
+  const greetingReceivedRef = useRef(false);
 
   // Refs for RPC handler access to current state
   const chatTextRef = useRef('');
@@ -348,71 +324,11 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
 
   }, [capturePhotoInternal]);
 
-  // Register DataReceived handler for all data channel messages
+  // Register DataReceived handler for data channel messages.
+  // V4: Execution results arrive via SSE (useNanoClawResults), not DataChannel.
+  // Retained: vi-agent topic, session_header, task_events, memory_updated, XML legacy topics.
   const registerDataHandler = useCallback((newRoom) => {
     newRoom.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
-      // Handle gateway HTML streaming
-      if (topic === 'gateway_html_stream') {
-        try {
-          const data = JSON.parse(new TextDecoder().decode(payload));
-          if (data.type === 'start') {
-            streamingHtmlRef.current = '';
-            setStreamingHtml('');
-            setIsHtmlStreaming(true);
-          } else if (data.type === 'chunk') {
-            streamingHtmlRef.current += data.content;
-            setStreamingHtml(streamingHtmlRef.current);
-          } else if (data.type === 'end') {
-            // Only finalize the streaming state — do NOT push to results or
-            // set lastResult.  The streaming_html block in LiveSessionView
-            // already displays this content; duplicating it would create a
-            // second identical block.
-            setIsHtmlStreaming(false);
-          }
-        } catch (e) {
-          console.error('[LiveKit] Failed to parse gateway_html_stream:', e);
-        }
-        return;
-      }
-
-      // Handle task progress events from gateway
-      if (topic === 'task_progress') {
-        try {
-          const data = JSON.parse(new TextDecoder().decode(payload));
-          setTaskProgress(data.stage === 'complete' ? null : { stage: data.stage, message: data.message });
-        } catch (e) {
-          console.error('[LiveKit] Failed to parse task_progress:', e);
-        }
-        return;
-      }
-
-      // Handle non-HTML text streaming from gateway
-      if (topic === 'gateway_text_stream') {
-        try {
-          const data = JSON.parse(new TextDecoder().decode(payload));
-          if (data.type === 'start') {
-            streamedTextRef.current = '';
-            setStreamedText('');
-            setIsTextStreaming(true);
-          } else if (data.type === 'chunk') {
-            streamedTextRef.current += data.content;
-            setStreamedText(streamedTextRef.current);
-          } else if (data.type === 'end') {
-            setIsTextStreaming(false);
-            const finalText = streamedTextRef.current;
-            if (finalText) {
-              const entry = { type: 'text', content: finalText, ts: Date.now() };
-              setResults(prev => [...prev, entry].slice(-RESULT_BUFFER_LIMIT));
-              setLastResult(entry);
-            }
-            streamedTextRef.current = '';
-          }
-        } catch (e) {
-          console.error('[LiveKit] Failed to parse gateway_text_stream:', e);
-        }
-        return;
-      }
-
       // Handle session header from agent
       if (topic === 'session_header') {
         try {
@@ -435,122 +351,20 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
         return;
       }
 
-      // Handle memory_updated events from agent/gateway
-      if (topic === 'memory_updated') {
-        setMemoryUpdatedAt(Date.now());
+      // Handle task progress events from agent
+      if (topic === 'task_progress') {
+        try {
+          const data = JSON.parse(new TextDecoder().decode(payload));
+          setTaskProgress(data.stage === 'complete' ? null : { stage: data.stage, message: data.message });
+        } catch (e) {
+          console.error('[LiveKit] Failed to parse task_progress:', e);
+        }
         return;
       }
 
-      // Handle JSON messages from gateway on "vi-gateway" topic
-      if (topic === 'vi-gateway') {
-        try {
-          const data = JSON.parse(new TextDecoder().decode(payload));
-          const taskId = data.task_id || data.taskId;
-          if (!taskId) return;
-
-          if (data.type === 'task_started' || data.type === 'start') {
-            // Create placeholder timeline block
-            gatewayHtmlAccRef.current.set(taskId, '');
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              next.set(taskId, { id: taskId, type: 'html', status: 'loading', content: '', description: data.description || '', executor: data.executor || '', _ts: Date.now() });
-              return next;
-            });
-            // Also add to task events for HistoryView
-            setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
-          } else if (data.type === 'progress') {
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              const existing = next.get(taskId) || { id: taskId, type: 'html', status: 'loading', content: '' };
-              next.set(taskId, { ...existing, status: 'loading', progress: data.message || data.stage || '', _ts: Date.now() });
-              return next;
-            });
-            setTaskProgress(data.stage === 'complete' ? null : { stage: data.stage, message: data.message });
-          } else if (data.type === 'html_stream') {
-            // Streaming append HTML to block (no flicker — accumulate in ref)
-            const acc = (gatewayHtmlAccRef.current.get(taskId) || '') + (data.content || '');
-            gatewayHtmlAccRef.current.set(taskId, acc);
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              const existing = next.get(taskId) || { id: taskId, type: 'html', status: 'streaming', content: '' };
-              next.set(taskId, { ...existing, status: 'streaming', content: acc, _ts: Date.now() });
-              return next;
-            });
-          } else if (data.type === 'text_stream') {
-            // Streaming text — accumulate raw text as block content
-            const acc = (gatewayHtmlAccRef.current.get(taskId) || '') + (data.content || '');
-            gatewayHtmlAccRef.current.set(taskId, acc);
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              const existing = next.get(taskId) || { id: taskId, type: 'html', status: 'streaming', content: '' };
-              next.set(taskId, { ...existing, status: 'streaming', content: acc, _ts: Date.now() });
-              return next;
-            });
-          } else if (data.type === 'module') {
-            // Structured module output — render as native React component
-            gatewayHtmlAccRef.current.delete(taskId);
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              next.set(taskId, {
-                id: taskId,
-                type: 'module',
-                module_type: data.module_type,
-                data: data.data,
-                status: 'done',
-                content: '',
-                _ts: Date.now(),
-              });
-              return next;
-            });
-            setIsHtmlStreaming(false);
-            setTaskProgress(null);
-          } else if (data.type === 'result') {
-            // Mark block complete with final content
-            const finalContent = data.html || data.content || gatewayHtmlAccRef.current.get(taskId) || '';
-            gatewayHtmlAccRef.current.delete(taskId);
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              next.set(taskId, { id: taskId, type: 'html', status: 'done', content: finalContent, _ts: Date.now() });
-              return next;
-            });
-            setIsHtmlStreaming(false);
-            setTaskProgress(null);
-            setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
-          } else if (data.type === 'end') {
-            // Gateway signals task completion — mark block as done
-            const finalContent = gatewayHtmlAccRef.current.get(taskId) || '';
-            gatewayHtmlAccRef.current.delete(taskId);
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              const existing = next.get(taskId);
-              if (existing) {
-                // Only transition to done if not already done (result may have arrived first)
-                if (existing.status !== 'done') {
-                  next.set(taskId, { ...existing, status: 'done', _ts: Date.now() });
-                }
-              } else {
-                next.set(taskId, { id: taskId, type: 'html', status: 'done', content: finalContent, _ts: Date.now() });
-              }
-              return next;
-            });
-            setIsHtmlStreaming(false);
-            setTaskProgress(null);
-            setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
-          } else if (data.type === 'error') {
-            gatewayHtmlAccRef.current.delete(taskId);
-            setGatewayBlocks(prev => {
-              const next = new Map(prev);
-              const existing = next.get(taskId) || { id: taskId, type: 'html', status: 'error', content: '' };
-              next.set(taskId, { ...existing, status: 'error', error: data.message || 'Session failed', _ts: Date.now() });
-              return next;
-            });
-            setIsHtmlStreaming(false);
-            setTaskProgress(null);
-            setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
-          }
-        } catch (e) {
-          console.error('[LiveKit] Failed to parse vi-gateway message:', e);
-        }
+      // Handle memory_updated events from agent
+      if (topic === 'memory_updated') {
+        setMemoryUpdatedAt(Date.now());
         return;
       }
 
@@ -581,7 +395,6 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
               }
             }
           } else if (data.type === 'timeline_block') {
-            // Direct block push from agent tools (push_bubble, etc.)
             const content = filterToolCallSyntax(data.content || '');
             if (content) {
               setLastAgentText(content);
@@ -593,8 +406,6 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
             }
           } else if (data.type === 'action_suggestion') {
             setActionSuggestion({ action: data.action, icon: data.icon || 'camera', label: data.label || '' });
-          } else if (data.type === 'gateway_block') {
-            setGatewayBlock({ id: data.id, status: data.status, html: data.html });
           } else if (data.type === 'task_started' || data.type === 'task_progress' || data.type === 'task_result') {
             setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
           }
@@ -643,87 +454,19 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
     registerDataHandler(newRoom);
   }, [registerRpcMethods, registerDataHandler]);
 
-  // Send message to agent via RPC
-  const sendMessage = useCallback(async (text, images = []) => {
-    if (!roomRef.current) {
-      console.warn('[LiveKit] Cannot send message: no room');
-      return;
-    }
-    const identity = resolveAgentIdentity();
-    if (!identity) {
-      console.warn('[LiveKit] Cannot send message: no agent found in room');
-      return;
-    }
-    try {
-      const payload = JSON.stringify({ text, images });
-      await roomRef.current.localParticipant.performRpc({
-        destinationIdentity: identity,
-        method: 'rpcF2BSendMessage',
-        payload,
-      });
-    } catch (e) {
-      console.error('[LiveKit] Failed to send RPC message:', e);
-      try {
-        const data = JSON.stringify({ type: 'user_action', text });
-        await roomRef.current.localParticipant.publishData(
-          new TextEncoder().encode(data),
-          { topic: 'vi-user', reliable: true }
-        );
-      } catch (fallbackErr) {
-        console.error('[LiveKit] Fallback data channel also failed:', fallbackErr);
-      }
-    }
-  }, [roomRef, resolveAgentIdentity]);
-
-  // Send page context to agent
+  // Send page context to agent via DataChannel (best-effort, non-critical)
   const sendPageContext = useCallback(async (page) => {
     if (!roomRef.current) return;
-    const identity = resolveAgentIdentity();
-    if (!identity) return;
     try {
-      const payload = JSON.stringify({ action: 'page_context', page });
-      await roomRef.current.localParticipant.performRpc({
-        destinationIdentity: identity,
-        method: 'rpcF2BSendMessage',
-        payload,
-      });
+      const data = JSON.stringify({ type: 'page_context', page });
+      await roomRef.current.localParticipant.publishData(
+        new TextEncoder().encode(data),
+        { topic: 'vi-user', reliable: true }
+      );
     } catch (e) {
       console.warn('[LiveKit] Failed to send page context:', e);
     }
-  }, [roomRef, resolveAgentIdentity]);
-
-  // Send dispatch message to agent via RPC (uses [USER_DISPATCH] prefix)
-  const sendDispatch = useCallback(async (intention, photoUrls = []) => {
-    if (!roomRef.current) {
-      console.warn('[LiveKit] Cannot send dispatch: no room');
-      return;
-    }
-    const identity = resolveAgentIdentity();
-    if (!identity) {
-      console.warn('[LiveKit] Cannot send dispatch: agent identity not resolved');
-      return;
-    }
-    try {
-      // Build [USER_DISPATCH] message that handle_f2b_send_message expects
-      let dispatchText = `[USER_DISPATCH] ${intention || 'Process this request'}`;
-      if (photoUrls.length > 0) {
-        dispatchText += '\n\nPhotos:\n' + photoUrls.map(u => `- ${u}`).join('\n');
-      }
-      const payload = JSON.stringify({
-        text: dispatchText,
-        images: photoUrls,
-      });
-      await roomRef.current.localParticipant.performRpc({
-        destinationIdentity: identity,
-        method: 'rpcF2BSendMessage',
-        payload: payload,
-        responseTimeoutMs: 10000,
-      });
-      console.log('[LiveKit] Dispatch sent via RPC:', { intention: intention?.substring(0, 50), photoCount: photoUrls.length });
-    } catch (e) {
-      console.error('[LiveKit] Failed to send dispatch:', e);
-    }
-  }, [roomRef, resolveAgentIdentity]);
+  }, [roomRef]);
 
   // Allow components to update chat text/images refs
   const setChatTextRef = useCallback((text) => {
@@ -755,11 +498,9 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
   }, []);
 
   // Mark greeting received when agent first speaks
-  const greetingReceivedRef = useRef(false);
   useEffect(() => {
-    if (lastAgentText && !greetingReceivedRef.current) {
-      greetingReceivedRef.current = true;
-      if (!greetingReceived) setGreetingReceived(true);
+    if (lastAgentText && !greetingReceived) {
+      queueMicrotask(() => setGreetingReceived(true));
     }
   }, [lastAgentText, greetingReceived]);
 
@@ -777,25 +518,17 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
     lastResult,
     infoBar,
     actionCard,
-    streamingHtml,
-    isHtmlStreaming,
     viewfinderOverlay,
     sessionPlan,
     sessionRichText,
     taskEvents,
     taskProgress,
-    streamedText,
-    isTextStreaming,
     sessionHeader,
     memoryUpdatedAt,
-    gatewayBlock,
-    gatewayBlocks,
     greetingReceived,
 
     // Actions
-    sendMessage,
     sendPageContext,
-    sendDispatch,
     capturePhoto: capturePhotoInternal,
     dismissActionCard,
     clearInfoBar,
