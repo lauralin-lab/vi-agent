@@ -14,11 +14,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../app.dart';
 import '../common/utils/log_utils.dart';
 import '../modules/models/user_profile.dart';
-import '../modules/models/vps_model.dart';
 import 'network/api_service.dart';
 
 typedef AuthInfoAutoProvider = AutoDisposeStreamProvider<AuthInfo>;
-typedef VpsInfoAuthProvider = AutoDisposeStreamProvider<VpsData?>;
 
 enum AuthProvider {
   /// 未知
@@ -162,47 +160,15 @@ class Authentication {
   /// 登录信息
   AuthInfo get currentAuth => _authInfo;
 
-  /// Vps信息 --- 主要是gateway && workspace url
-  VpsData? get currentVps => _vpsInfo;
-
   /// 判断用户是否登录
   bool get logged => _authInfo.logged;
 
   /// 监听账户变化，监听时会返回最后一次结果
   Stream<AuthInfo> get onAuthChangedListener => _authStream;
 
-  /// 监听Vps变化、临时返回最后一次结果
-  Stream<VpsData?> get onVpsChangedListener => _vpsStream;
-
   /// 用户 UUID
   String get uuid => currentAuth.self?.uuid ?? App().preferences.uuidInLocalCache;
 
-  /// liveKit Token
-  String get liveKitToken => currentAuth.self?.liveKit.liveKitToken ?? '';
-
-  /// liveKit Url
-  String get liveKitUrl => currentAuth.self?.liveKit.liveKitUrl ?? '';
-
-  /// liveKit roomName
-  String get liveKitRoomName => currentAuth.self?.liveKit.roomName ?? '';
-
-  /// Vps初始化完成
-  bool get vpsInitCompleted => currentVps?.statusEnum == VpsStatus.initialized;
-
-  /// gateway
-  String get gateWayUrl => 'https://${currentVps?.ip}:${currentVps?.port}';
-
-  /// gateway Token
-  String get gateWayToken => currentVps?.gatewayToken ?? '';
-
-  /// 获取workSpaceUrl
-  String get workSpaceUrl => currentVps?.workSpaceUrl ?? '';
-
-  /// ip
-  String get ipConfig => currentVps?.ip ?? '';
-
-  /// sessionKey
-  String get sessionKey => currentAuth.self?.liveKit.sessionKey ?? '';
 
   // /// 尝试刷新自动登录，一般情况下请勿使用
   // void tryAutoLogin([bool refresh = false]) {
@@ -263,7 +229,7 @@ class Authentication {
 
       // 登录回调
       _currentAuth = authUser;
-      _getUserVps();
+      // _getUserVps();
       _updateUserState();
       return LoginState.ok;
     } catch (ex, st) {
@@ -286,12 +252,6 @@ class Authentication {
     _notifyUpdateUserInfo();
   }
 
-  set _currentVps(VpsData? info) {
-    if (_vpsInfo == info) return;
-    _vpsInfo = info;
-    _notifyUpdateVpsInfo();
-  }
-
   /// 初始化
   Future<void> _init() async {
     // 卸载重装后 iOS Keychain 中 Firebase 登录态不会被清除,---如果有用户信息走一次退出
@@ -312,19 +272,13 @@ class Authentication {
       _initTime = DateTime.now();
       _currentAuth = _userToAuthInfo(user, null);
       _updateUserState();
-      _getUserVps();
+      // _getUserVps();
     });
 
     _authStream = Stream.multi((c) {
       _listeners.add(c);
       c.onCancel = () => _listeners.remove(c);
       c.add(_authInfo);
-    });
-
-    _vpsStream = Stream.multi((c) {
-      _vpsListeners.add(c);
-      c.onCancel = () => _vpsListeners.remove(c);
-      c.add(_vpsInfo);
     });
 
     // 如果用户 2 秒没有初始化信息，则进行初始化
@@ -430,13 +384,6 @@ class Authentication {
     }
   }
 
-  /// 更新Vps用户信息，发送给
-  void _notifyUpdateVpsInfo() {
-    for (var l in _vpsListeners) {
-      l.add(_vpsInfo);
-    }
-  }
-
   /// 创建用户
   Future<bool> _createCurrentUser(String uid, String idToken) async {
     try {
@@ -448,35 +395,6 @@ class Authentication {
       _logError(ex, st);
     }
     return false;
-  }
-
-  /// 获取gateway && workspace url
-  Future<void> _getUserVps() async {
-    var retryCount = 0;
-    try {
-      while (true) {
-        try {
-          final result = await ApiService.getVpsInfo();
-          _currentVps = result.vpsInfo!;
-          // 失败
-          if (result.vpsInfo?.statusEnum == VpsStatus.initFailed) {
-            throw Exception('VPS Init Error');
-          }
-          // 成功
-          if (result.vpsInfo?.statusEnum == VpsStatus.initialized) {
-            return;
-          }
-          // 延迟5秒后再查询进度
-          await Future.delayed(5000.ms);
-        } catch (e) {
-          // 其它错误重试
-          if (retryCount >= 5) rethrow;
-          retryCount++;
-        }
-      }
-    } catch (ex) {
-      loge('Vps error :$ex');
-    }
   }
 
   /// 更新用户状态
@@ -504,7 +422,7 @@ class Authentication {
     }
     try {
       final profile = await ApiService.getUserProfile();
-      _currentUserUuid = profile.uuid;
+      _currentUserUuid = profile.viUserId;
       _currentAuth = currentAuth.copyWith(self: SelfProfile.fromUserProfile(profile));
       //用户请求完成后走下
       if (!userCompleter.isCompleted) {
@@ -531,7 +449,7 @@ class Authentication {
         final idToken = await user?.getIdToken();
         if (user != null && idToken != null) {
           await _createCurrentUser(user.uid, idToken);
-          _getUserVps();
+          // _getUserVps();
           if (!retry) return;
           await _delayedQueryUserData(count * 3, count < 3, count + 1);
           return;
@@ -640,17 +558,8 @@ class Authentication {
   /// 监听者
   final _listeners = <MultiStreamController<AuthInfo>>{};
 
-  /// vps监听广播流
-  late final Stream<VpsData?> _vpsStream;
-
-  /// vps监听者
-  final _vpsListeners = <MultiStreamController<VpsData?>>{};
-
   /// 登录信息，请使用 [AuthInfoAutoProvider]
   AuthInfo _authInfo = const AuthInfo(AuthProvider.unknown, null, null);
-
-  /// Vps信息 --- 主要是gateway && workspace url
-  VpsData? _vpsInfo;
 
   /// 登录中
   bool _accountLogging = false;

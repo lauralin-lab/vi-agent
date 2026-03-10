@@ -7,33 +7,14 @@ part of 'user_profile.dart';
 // **************************************************************************
 
 UserProfile _$UserProfileFromJson(Map<String, dynamic> json) => UserProfile(
-  json['id'] as String? ?? '',
-  json['custom_uid'] as String? ?? '',
-  json['package_name'] as String? ?? '',
-  json['user_name'] as String? ?? '',
+  json['user_id'] as String? ?? '',
+  json['vi_user_id'] as String? ?? '',
+  json['firebase_uid'] as String? ?? '',
   json['display_name'] as String? ?? '',
   json['email'] as String? ?? '',
   json['photo_url'] as String? ?? '',
   json['sign_in_provider'] as String? ?? '',
-  json['tier'] as String? ?? '',
-  json['balance'] as String? ?? '',
-  json['livekit'] == null
-      ? _emptyLiveKit()
-      : LiveKit.fromJson(json['livekit'] as Map<String, dynamic>),
+  json['language'] as String? ?? '',
+  json['is_new_user'] as bool? ?? true,
+  json['invite_required'] as bool? ?? false,
 );
-
-LiveKit _$LiveKitFromJson(Map<String, dynamic> json) => LiveKit(
-  liveKitToken: json['token'] as String? ?? '',
-  liveKitUrl: json['url'] as String? ?? '',
-  roomName: json['room_name'] as String? ?? '',
-  participantName: json['participant_name'] as String? ?? '',
-  sessionKey: json['session_key'] as String? ?? '',
-);
-
-Map<String, dynamic> _$LiveKitToJson(LiveKit instance) => <String, dynamic>{
-  'token': instance.liveKitToken,
-  'url': instance.liveKitUrl,
-  'room_name': instance.roomName,
-  'participant_name': instance.participantName,
-  'session_key': instance.sessionKey,
-};

@@ -12,7 +12,6 @@ import '../../configs/constans.dart';
 import '../../modules/models/room_info.dart';
 import '../../modules/models/upload_file_model.dart';
 import '../../modules/models/user_profile.dart';
-import '../../modules/models/vps_model.dart';
 
 base class ApiService {
   const ApiService._();
@@ -72,8 +71,8 @@ base class ApiService {
   static Future<void> sendMessageToGateWay(String message) async {
     Map<String, dynamic> data = {
       'text': message,
-      'sessionKey': App().auth.sessionKey,
-      'roomName': App().auth.liveKitRoomName,
+      'sessionKey': '', //App().auth.sessionKey,
+      'roomName': '', //App().auth.liveKitRoomName,
       'participantId': 'ui-user',
       'agentId': 'main',
       'accountId': 'default',
@@ -91,7 +90,7 @@ base class ApiService {
     final op = Options(headers: {"id-token": idToken, "package-name": packageName});
 
     final resp = await appDio.postPlus(
-      '/users',
+      '/auth/firebase',
       cancelToken: cancelToken,
       options: op,
       plusOptions: DioPlusOptions(
@@ -109,8 +108,8 @@ base class ApiService {
     }
 
     if (resp.data is Map<String, dynamic>) {
-      final map = (resp.data as Map<String, dynamic>)["data"] as Map<String, dynamic>;
-      final uuid = (map['custom_uid'] ?? map['custom_uuid']);
+      final map = resp.data as Map<String, dynamic>;
+      final uuid = map['vi_user_id'] ?? map['user_id'];
       return uuid is String ? uuid : null;
     }
     return null;
@@ -118,15 +117,9 @@ base class ApiService {
 
   /// 获取用户信息
   static Future<UserProfile> getUserProfile({CancelToken? cancelToken}) async {
-    final resp = await appDio.get('/users/me', cancelToken: cancelToken);
-    final map = (resp.data as Map<String, dynamic>)["data"] as Map<String, dynamic>;
+    final resp = await appDio.get('/auth/me', cancelToken: cancelToken);
+    final map = resp.data as Map<String, dynamic>;
     return UserProfile.fromJson(map);
-  }
-
-  /// 获取用户Vps
-  static Future<VpsModel> getVpsInfo({CancelToken? cancelToken}) async {
-    final resp = await appDio.get('/users/me/vps', cancelToken: cancelToken);
-    return VpsModel.fromJson(resp.data);
   }
 
   ///#endregion

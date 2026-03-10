@@ -5,11 +5,11 @@ import 'function/chat_service.dart';
 /// Protocol Version
 const int kGatewayProtocolVersion = 3;
 
-String get kGatewayUrl => 'ws://${App().auth.currentVps?.ip ?? ''}:18789';
+String get kGatewayUrl => '';//'ws://${App().auth.currentVps?.ip ?? ''}:18789';
 
-String get kGatewayAuthToken => App().auth.gateWayToken;
+String get kGatewayAuthToken => '';//App().auth.gateWayToken;
 
-String get kGatewayWorkspaceUrl => App().auth.workSpaceUrl;
+String get kGatewayWorkspaceUrl => '';//App().auth.workSpaceUrl;
 
 //////////////////////////////////////////////////////////////////////////////
 // 消息帧类型

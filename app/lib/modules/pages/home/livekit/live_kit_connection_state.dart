@@ -14,16 +14,7 @@ enum LiveKitConnectionState {
   connecting,
 
   /// 房间连接成功，等待判断 Gateway
-  roomConnected,
-
-  /// 等待 VPS 就绪
-  waitingVps,
-
-  /// 正在连接 Gateway
-  connectingGateway,
-
-  /// 全部就绪
-  done,
+  connected,
 
   /// 失败
   failed;
@@ -32,15 +23,12 @@ enum LiveKitConnectionState {
   bool get ready => this == LiveKitConnectionState.idle || this == LiveKitConnectionState.waitingPrerequisites;
 
   /// liveKit连接
-  bool get isConnected => this == LiveKitConnectionState.done;
+  bool get isConnected => this == LiveKitConnectionState.connected;
 
   /// 获取状态Title
   String getTitle() {
     return switch (this) {
-      LiveKitConnectionState.roomConnected => 'LiveKit Linked,Waiting Gateway',
-      LiveKitConnectionState.waitingVps => "LiveKit Linked,Waiting VPS",
-      LiveKitConnectionState.connectingGateway => "Gateway Linking",
-      LiveKitConnectionState.done => "LIVE",
+      LiveKitConnectionState.connected => "LIVE",
       LiveKitConnectionState.failed => "OFFLINE",
       _ => 'LINKING',
     };
@@ -49,7 +37,7 @@ enum LiveKitConnectionState {
   /// Widget图标
   Widget getIcon() {
     return switch (this) {
-      LiveKitConnectionState.done => Icon(Icons.wifi, color: Colors.white, size: 14.dpx),
+      LiveKitConnectionState.connected => Icon(Icons.wifi, color: Colors.white, size: 14.dpx),
       LiveKitConnectionState.failed => Icon(Icons.wifi_off, color: Colors.white, size: 14.dpx),
       _ => SizedBox(
         width: 10.dpx,

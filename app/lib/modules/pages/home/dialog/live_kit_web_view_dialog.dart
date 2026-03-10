@@ -45,7 +45,7 @@ class _LiveKitWebViewDialogState extends ConsumerState<LiveKitWebViewDialog> {
   var _isLoading = true;
 
   /// 域名
-  String get _host => App().auth.workSpaceUrl;
+  String get _host => '';//App().auth.workSpaceUrl;
 
   /// 监听流
   ProviderSubscription<String>? _subscription;

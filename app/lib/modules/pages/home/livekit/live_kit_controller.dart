@@ -4,7 +4,6 @@ import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rive_rolls_collection/common.dart';
 import '../../../../service/global_provider.dart';
-import '../../../models/vps_model.dart';
 import '../provider/main_provider.dart';
 import '../widget/camera_action_button.dart';
 import 'live_kit_connection_state.dart';
@@ -29,9 +28,6 @@ class LiveKitController {
   /// Agent 回复消息流（broadcast，允许多个监听者）
   final StreamController<String> agentRecorder = StreamController<String>.broadcast();
 
-  /// 记录gateWay Join成功
-  bool gateWayConnected = false;
-
   /// 当前连接状态
   LiveKitConnectionState _state = LiveKitConnectionState.idle;
 
@@ -53,13 +49,10 @@ class LiveKitController {
     // 注册断线/重连回调
     _eventHandler.onReconnected = () {
       logi('[LiveKitController] Room reconnected, re-joining gateway...');
-      _transitionTo(LiveKitConnectionState.roomConnected);
-      gateWayConnected = false;
-      _tryConnectGateway();
+      _transitionTo(LiveKitConnectionState.connected);
     };
     _eventHandler.onDisconnected = () {
       logi('[LiveKitController] Room disconnected, waiting for retry trigger...');
-      gateWayConnected = false;
       _transitionTo(LiveKitConnectionState.waitingPrerequisites);
       _evaluateState();
     };
@@ -98,13 +91,6 @@ class LiveKitController {
       }
     });
 
-    // vps 就绪
-    ref.listen(onVpsChangedProvider, (_, next) {
-      final resp = next.maybeWhen(data: (value) => value, orElse: () => null);
-      if (resp?.statusEnum == VpsStatus.initialized) {
-        _evaluateState();
-      }
-    });
   }
 
   /// 状态机核心：根据当前 state + 条件决定下一步
@@ -113,10 +99,6 @@ class LiveKitController {
       case LiveKitConnectionState.idle:
       case LiveKitConnectionState.waitingPrerequisites:
         await _tryConnect();
-
-      case LiveKitConnectionState.roomConnected:
-      case LiveKitConnectionState.waitingVps:
-        _tryConnectGateway();
 
       default:
         break;
@@ -131,9 +113,8 @@ class LiveKitController {
     try {
       await _roomService.connect();
       if (isConnected) {
-        _transitionTo(LiveKitConnectionState.roomConnected);
+        _transitionTo(LiveKitConnectionState.connected);
         _mediaController.syncMicState();
-        _tryConnectGateway();
       } else {
         // connect() 内部前置条件未满足，等待 _listenPrerequisites 重新触发
         _transitionTo(LiveKitConnectionState.waitingPrerequisites);
@@ -145,32 +126,6 @@ class LiveKitController {
     }
   }
 
-  /// 尝试连接 Gateway
-  void _tryConnectGateway() {
-    if (!isConnected) return;
-    if (gateWayConnected) return;
-
-    if (_roomService.isVpsReady) {
-      _connectGateway();
-    } else {
-      _transitionTo(LiveKitConnectionState.waitingVps);
-    }
-  }
-
-  /// 连接 Gateway
-  Future<void> _connectGateway() async {
-    _transitionTo(LiveKitConnectionState.connectingGateway);
-    try {
-      gateWayConnected = true;
-      await _roomService.joinGateWay();
-      _transitionTo(LiveKitConnectionState.done);
-    } catch (ex) {
-      gateWayConnected = false;
-      loge('[LiveKitController] Gateway error: $ex');
-      // 等待 onReconnected 或 VPS 变化重新触发 _tryConnectGateway
-      _transitionTo(LiveKitConnectionState.roomConnected);
-    }
-  }
 
   /// 状态转换
   void _transitionTo(LiveKitConnectionState newState) {

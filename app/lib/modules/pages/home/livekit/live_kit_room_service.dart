@@ -19,9 +19,6 @@ class LiveKitRoomService {
   /// 房间是否连接成功
   bool get isConnected => room.connectionState == ConnectionState.connected;
 
-  /// VPS 是否已就绪
-  bool get isVpsReady => App().auth.vpsInitCompleted;
-
   /// 连接房间（单次尝试，重试由上层控制器负责）
   Future<void> connect() async {
     // 存在连接
@@ -48,10 +45,10 @@ class LiveKitRoomService {
     _isConnecting = true;
 
     try {
-      await room.prepareConnection(App().auth.liveKitUrl, App().auth.liveKitToken);
+      await room.prepareConnection('', '');
       await room.connect(
-        App().auth.liveKitUrl,
-        App().auth.liveKitToken,
+        '',//App().auth.liveKitUrl,
+        '',//App().auth.liveKitToken,
         fastConnectOptions: FastConnectOptions(
           microphone: TrackOption(track: HardWareInitializer.instance.audioTrack!),
           camera: TrackOption(track: HardWareInitializer.instance.videoTrack!),
@@ -62,18 +59,6 @@ class LiveKitRoomService {
       rethrow;
     } finally {
       _isConnecting = false;
-    }
-  }
-
-  /// GateWay加入房间
-  Future<void> joinGateWay() async {
-    try {
-      if (App().auth.vpsInitCompleted) {
-        await ApiService.gateWayJoinRequest(roomName: App().auth.liveKitRoomName);
-      }
-    } catch (ex) {
-      loge('error:$ex');
-      rethrow;
     }
   }
 

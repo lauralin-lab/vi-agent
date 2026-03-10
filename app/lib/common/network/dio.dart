@@ -30,7 +30,7 @@ Dio _createAppDio() {
 /// 创建用于非 API 的 DIO
 Dio _createDio() {
   final options = BaseOptions(
-    baseUrl: App().auth.gateWayUrl, //'https://sega-grams-tampa-msie.trycloudflare.com'
+    baseUrl: '', //'https://sega-grams-tampa-msie.trycloudflare.com'
     connectTimeout: const Duration(seconds: 20),
     contentType: Headers.jsonContentType,
   );

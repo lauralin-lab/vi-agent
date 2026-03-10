@@ -119,38 +119,39 @@ class _MainPageState extends ConsumerState<MainPage> {
 
   /// 跳转到Chat页面
   Future<void> _jumpPreChatPage() async {
-    logi('[MainPage] jumpPreChatPage: suspending media...');
-    _promptFocusNode.unfocus();
-
-    if (!mounted) return;
-
-    /// 没有 capture 数据 → 取当前帧，走上传+发送链路
-    var captureImages = ref.read(captureImageProvider);
-    if (captureImages.isEmpty) {
-      final savePath = await HardWareInitializer.instance.takePhoto();
-      if (savePath != null && savePath.isNotEmpty) {
-        ref.read(captureImageProvider.notifier).add(savePath);
-        captureImages = ref.read(captureImageProvider);
-        // 临时取帧需要走上传+发送（
-        liveKitController.uploadAndSendToGateWay(savePath);
-      }
-    }
-
-    // 拷贝一份传给路由，与 provider 状态解耦
-    final imageSnapshot = List<String>.of(captureImages);
-    // 清空
-    ref.read(captureImageProvider.notifier).clear();
-    await SessionRoute(
-      SessionRouteExtra(
-        sessionKey: App().auth.sessionKey.isEmpty ? 'agent:main:main' : App().auth.sessionKey,
-        prompt: _promptTF.text,
-        imageUrls: imageSnapshot,
-      ),
-    ).push(context);
-    _promptTF.clear();
-    // 是否子页面恢复
-    logi('[MainPage] jumpPreChatPage: returned, resuming media...');
-    // 重复播放动画
-    _scanningController.play();
+    return;
+    // logi('[MainPage] jumpPreChatPage: suspending media...');
+    // _promptFocusNode.unfocus();
+    //
+    // if (!mounted) return;
+    //
+    // /// 没有 capture 数据 → 取当前帧，走上传+发送链路
+    // var captureImages = ref.read(captureImageProvider);
+    // if (captureImages.isEmpty) {
+    //   final savePath = await HardWareInitializer.instance.takePhoto();
+    //   if (savePath != null && savePath.isNotEmpty) {
+    //     ref.read(captureImageProvider.notifier).add(savePath);
+    //     captureImages = ref.read(captureImageProvider);
+    //     // 临时取帧需要走上传+发送（
+    //     liveKitController.uploadAndSendToGateWay(savePath);
+    //   }
+    // }
+    //
+    // // 拷贝一份传给路由，与 provider 状态解耦
+    // final imageSnapshot = List<String>.of(captureImages);
+    // // 清空
+    // ref.read(captureImageProvider.notifier).clear();
+    // await SessionRoute(
+    //   SessionRouteExtra(
+    //     sessionKey: App().auth.sessionKey.isEmpty ? 'agent:main:main' : App().auth.sessionKey,
+    //     prompt: _promptTF.text,
+    //     imageUrls: imageSnapshot,
+    //   ),
+    // ).push(context);
+    // _promptTF.clear();
+    // // 是否子页面恢复
+    // logi('[MainPage] jumpPreChatPage: returned, resuming media...');
+    // // 重复播放动画
+    // _scanningController.play();
   }
 }

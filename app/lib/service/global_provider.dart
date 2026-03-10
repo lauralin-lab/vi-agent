@@ -13,12 +13,6 @@ final onAuthChangedProvider = AuthInfoAutoProvider(
   name: 'onAuthChangedProvider',
 );
 
-/// Vps认证变化监听
-final onVpsChangedProvider = VpsInfoAuthProvider(
-  (ref) => _auth.onVpsChangedListener,
-  name: 'onVpsChangedProvider',
-);
-
 /// 监听相机是否初始化
 /// 使用 async* 先 yield 当前同步状态，避免 broadcast stream 事件丢失
 final onInitCameraProvider = AutoDisposeStreamProvider<bool>(
