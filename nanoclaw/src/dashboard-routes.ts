@@ -148,7 +148,7 @@ export function createDashboardRouter(): Router {
       { name: 'file_write', icon: '✏️', category: 'filesystem', description: 'Write content to a file in the user workspace' },
       { name: 'file_list', icon: '📂', category: 'filesystem', description: 'List files in a user workspace directory' },
       { name: 'file_edit', icon: '🔧', category: 'filesystem', description: 'Replace a string in a file' },
-      { name: 'memory_update', icon: '🧠', category: 'memory', description: 'Update user memory (long-term profile or daily diary)' },
+      { name: 'memory_update', icon: '🧠', category: 'memory', description: 'Update user memory (long-term profile or topic category notes)' },
       { name: 'publish_card', icon: '🃏', category: 'cards', description: 'Publish a structured card to the session canvas' },
       { name: 'update_card', icon: '🔄', category: 'cards', description: 'Update an existing card\'s data' },
       { name: 'append_to_card', icon: '➕', category: 'cards', description: 'Append items to an array slot in a card' },
@@ -373,73 +373,45 @@ export function createDashboardRouter(): Router {
   // Memory — CRUD for memory files
   // =====================================================================
 
-  const VALID_LAYERS = ['identity', 'semantic', 'episodic'] as const;
-
-  function validateLayer(layer: string): layer is (typeof VALID_LAYERS)[number] {
-    return VALID_LAYERS.includes(layer as (typeof VALID_LAYERS)[number]);
-  }
-
-  // List files in a memory layer
-  router.get('/api/dashboard/memory/:layer', async (req: Request, res: Response) => {
-    const layer = req.params.layer as string;
-    if (!validateLayer(layer)) {
-      res.status(400).json({ error: 'Invalid layer. Must be: identity, semantic, or episodic' });
-      return;
-    }
-
-    const dirPath = join(config.userDataDir, 'memory', layer);
+  // List category files in memory/
+  router.get('/api/dashboard/memory', async (_req: Request, res: Response) => {
+    const dirPath = join(config.userDataDir, 'memory');
     try {
       const files = await readdir(dirPath);
       const fileInfos = await Promise.all(
         files.filter(f => f.endsWith('.md')).map(async (f) => {
           try {
             const st = await stat(join(dirPath, f));
-            return { name: f, size: st.size, modified: st.mtime.toISOString() };
+            return { name: f, category: f.replace(/\.md$/, ''), size: st.size, modified: st.mtime.toISOString() };
           } catch {
-            return { name: f, size: 0, modified: '' };
+            return { name: f, category: f.replace(/\.md$/, ''), size: 0, modified: '' };
           }
         }),
       );
-      res.json({ layer, files: fileInfos });
+      res.json({ files: fileInfos });
     } catch {
-      res.json({ layer, files: [] });
+      res.json({ files: [] });
     }
   });
 
-  // Read a memory file
-  router.get('/api/dashboard/memory/:layer/:filename', async (req: Request, res: Response) => {
-    const layer = req.params.layer as string;
+  // Read a category file
+  router.get('/api/dashboard/memory/:filename', async (req: Request, res: Response) => {
     const filename = req.params.filename as string;
-    if (!validateLayer(layer)) {
-      res.status(400).json({ error: 'Invalid layer' });
-      return;
-    }
-    if (!filename.endsWith('.md')) {
-      res.status(400).json({ error: 'Only .md files supported' });
-      return;
-    }
+    const safeName = filename.endsWith('.md') ? filename : `${filename}.md`;
 
-    const filePath = join(config.userDataDir, 'memory', layer, filename);
+    const filePath = join(config.userDataDir, 'memory', safeName);
     try {
       const content = await readFile(filePath, 'utf-8');
-      res.json({ layer, filename, content });
+      res.json({ category: filename.replace(/\.md$/, ''), filename: safeName, content });
     } catch {
       res.status(404).json({ error: 'File not found' });
     }
   });
 
-  // Write/update a memory file
-  router.put('/api/dashboard/memory/:layer/:filename', async (req: Request, res: Response) => {
-    const layer = req.params.layer as string;
+  // Write/update a category file
+  router.put('/api/dashboard/memory/:filename', async (req: Request, res: Response) => {
     const filename = req.params.filename as string;
-    if (!validateLayer(layer)) {
-      res.status(400).json({ error: 'Invalid layer' });
-      return;
-    }
-    if (!filename.endsWith('.md')) {
-      res.status(400).json({ error: 'Only .md files supported' });
-      return;
-    }
+    const safeName = filename.endsWith('.md') ? filename : `${filename}.md`;
 
     const { content } = req.body as { content?: string };
     if (content === undefined) {
@@ -447,30 +419,26 @@ export function createDashboardRouter(): Router {
       return;
     }
 
-    const dirPath = join(config.userDataDir, 'memory', layer);
-    const filePath = join(dirPath, filename);
+    const dirPath = join(config.userDataDir, 'memory');
+    const filePath = join(dirPath, safeName);
     try {
       await mkdir(dirPath, { recursive: true });
       await writeFile(filePath, content, 'utf-8');
-      res.json({ status: 'ok', layer, filename });
+      res.json({ status: 'ok', category: filename.replace(/\.md$/, ''), filename: safeName });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
-  // Delete a memory file
-  router.delete('/api/dashboard/memory/:layer/:filename', async (req: Request, res: Response) => {
-    const layer = req.params.layer as string;
+  // Delete a category file
+  router.delete('/api/dashboard/memory/:filename', async (req: Request, res: Response) => {
     const filename = req.params.filename as string;
-    if (!validateLayer(layer)) {
-      res.status(400).json({ error: 'Invalid layer' });
-      return;
-    }
+    const safeName = filename.endsWith('.md') ? filename : `${filename}.md`;
 
-    const filePath = join(config.userDataDir, 'memory', layer, filename);
+    const filePath = join(config.userDataDir, 'memory', safeName);
     try {
       await unlink(filePath);
-      res.json({ status: 'deleted', layer, filename });
+      res.json({ status: 'deleted', filename: safeName });
     } catch {
       res.status(404).json({ error: 'File not found' });
     }

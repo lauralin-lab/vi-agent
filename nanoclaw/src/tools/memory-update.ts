@@ -1,16 +1,18 @@
-import { writeUserFile, readUserFile } from '../fs/user-fs.js';
+import { writeUserFile, readUserFile, listUserDir } from '../fs/user-fs.js';
 import { config } from '../config.js';
 import { requestContext } from '../channels/request-context.js';
 
 /**
- * Two-layer memory model (per memory-system-spec.md):
+ * Two-layer memory model:
  *
- *   MEMORY.md          — 长期记忆，用户可见可编辑的认知档案
- *   memory/YYYY-MM-DD.md — 日记，当天所有对话的摘要
+ *   MEMORY.md              — 长期身份记忆（你是谁），用户可见可编辑
+ *   memory/{category}.md   — 主题记忆（聊过什么），AI 自动管理
  *
- * Both written to local /workspace/, and MEMORY.md is synced to api-server
- * so the frontend Profile page can display it.
+ * MEMORY.md synced to api-server for frontend display.
+ * Category files synced to api-server for persistence.
  */
+
+// ── Layer 1: MEMORY.md (long-term identity) ──
 
 /**
  * Write long-term memory (MEMORY.md).
@@ -19,8 +21,7 @@ import { requestContext } from '../channels/request-context.js';
 export async function writeMemory(content: string): Promise<void> {
   await writeUserFile('MEMORY.md', content);
   console.log(`[memory] MEMORY.md updated (${content.length} chars)`);
-  // Sync to api-server so frontend can display it
-  syncMemoryToApi(content).catch((err) => {
+  syncToApi('MEMORY.md', content, 'long_term').catch((err) => {
     console.warn('[memory] API sync failed:', err);
   });
 }
@@ -36,76 +37,63 @@ export async function readMemory(): Promise<string> {
   }
 }
 
+// ── Layer 2: Category files (topic-based notes) ──
+
 /**
- * Append to today's diary (memory/YYYY-MM-DD.md).
+ * Write a category file (memory/{category}.md).
+ * AI outputs the complete updated content after intelligent merge.
+ * Creates the file if it doesn't exist.
  */
-export async function appendDiary(content: string): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
-  const path = `memory/${today}.md`;
-  let existing = '';
-  try {
-    existing = await readUserFile(path);
-  } catch {
-    // First entry today — add date header
-    existing = `# ${today}`;
-  }
-  await writeUserFile(path, existing + '\n\n' + content);
-  console.log(`[memory] diary appended: ${path}`);
+export async function writeCategoryFile(category: string, content: string): Promise<void> {
+  const path = `memory/${category}.md`;
+  await writeUserFile(path, content);
+  console.log(`[memory] category updated: ${path} (${content.length} chars)`);
+  syncToApi(path, content, 'category').catch((err) => {
+    console.warn(`[memory] API sync for ${path} failed:`, err);
+  });
 }
 
 /**
- * Read today's diary. Returns empty string if not exists.
+ * Read a category file. Returns empty string if not exists.
  */
-export async function readDiary(date?: string): Promise<string> {
-  const d = date || new Date().toISOString().slice(0, 10);
+export async function readCategoryFile(category: string): Promise<string> {
   try {
-    return await readUserFile(`memory/${d}.md`);
+    return await readUserFile(`memory/${category}.md`);
   } catch {
     return '';
   }
 }
 
-// ── Legacy compatibility ──
-// The skill-executor's memory_update tool still calls these.
-// Route to the two-layer model.
-
-export async function updateMemory(
-  category: 'identity' | 'semantic' | 'episodic',
-  filename: string,
-  content: string,
-): Promise<void> {
-  if (category === 'episodic') {
-    await appendDiary(content);
-  } else {
-    // identity/semantic → write to MEMORY.md via merge
-    // Read current, append the new fact, write back
-    const current = await readMemory();
-    if (current) {
-      await writeMemory(current + '\n' + content);
-    } else {
-      await writeMemory(content);
-    }
-  }
+/**
+ * List all category names (filenames without .md extension).
+ */
+export async function listCategories(): Promise<string[]> {
+  const entries = await listUserDir('memory');
+  return entries
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => f.replace(/\.md$/, ''));
 }
 
-export async function appendMemory(
-  category: 'identity' | 'semantic' | 'episodic',
-  filename: string,
-  content: string,
-): Promise<void> {
-  if (category === 'episodic') {
-    await appendDiary(content);
-  } else {
-    const current = await readMemory();
-    await writeMemory(current ? current + '\n' + content : content);
+/**
+ * Read all category files. Returns a map of category → content.
+ */
+export async function readAllCategories(): Promise<Map<string, string>> {
+  const categories = await listCategories();
+  const result = new Map<string, string>();
+  for (const cat of categories) {
+    const content = await readCategoryFile(cat);
+    if (content) {
+      result.set(cat, content);
+    }
   }
+  return result;
 }
 
 // ── API sync ──
 
-async function syncMemoryToApi(content: string): Promise<void> {
+async function syncToApi(filename: string, content: string, category: string): Promise<void> {
   const userId = requestContext.getStore()?.userId ?? config.userId;
-  const resp = await fetch(`${config.apiServerUrl}/api/internal/memories/MEMORY.md`, {
+  const resp = await fetch(`${config.apiServerUrl}/api/internal/memories/${encodeURIComponent(filename)}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -113,13 +101,13 @@ async function syncMemoryToApi(content: string): Promise<void> {
     },
     body: JSON.stringify({
       vi_user_id: userId,
-      filename: 'MEMORY.md',
+      filename,
       content,
-      category: 'long_term',
+      category,
       source: 'nanoclaw',
     }),
   });
   if (!resp.ok) {
-    console.warn(`[memory] API sync failed (${resp.status})`);
+    console.warn(`[memory] API sync failed for ${filename} (${resp.status})`);
   }
 }

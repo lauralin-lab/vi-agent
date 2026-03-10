@@ -13,8 +13,6 @@ import { config } from '../config.js';
 
 const memoryVersions = new Map<string, number>();
 
-const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-
 // ---------------------------------------------------------------------------
 // Efficiency tracking — avoid wasting tokens/CPU when nothing changed
 // ---------------------------------------------------------------------------
@@ -94,17 +92,16 @@ async function compileForActiveUsers(tickCount: number): Promise<void> {
 async function compileAndPublish(uid: string): Promise<void> {
   const redis = getRedis();
 
-  // 1. Read identity memory (with mtime caching)
-  const identityDir = join(config.userDataDir, 'memory', 'identity');
-  const identity = await readMemoryDirCached(identityDir);
+  // 1. Read MEMORY.md (long-term identity)
+  const memoryMdPath = join(config.userDataDir, 'MEMORY.md');
+  let identity: string | null = null;
+  try {
+    identity = await readFile(memoryMdPath, 'utf-8');
+  } catch { /* no MEMORY.md yet */ }
 
-  // 2. Read semantic memory (with mtime caching)
-  const semanticDir = join(config.userDataDir, 'memory', 'semantic');
-  const semantic = await readMemoryDirCached(semanticDir);
-
-  // 3. Read episodic memory (last 3 days only, with mtime caching)
-  const episodicDir = join(config.userDataDir, 'memory', 'episodic');
-  const episodic = await readRecentMemoryDir(episodicDir, THREE_DAYS_MS);
+  // 2. Read category topic files (memory/*.md)
+  const categoryDir = join(config.userDataDir, 'memory');
+  const categories = await readMemoryDirCached(categoryDir);
 
   // 4. Read activity summary from Redis
   const summaryRaw = await redis.get(channels.summary(uid));
@@ -123,12 +120,8 @@ async function compileAndPublish(uid: string): Promise<void> {
     parts.push(`[User Identity]\n${truncate(identity, 400)}`);
   }
 
-  if (semantic) {
-    parts.push(`[Memory]\n${truncate(semantic, 300)}`);
-  }
-
-  if (episodic) {
-    parts.push(`[Recent Episodes]\n${truncate(episodic, 200)}`);
+  if (categories) {
+    parts.push(`[Topic Notes]\n${truncate(categories, 400)}`);
   }
 
   if (frame) {
@@ -263,28 +256,6 @@ async function readMemoryDirCached(dirPath: string): Promise<string | null> {
     memoryCache.set(dirPath, result);
 
     return result;
-  } catch {
-    return null;
-  }
-}
-
-/** Read only files modified within the given time window */
-async function readRecentMemoryDir(dirPath: string, maxAgeMs: number): Promise<string | null> {
-  try {
-    const files = await readdir(dirPath);
-    const now = Date.now();
-    const contents: string[] = [];
-
-    for (const f of files.filter((f) => f.endsWith('.md'))) {
-      const filePath = join(dirPath, f);
-      const fileStat = await stat(filePath);
-      if (now - fileStat.mtimeMs <= maxAgeMs) {
-        const text = await readFile(filePath, 'utf-8');
-        contents.push(text.trim());
-      }
-    }
-
-    return contents.join('\n') || null;
   } catch {
     return null;
   }

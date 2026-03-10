@@ -123,7 +123,7 @@ async function collectChangedFiles(sessionId: string, taskId: string): Promise<s
   const files: string[] = [];
   // Always sync the session result file
   files.push(join('sessions', sessionId, `${taskId}.json`));
-  // Sync MEMORY.md and diary files
+  // Sync MEMORY.md and category topic files
   files.push('MEMORY.md');
   try {
     const entries = await readdir(join(config.userDataDir, 'memory'));

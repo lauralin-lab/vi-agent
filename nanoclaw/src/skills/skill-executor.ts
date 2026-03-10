@@ -5,7 +5,7 @@ import { normalize, resolve } from 'node:path';
 import { config } from '../config.js';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { readUserFile, writeUserFile, listUserDir } from '../fs/user-fs.js';
-import { writeMemory, readMemory, appendDiary } from '../tools/memory-update.js';
+import { writeMemory, readMemory, writeCategoryFile, readAllCategories, listCategories } from '../tools/memory-update.js';
 import { oauthCall } from '../tools/oauth-call.js';
 import type { ExecRequest, CardOp } from '../channels/types.js';
 import type { LoadedSkill } from './types.js';
@@ -168,23 +168,22 @@ const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: 'memory_update',
     description:
-      'Update user memory. PROACTIVELY call this whenever you learn something new about the user — names, preferences, facts, corrections, decisions. Do NOT wait for the user to say "remember this". Two layers: long_term (permanent profile) and diary (today\'s notes).',
+      'Update user memory. PROACTIVELY call this whenever you learn something new about the user. Two layers: "long_term" for stable identity (MEMORY.md, user-visible) and topic categories for conversation notes (AI-managed, not user-visible).',
     input_schema: {
       type: 'object' as const,
       properties: {
-        layer: {
+        target: {
           type: 'string',
-          enum: ['long_term', 'diary'],
           description:
-            'long_term = confirmed facts/preferences → written to MEMORY.md (user-visible profile). diary = session notes/events → written to today\'s daily log.',
+            '"long_term" → rewrite MEMORY.md (stable identity: name, preferences, allergies). Any other value → category topic file (e.g. "装修", "饮食", "旅行"). Reuse existing categories when possible.',
         },
         content: {
           type: 'string',
           description:
-            'Content to write. For long_term: output the COMPLETE updated MEMORY.md (read current first with file_read). For diary: a single entry to append (## HH:MM — topic + bullets).',
+            'The COMPLETE updated content for the target file. For long_term: full MEMORY.md (read current first). For categories: full updated category file after intelligent merge — update conflicting entries, append new info, remove stale info.',
         },
       },
-      required: ['layer', 'content'],
+      required: ['target', 'content'],
     },
   },
   {
@@ -393,14 +392,14 @@ async function executeTool(
         return entries.join('\n') || '(empty directory)';
       }
       case 'memory_update': {
-        const layer = input.layer as 'long_term' | 'diary';
+        const target = input.target as string;
         const content = input.content as string;
-        if (layer === 'long_term') {
+        if (target === 'long_term') {
           await writeMemory(content);
           return 'MEMORY.md updated';
         } else {
-          await appendDiary(content);
-          return 'Diary entry appended';
+          await writeCategoryFile(target, content);
+          return `Category file updated: memory/${target}.md`;
         }
       }
       case 'oauth_call': {
@@ -595,36 +594,35 @@ export async function executeSkill(
 
   systemParts.push(skill.promptContent);
 
-  // Inject current MEMORY.md so Claude has user context + memory instructions
+  // Inject two-layer memory: MEMORY.md + category files
   let currentMemory = '';
   try {
     currentMemory = await readMemory();
   } catch { /* no memory yet */ }
 
+  let categorySection = '';
+  try {
+    const categories = await readAllCategories();
+    if (categories.size > 0) {
+      const catNames = [...categories.keys()];
+      const catEntries: string[] = [];
+      for (const [cat, content] of categories) {
+        catEntries.push(`### ${cat}\n${content}`);
+      }
+      categorySection = `已有主题：${catNames.join('、')}（优先复用已有主题）\n\n${catEntries.join('\n\n')}`;
+    }
+  } catch { /* no categories yet */ }
+
   systemParts.push(`\n---\n\n## Memory System
 
 You have a two-layer memory system. Use it PROACTIVELY — don't wait for the user to say "remember this".
 
-### Layer 1: MEMORY.md (long-term profile, user-visible)
+### 长期记忆 — 关于用户 (MEMORY.md, user-visible)
 ${currentMemory ? `Current content:\n\`\`\`\n${currentMemory}\n\`\`\`` : '(empty — no memories yet)'}
 
-**When to update:** You learn the user's name, preferences, corrections, important decisions, aesthetic taste, people they mention, or any fact they'd expect you to remember next time.
-
-**How to update:** Call memory_update with layer="long_term". You must output the COMPLETE updated file (read current with file_read first if needed). Format:
-
-\`\`\`
-# 关于我
-
-## 基本信息
-- 称呼：{name}
-- 语言：{language}
-
-## 偏好
-- {preference}
-
-## 审美风格
-- {style preference}
-\`\`\`
+**What belongs here:** Stable identity info that rarely changes — name, location, allergies, pets, occupation, language preference, aesthetic taste.
+**Analogy:** Things you'd re-tell a new AI assistant.
+**How to update:** Call memory_update with target="long_term". Output the COMPLETE updated MEMORY.md.
 
 Rules:
 - Write from user's perspective (first person: 我/I)
@@ -634,21 +632,28 @@ Rules:
 - Sections appear only when there's content — no empty sections
 - Stay under 2000 characters
 
-### Layer 2: Diary (daily notes, internal)
-Call memory_update with layer="diary" to log session details, one-time events, or low-confidence observations.
+### 主题记忆 — 对话积累 (category files, internal)
+${categorySection || '(no topics yet — create freely as needed)'}
+
+**What belongs here:** Conversation details, evolving preferences, project progress, specific needs — organized by topic.
+**Analogy:** Notes accumulated from many conversations with this AI.
+**How to update:** Call memory_update with target="{topic_name}" (e.g. "装修", "饮食", "旅行"). Output the COMPLETE updated file after intelligent merge:
+- New info → append
+- Conflicts with existing → update the old entry (latest wins)
+- Info clearly outdated → remove
+- Reuse existing topic names when possible; create new ones freely when needed
 
 ### What to remember proactively:
 - User corrections ("不要用 npm，用 pnpm") → MUST record immediately
-- Names, relationships ("我老婆叫小李")
-- Preferences that affect future interactions ("回复用中文")
-- Important dates/deadlines
-- Aesthetic/style preferences
-- Key decisions
+- Names, relationships ("我老婆叫小李") → long_term
+- Stable preferences ("回复用中文") → long_term
+- Project details, evolving preferences → category topic file
+- Important dates/deadlines → category or long_term depending on permanence
 
 ### What NOT to record:
 - One-time query results
 - Sensitive credentials (passwords, tokens)
-- Temporary states ("今天很累")
+- Temporary emotional states ("今天很累")
 `);
 
   // Add template registry context so the AI knows available templates
