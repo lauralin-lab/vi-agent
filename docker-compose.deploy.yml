@@ -16,3 +16,9 @@ services:
 
   frontend:
     image: collov/vi-agent-frontend:${IMAGE_TAG:-latest}
+
+  admin-server:
+    image: collov/vi-agent-admin-server:${IMAGE_TAG:-latest}
+
+  admin-web:
+    image: collov/vi-agent-admin-web:${IMAGE_TAG:-latest}

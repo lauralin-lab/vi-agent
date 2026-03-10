@@ -107,6 +107,8 @@ async def get_current_user_or_device(
             )
             user = result.scalar_one_or_none()
             if user is not None:
+                if not user.is_active:
+                    raise HTTPException(status_code=403, detail={"code": "user_disabled", "message": "Account disabled"})
                 return user
 
     # 3. Device auth via query param
@@ -116,6 +118,8 @@ async def get_current_user_or_device(
         )
         user = result.scalar_one_or_none()
         if user is not None:
+            if not user.is_active:
+                raise HTTPException(status_code=403, detail={"code": "user_disabled", "message": "Account disabled"})
             return user
 
     raise HTTPException(

@@ -163,6 +163,62 @@ services:
     networks:
       - vi-network
 
+  # --- Admin Backend ---
+  admin-server:
+    build:
+      context: ./admin-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vi}:${POSTGRES_PASSWORD:-vi_secret_change_me}@postgres:5432/${POSTGRES_DB:-vi_db}
+      CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3001}
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
+      FIREBASE_PROJECTS: ${FIREBASE_PROJECTS:-}
+    volumes:
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vi-network
+
+  # --- Admin Frontend ---
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+      args:
+        VITE_ADMIN_API_URL: ""
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_PACKAGE_NAME: ${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web}
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_WEB_PORT:-3001}:80"
+    depends_on:
+      - admin-server
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vi-network
+
   # --- Frontend ---
   frontend:
     build:

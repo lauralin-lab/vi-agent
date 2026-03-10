@@ -87,6 +87,8 @@ async def _validate_invite_code(db: AsyncSession, code: str) -> tuple[bool, str 
 
     if invite is None:
         return False, "not_found", None
+    if invite.is_deleted:
+        return False, "not_found", None
     if not invite.is_active:
         return False, "disabled", None
     if invite.expires_at is not None and invite.expires_at < datetime.now(timezone.utc):
