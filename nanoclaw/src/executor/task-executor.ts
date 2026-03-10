@@ -5,7 +5,6 @@ import { executeSkill } from '../skills/skill-executor.js';
 import { syncToCloud } from '../fs/cloud-sync.js';
 import { readFileOrNull } from '../fs/user-fs.js';
 import { config } from '../config.js';
-import { triggerMemoryUpdate } from './memory-hook.js';
 import { requestContext } from '../channels/request-context.js';
 import { getSessionCardState } from '../persistence/card-store.js';
 import type { ExecRequest } from '../channels/types.js';
@@ -66,11 +65,6 @@ export async function executeTask(request: ExecRequest): Promise<void> {
     const changedFiles = await collectChangedFiles(request.sessionId, request.taskId);
     syncToCloud(changedFiles, userId).catch((err) => {
       console.error('[task-executor] post-task sync failed:', err);
-    });
-
-    // Post-task memory hook: summarize → diary → promote to MEMORY.md
-    triggerMemoryUpdate(request.prompt, result).catch((err) => {
-      console.warn('[task-executor] memory hook failed (non-blocking):', err);
     });
 
     console.log(`[task-executor] completed task ${request.taskId} (${Date.now() - startTime}ms)`);
