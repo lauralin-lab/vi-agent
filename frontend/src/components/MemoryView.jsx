@@ -1,12 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Check, X, Trash2, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
+import { Plus, Check, X, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import { parseMemoryMarkdown, serializeMemoryCards } from '../utils/memory-parser';
 import { IOS_SPRING } from '../constants';
-
-const DELETE_LABELS = { zh: '删除？', ja: '削除？', ko: '삭제?', fr: 'Supprimer ?', es: '¿Eliminar?', de: 'Löschen?' };
-const getDeleteLabel = () => DELETE_LABELS[navigator.language?.slice(0, 2).toLowerCase()] || 'Delete?';
 
 // ── Memory Cards (dynamic card UI parsed from MEMORY.md) ──
 // Used standalone AND embedded in SettingsView profile page.
@@ -203,12 +200,17 @@ function SectionCard({ section, sectionIdx, onEditItem, onDeleteItem, onAddItem 
   );
 }
 
-// ── Single Memory Item ──
+// ── Single Memory Item (swipe-to-delete + tap-to-edit) ──
+const DELETE_ZONE_WIDTH = 72;
+const SWIPE_THRESHOLD = 40;
+
 function MemoryItem({ value, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [editValue, setEditValue] = useState(value);
+  const [showDelete, setShowDelete] = useState(false);
   const inputRef = useRef(null);
+  const dragX = useMotionValue(0);
+  const deleteOpacity = useTransform(dragX, [-DELETE_ZONE_WIDTH, -SWIPE_THRESHOLD, 0], [1, 0.5, 0]);
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -225,6 +227,28 @@ function MemoryItem({ value, onEdit, onDelete }) {
     setEditing(false);
   };
 
+  const handleDragEnd = (_, info) => {
+    if (info.offset.x < -SWIPE_THRESHOLD) {
+      // Snap open to reveal delete zone
+      animate(dragX, -DELETE_ZONE_WIDTH, { type: 'spring', stiffness: 400, damping: 35 });
+      setShowDelete(true);
+    } else {
+      // Snap back
+      animate(dragX, 0, { type: 'spring', stiffness: 400, damping: 35 });
+      setShowDelete(false);
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    onDelete();
+    setShowDelete(false);
+  };
+
+  const handleCloseSwipe = () => {
+    animate(dragX, 0, { type: 'spring', stiffness: 400, damping: 35 });
+    setShowDelete(false);
+  };
+
   if (editing) {
     return (
       <motion.div
@@ -236,25 +260,24 @@ function MemoryItem({ value, onEdit, onDelete }) {
           ref={inputRef}
           value={editValue}
           onChange={e => setEditValue(e.target.value)}
+          onBlur={handleSave}
           onKeyDown={e => {
-            if (e.key === 'Enter') handleSave();
+            if (e.key === 'Enter') { e.target.blur(); }
             if (e.key === 'Escape') { setEditValue(value); setEditing(false); }
           }}
           className="flex-1 px-2 py-1 rounded-lg focus:outline-none"
           style={{
             fontSize: 14, color: '#000', background: 'rgba(0,0,0,0.03)',
-            border: '1px solid rgba(0,0,0,0.08)',
+            border: '1px solid rgba(0,122,255,0.3)',
           }}
         />
-        <button onClick={handleSave}
-          className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
-          style={{ color: 'rgba(52,199,89,0.8)' }}>
-          <Check size={14} />
-        </button>
-        <button onClick={() => { setEditValue(value); setEditing(false); }}
-          className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
-          style={{ color: 'rgba(0,0,0,0.3)' }}>
-          <X size={14} />
+        <button
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleSave}
+          className="shrink-0 px-2 py-0.5 rounded-md active:opacity-70 transition-opacity"
+          style={{ color: 'rgb(0,122,255)', fontSize: 14, fontWeight: 500 }}
+        >
+          Done
         </button>
       </motion.div>
     );
@@ -265,42 +288,55 @@ function MemoryItem({ value, onEdit, onDelete }) {
       layout
       exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
       transition={IOS_SPRING}
-      className="group flex items-center gap-2 py-1.5"
-      style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}
+      style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid rgba(0,0,0,0.04)' }}
     >
-      <span className="shrink-0" style={{ color: 'rgba(0,0,0,0.2)', fontSize: 10 }}>●</span>
-      <span
-        className="flex-1 cursor-pointer"
-        onClick={() => { setEditValue(value); setEditing(true); }}
-        style={{ fontSize: 14, color: 'rgba(0,0,0,0.75)', lineHeight: 1.5 }}
+      {/* Delete zone (behind content) */}
+      <motion.div
+        style={{
+          position: 'absolute', right: 0, top: 0, bottom: 0,
+          width: DELETE_ZONE_WIDTH,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+          background: 'rgba(255,59,48,0.9)',
+          borderRadius: '0 0 0 0',
+          opacity: deleteOpacity,
+        }}
       >
-        {value}
-      </span>
-      {confirming ? (
-        <div className="flex items-center gap-1 shrink-0">
-          <span style={{ fontSize: 12, color: 'rgba(255,59,48,0.7)' }}>
-            {getDeleteLabel()}
-          </span>
-          <button onClick={() => { onDelete(); setConfirming(false); }}
-            className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
-            style={{ color: 'rgba(255,59,48,0.7)' }}>
-            <Check size={13} />
-          </button>
-          <button onClick={() => setConfirming(false)}
-            className="p-1 rounded-full hover:bg-black/[0.04] transition-colors"
-            style={{ color: 'rgba(0,0,0,0.3)' }}>
-            <X size={13} />
-          </button>
-        </div>
-      ) : (
         <button
-          onClick={() => setConfirming(true)}
-          className="p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ color: 'rgba(255,59,48,0.6)' }}
+          onClick={handleDeleteConfirm}
+          className="flex items-center justify-center w-full h-full"
+          style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}
         >
-          <Trash2 size={13} />
+          Delete
         </button>
-      )}
+      </motion.div>
+
+      {/* Swipeable content row */}
+      <motion.div
+        drag="x"
+        dragDirectionLock
+        dragConstraints={{ left: -DELETE_ZONE_WIDTH, right: 0 }}
+        dragElastic={0.1}
+        onDragEnd={handleDragEnd}
+        style={{ x: dragX, background: '#fff', position: 'relative', zIndex: 1 }}
+        className="flex items-center gap-2 py-1.5"
+        onClick={() => {
+          // Only enter edit if not swiped open
+          if (!showDelete) {
+            setEditValue(value);
+            setEditing(true);
+          } else {
+            handleCloseSwipe();
+          }
+        }}
+      >
+        <span className="shrink-0" style={{ color: 'rgba(0,0,0,0.2)', fontSize: 10 }}>●</span>
+        <span
+          className="flex-1 cursor-pointer select-none"
+          style={{ fontSize: 14, color: 'rgba(0,0,0,0.75)', lineHeight: 1.5 }}
+        >
+          {value}
+        </span>
+      </motion.div>
     </motion.div>
   );
 }
