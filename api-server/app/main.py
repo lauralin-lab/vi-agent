@@ -16,6 +16,7 @@ from .config import settings
 from .limiter import limiter
 from .models import Session, engine, init_db
 from .routes.auth import router as auth_router
+from .routes.invite import router as invite_router
 from .routes.devices import router as devices_router
 from .routes.events import router as events_router
 from .routes.fs import router as fs_router
@@ -156,6 +157,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(invite_router, prefix="/api/invite", tags=["invite"])
 app.include_router(devices_router, prefix="/api/devices", tags=["devices"])
 app.include_router(internal_router, prefix="/api/internal", tags=["internal"])
 app.include_router(livekit_router, prefix="/api/livekit", tags=["livekit"])

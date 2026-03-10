@@ -1,3 +1,6 @@
+import { useState, useEffect } from 'react';
+import { api } from '../services/api';
+
 const GOOGLE_ICON = (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
     <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
@@ -13,7 +16,31 @@ const APPLE_ICON = (
   </svg>
 );
 
-export default function LoginPage({ onLoginWithGoogle, error }) {
+export default function LoginPage({ onLoginWithGoogle, error, needsInviteCode }) {
+  const [inviteCode, setInviteCode] = useState(
+    () => localStorage.getItem('pending_invite_code') || ''
+  );
+  const [inviteRequired, setInviteRequired] = useState(null);
+
+  useEffect(() => {
+    api.getInviteStatus()
+      .then((data) => setInviteRequired(data.invite_required))
+      .catch(() => setInviteRequired(false));
+  }, []);
+
+  // Show invite input once config is loaded (required or optional)
+  const showInviteInput = needsInviteCode || inviteRequired !== null;
+
+  const handleInviteChange = (e) => {
+    const code = e.target.value.toUpperCase();
+    setInviteCode(code);
+    if (code.trim()) {
+      localStorage.setItem('pending_invite_code', code.trim());
+    } else {
+      localStorage.removeItem('pending_invite_code');
+    }
+  };
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
       {/* Background image */}
@@ -36,7 +63,21 @@ export default function LoginPage({ onLoginWithGoogle, error }) {
           <p className="text-red-400 text-sm text-center mb-4">{error}</p>
         )}
 
-        {/* Buttons */}
+        {/* Invite code input */}
+        {showInviteInput && (
+          <div className="mb-6">
+            <input
+              type="text"
+              value={inviteCode}
+              onChange={handleInviteChange}
+              placeholder={inviteRequired ? 'Invite code (required for new users)' : 'Invite code (optional)'}
+              maxLength={32}
+              className="w-full px-4 py-3.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white placeholder-white/40 text-[15px] outline-none focus:border-white/50 transition-colors"
+            />
+          </div>
+        )}
+
+        {/* Login Buttons — always visible */}
         <div className="flex flex-col gap-3">
           <button
             className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-full bg-white text-black font-medium text-[15px] active:scale-[0.98] transition-transform"

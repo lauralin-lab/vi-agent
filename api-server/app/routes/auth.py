@@ -16,6 +16,7 @@ from ..models import User
 from ..services.user_center import generate_vi_user_id
 
 from ..limiter import limiter
+from .invite import consume_invite_code, is_invite_required
 
 router = APIRouter()
 
@@ -30,6 +31,7 @@ class FirebaseAuthResponse(BaseModel):
     sign_in_provider: str | None
     language: str | None
     is_new_user: bool
+    invite_required: bool = False
 
 
 class UserResponse(BaseModel):
@@ -64,6 +66,7 @@ async def create_or_login_user(
     package_name = request.headers.get("package-name")
     app_version = request.headers.get("app-version", "")
     language = request.headers.get("accept-language", "en")[:10]
+    invite_code = request.headers.get("invite-code", "").strip()
 
     if not id_token or not package_name:
         raise HTTPException(status_code=401, detail="Missing id-token or package-name")
@@ -85,6 +88,11 @@ async def create_or_login_user(
     is_new_user = user is None
 
     if is_new_user:
+        # Invite code check for new users
+        invite_req = await is_invite_required(db)
+        if invite_req and not invite_code:
+            raise HTTPException(status_code=403, detail="Invite code required")
+
         # Get full user info from Firebase
         firebase_user = await firebase_mgr.get_user(package_name, firebase_uid)
 
@@ -113,6 +121,12 @@ async def create_or_login_user(
             last_login=datetime.now(timezone.utc),
         )
         db.add(user)
+        await db.flush()  # get user.id before consuming invite code
+
+        # Consume invite code (validate + create record + increment used_count)
+        if invite_code:
+            await consume_invite_code(db, invite_code, invitee_id=user.id)
+
         await db.commit()
         await db.refresh(user)
     else:
@@ -132,6 +146,7 @@ async def create_or_login_user(
         sign_in_provider=user.sign_in_provider,
         language=user.language,
         is_new_user=is_new_user,
+        invite_required=invite_req if is_new_user else await is_invite_required(db),
     )
 
 

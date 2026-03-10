@@ -24,5 +24,8 @@ class Settings:
     FIREBASE_ENABLED: bool = os.getenv("FIREBASE_ENABLED", "false").lower() in ("true", "1", "yes")
     FIREBASE_PROJECTS: str = os.getenv("FIREBASE_PROJECTS", "")
 
+    # Invite Code System
+    INVITE_REQUIRED: bool = os.getenv("INVITE_REQUIRED", "false").lower() in ("true", "1", "yes")
+
 
 settings = Settings()

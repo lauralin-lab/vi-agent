@@ -220,6 +220,78 @@ class OAuthToken(Base):
     )
 
 
+class InviteCode(Base):
+    __tablename__ = "invite_codes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = Column(String(32), unique=True, nullable=False, index=True)
+    creator_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    max_uses = Column(Integer, nullable=True)
+    used_count = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    note = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    creator = relationship("User", foreign_keys=[creator_id])
+    records = relationship("InviteRecord", back_populates="invite_code")
+
+
+class InviteRecord(Base):
+    __tablename__ = "invite_records"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invite_code_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("invite_codes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    inviter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    invitee_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    invite_code = relationship("InviteCode", back_populates="records")
+    inviter = relationship("User", foreign_keys=[inviter_id])
+    invitee = relationship("User", foreign_keys=[invitee_id])
+
+
+class Setting(Base):
+    """System settings — key-value configuration stored in database."""
+    __tablename__ = "settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)
+    note = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 async def init_db():
     """Validate database connectivity on startup.
 

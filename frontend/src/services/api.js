@@ -296,6 +296,16 @@ class ApiClient {
     return this.request(`/api/tokens/${encodeURIComponent(provider)}`, { method: 'DELETE' });
   }
 
+  // Invite code endpoints
+
+  async getInviteStatus() {
+    return this.request('/api/invite/status');
+  }
+
+  async validateInviteCode(code) {
+    return this.request(`/api/invite/validate?code=${encodeURIComponent(code)}`);
+  }
+
   async logout() {
     try {
       const { auth, signOut } = await import('./firebase.js');
