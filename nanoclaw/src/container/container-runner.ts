@@ -192,13 +192,22 @@ export async function runContainerAgent(
 ): Promise<ContainerOutput> {
   const startTime = Date.now();
 
+  // Convert local /uploads/ URLs to container-accessible paths
+  // Local uploads are stored at {userDataDir}/uploads/ and mounted at /workspace/user-data/
+  const resolvedMediaUrls = request.mediaUrls?.map((url) => {
+    if (url.startsWith('/uploads/')) {
+      return `/workspace/user-data${url}`;
+    }
+    return url;
+  });
+
   const containerInput: ContainerInput = {
     prompt: request.prompt,
     userId: request.userId ?? config.userId,
     sessionId: request.sessionId,
     taskId: request.taskId,
     skillSlug: request.skillSlug,
-    mediaUrls: request.mediaUrls,
+    mediaUrls: resolvedMediaUrls,
     context: request.context,
     skillPrompt: request.skillPrompt,
     packageId: request.packageId,

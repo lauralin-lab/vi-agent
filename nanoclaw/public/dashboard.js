@@ -41,6 +41,110 @@
     return div.innerHTML;
   }
 
+  /** Convert markdown text to sanitized HTML for display */
+  function markdownToHtml(text) {
+    if (!text) return '';
+    const lines = text.split('\n');
+    const out = [];
+    let i = 0;
+    let inList = false;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Fenced code block
+      if (line.startsWith('```')) {
+        if (inList) { out.push('</ul>'); inList = false; }
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !lines[i].startsWith('```')) {
+          codeLines.push(escapeHtml(lines[i]));
+          i++;
+        }
+        i++; // skip closing
+        out.push('<pre><code>' + codeLines.join('\n') + '</code></pre>');
+        continue;
+      }
+
+      // Heading
+      const hm = line.match(/^(#{1,3})\s+(.+)/);
+      if (hm) {
+        if (inList) { out.push('</ul>'); inList = false; }
+        const lvl = hm[1].length;
+        out.push('<h' + lvl + '>' + inlineMd(hm[2]) + '</h' + lvl + '>');
+        i++; continue;
+      }
+
+      // Horizontal rule
+      if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        if (inList) { out.push('</ul>'); inList = false; }
+        out.push('<hr>');
+        i++; continue;
+      }
+
+      // Blockquote
+      if (line.startsWith('>')) {
+        if (inList) { out.push('</ul>'); inList = false; }
+        const qLines = [];
+        while (i < lines.length && lines[i].startsWith('>')) {
+          qLines.push(lines[i].replace(/^>\s?/, ''));
+          i++;
+        }
+        out.push('<blockquote>' + qLines.map(l => inlineMd(l)).join('<br>') + '</blockquote>');
+        continue;
+      }
+
+      // List item
+      if (/^\s*[-*+]\s/.test(line)) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + inlineMd(line.replace(/^\s*[-*+]\s+/, '')) + '</li>');
+        i++; continue;
+      }
+
+      // Numbered list
+      if (/^\s*\d+\.\s/.test(line)) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + inlineMd(line.replace(/^\s*\d+\.\s+/, '')) + '</li>');
+        i++; continue;
+      }
+
+      // Close list if we hit non-list content
+      if (inList) { out.push('</ul>'); inList = false; }
+
+      // Empty line
+      if (!line.trim()) { i++; continue; }
+
+      // Paragraph
+      out.push('<p>' + inlineMd(line) + '</p>');
+      i++;
+    }
+    if (inList) out.push('</ul>');
+    return out.join('\n');
+  }
+
+  /** Inline markdown: bold, italic, code, links */
+  function inlineMd(text) {
+    return escapeHtml(text)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+
+  /** Deduplicate text that was accidentally concatenated (e.g. "Hello worldHello world" → "Hello world") */
+  function deduplicateText(text) {
+    if (!text || text.length < 20) return text;
+    // Check if the text is a repeated pattern
+    const half = Math.floor(text.length / 2);
+    for (let len = half; len >= Math.min(20, half); len--) {
+      const candidate = text.slice(0, len);
+      if (text.startsWith(candidate + candidate)) {
+        return candidate;
+      }
+    }
+    return text;
+  }
+
   function formatTime(ts) {
     return new Date(ts).toLocaleTimeString();
   }
@@ -457,6 +561,7 @@
       // Feed to chat if it's a stream event
       if (channel === 'stream' && data) {
         handleChatEvent(data);
+        handlePlaygroundEvent(data);
       }
     };
 
@@ -912,17 +1017,45 @@
     const iframeId = 'card-iframe-' + (card.cardId || Math.random().toString(36).slice(2));
 
     // Thinking process cards — keep inline (no need for iframe)
-    if (card.template === 'thinking-process' || card.template === 'thinking_process') {
+    if (card.template === 'thinking-process' || card.template === 'thinking_process' || card.template === 'thinking') {
       const title = card.data.title || 'Thinking...';
-      const steps = card.data.steps || [];
+      let steps = card.data.steps || [];
+      // Handle concatenated JSON string from legacy stream_to_card (e.g. '{"label":"A",...}{"label":"B",...}')
+      if (typeof steps === 'string') {
+        try {
+          steps = steps.replace(/\}\s*\{/g, '}|||{').split('|||').map(s => JSON.parse(s)).filter(Boolean);
+        } catch { steps = []; }
+      }
+      const conclusion = card.data.conclusion || card.data.content || '';
+      // Deduplicate conclusion if it was concatenated during streaming
+      const cleanConclusion = deduplicateText(conclusion);
+
+      let stepsHtml = '';
+      if (steps.length > 0) {
+        // Deduplicate steps (remove entries with identical label+status)
+        const seen = new Set();
+        const uniqueSteps = steps.filter(s => {
+          const key = (s.label || '') + ':' + (s.status || '');
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        stepsHtml = uniqueSteps.map(s => {
+          const icon = s.status === 'done' ? '✓' : s.status === 'active' ? '◉' : '○';
+          const cls = s.status === 'done' ? 'done' : s.status === 'active' ? 'active' : '';
+          return '<div class="chat-card-step ' + cls + '">' +
+            '<span class="chat-card-step-icon">' + icon + '</span>' +
+            '<div>' +
+            '<div class="chat-card-step-label">' + escapeHtml(s.label || '') + '</div>' +
+            (s.content ? '<div class="chat-card-step-content">' + escapeHtml(s.content) + '</div>' : '') +
+            '</div></div>';
+        }).join('');
+      }
+
       return '<div class="chat-card-rendered chat-card-thinking">' +
         '<div class="chat-card-header">' + escapeHtml(title) + ' ' + statusBadge + toggle + '</div>' +
-        steps.map(s =>
-          '<div class="chat-card-step">' +
-          '<div class="chat-card-step-label">' + escapeHtml(s.label || '') + '</div>' +
-          '<div class="chat-card-step-content">' + escapeHtml(s.content || '') + '</div>' +
-          '</div>'
-        ).join('') +
+        stepsHtml +
+        (cleanConclusion ? '<div class="chat-card-conclusion">' + markdownToHtml(cleanConclusion) + '</div>' : '') +
         '</div>';
     }
 
@@ -1356,8 +1489,8 @@
       '<span class="badge badge-green">v' + escapeHtml(manifest.version || '?') + '</span>' +
       '</div></div></div>' +
       '<div class="pkg-detail-tabs">' +
-      '<button class="pkg-detail-tab' + (pkgActiveTab === 'info' ? ' active' : '') + '" data-tab="info">Info</button>' +
-      '<button class="pkg-detail-tab' + (pkgActiveTab === 'playground' ? ' active' : '') + '" data-tab="playground">Playground</button>' +
+      '<button class="pkg-detail-tab' + (pkgActiveTab === 'info' ? ' active' : '') + '" data-tab="info">ℹ️ Info</button>' +
+      '<button class="pkg-detail-tab' + (pkgActiveTab === 'playground' ? ' active' : '') + '" data-tab="playground">▶ Playground</button>' +
       '</div>' +
       '<div class="pkg-detail-content" id="pkg-detail-content"></div>';
 
@@ -1381,10 +1514,10 @@
     html += '<div class="pkg-info-section"><div class="pkg-info-label">Description</div>' +
       '<div class="pkg-info-value">' + escapeHtml(m.description || 'No description') + '</div></div>';
 
-    // Instruction
+    // Instruction (rendered as markdown)
     if (pkg.instructionPrompt) {
       html += '<div class="pkg-info-section"><div class="pkg-info-label">Instruction Prompt</div>' +
-        '<div class="pkg-info-code">' + escapeHtml(pkg.instructionPrompt.slice(0, 2000)) + '</div></div>';
+        '<div class="pkg-info-md">' + markdownToHtml(pkg.instructionPrompt) + '</div></div>';
     }
 
     // Templates
@@ -1407,9 +1540,11 @@
         ).join('') + '</div></div>';
     }
 
-    // Manifest JSON
-    html += '<div class="pkg-info-section"><div class="pkg-info-label">Manifest (JSON)</div>' +
-      '<div class="json-view">' + escapeHtml(JSON.stringify(m, null, 2)) + '</div></div>';
+    // Manifest JSON (collapsible)
+    html += '<div class="pkg-info-section">' +
+      '<div class="pkg-info-label" style="cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'\':\'none\'">' +
+      'Manifest (JSON) ▸</div>' +
+      '<div class="json-view" style="display:none;border:none;border-radius:0">' + escapeHtml(JSON.stringify(m, null, 2)) + '</div></div>';
 
     html += '</div>';
     content.innerHTML = html;
@@ -1433,12 +1568,12 @@
       '</div>' +
       '<div class="pkg-playground-chat">' +
       '<div class="pkg-playground-messages" id="pkg-messages">' +
-      '<div class="chat-empty">Test this package by sending a message</div>' +
+      '<div class="chat-empty"><span style="font-size:28px;margin-bottom:4px">💬</span>Send a message to test this package</div>' +
       '</div>' +
-      '<div class="chat-input-area">' +
-      '<div class="pkg-media-area" id="pkg-media-area">Drop files here or click to upload</div>' +
+      '<div class="chat-input-area" style="border-top:1px solid var(--border);padding:10px 14px">' +
+      '<div class="pkg-media-area" id="pkg-media-area">📎 Drop files here or click to upload</div>' +
       '<div class="pkg-media-previews" id="pkg-media-previews"></div>' +
-      '<div class="chat-input-row">' +
+      '<div class="chat-input-row" style="padding:0;border:none">' +
       '<button class="btn-icon chat-add-btn" id="pkg-add-btn" title="Attach files">+</button>' +
       '<input type="text" id="pkg-chat-input" placeholder="Test this package..." autocomplete="off">' +
       '<button class="btn btn-primary" id="pkg-chat-send">Send</button>' +
@@ -1597,6 +1732,72 @@
     } catch (err) {
       assistDiv.querySelector('.chat-bubble').innerHTML = '<span style="color:var(--red)">Error: ' + escapeHtml(err.message) + '</span>';
     }
+  }
+
+  // ── Playground SSE Event Handler ──
+  function handlePlaygroundEvent(data) {
+    if (!pkgPlaygroundTaskId) return;
+    if (data.taskId && data.taskId !== pkgPlaygroundTaskId) return;
+
+    const msgs = $('pkg-messages');
+    if (!msgs) return;
+    const assistBubble = msgs.querySelector('.chat-msg.assistant:last-child .chat-bubble');
+    if (!assistBubble) return;
+
+    if (data.op) {
+      // Card operations for playground
+      const cardId = data.cardId;
+      if (data.op === 'create_card') {
+        pkgPlaygroundCards[cardId] = { cardId, template: data.template, data: { ...data.data }, status: 'streaming' };
+      } else if (data.op === 'stream_to_card' && pkgPlaygroundCards[cardId]) {
+        const prev = pkgPlaygroundCards[cardId].data[data.slot] || '';
+        pkgPlaygroundCards[cardId].data[data.slot] = prev + data.chunk;
+      } else if (data.op === 'append_to_card' && pkgPlaygroundCards[cardId]) {
+        const arr = pkgPlaygroundCards[cardId].data[data.slot] || [];
+        pkgPlaygroundCards[cardId].data[data.slot] = arr.concat(data.items);
+      } else if (data.op === 'replace_card' && pkgPlaygroundCards[cardId]) {
+        pkgPlaygroundCards[cardId].template = data.template;
+        pkgPlaygroundCards[cardId].data = { ...data.data };
+      } else if (data.op === 'finalize_card' && pkgPlaygroundCards[cardId]) {
+        pkgPlaygroundCards[cardId].status = 'finalized';
+      } else if (data.op === 'html_stream') {
+        if (!pkgPlaygroundCards[cardId]) {
+          pkgPlaygroundCards[cardId] = { cardId, template: 'html_stream', data: { html: '' }, status: 'streaming' };
+        }
+        pkgPlaygroundCards[cardId].data.html = (pkgPlaygroundCards[cardId].data.html || '') + data.chunk;
+        if (data.done) pkgPlaygroundCards[cardId].status = 'finalized';
+      }
+      renderPlaygroundCards(assistBubble);
+    } else if (data.type === 'exec_progress') {
+      assistBubble.innerHTML = '<span class="assistant-thinking">' + escapeHtml(data.message || 'Processing...') + '</span>';
+    } else if (data.type === 'exec_result') {
+      renderPlaygroundCards(assistBubble);
+      if (Object.keys(pkgPlaygroundCards).length === 0) {
+        assistBubble.innerHTML = markdownToHtml(data.summary || 'Done');
+      }
+      pkgPlaygroundTaskId = null;
+      pkgPlaygroundCards = {};
+    } else if (data.type === 'exec_error') {
+      assistBubble.innerHTML = '<span style="color:var(--red)">' + escapeHtml(data.error || 'Error') + '</span>';
+      pkgPlaygroundTaskId = null;
+      pkgPlaygroundCards = {};
+    }
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function renderPlaygroundCards(container) {
+    const ids = Object.keys(pkgPlaygroundCards);
+    if (ids.length === 0) return;
+    let html = '';
+    for (const id of ids) {
+      const card = pkgPlaygroundCards[id];
+      try {
+        html += renderCardVisual(card);
+      } catch {
+        html += renderCardRaw(card);
+      }
+    }
+    container.innerHTML = html;
   }
 
   // ══════════════════════════════════════════════════════════════

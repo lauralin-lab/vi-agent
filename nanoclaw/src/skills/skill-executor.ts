@@ -71,6 +71,22 @@ async function streamToCard(
   });
 }
 
+async function appendToCard(
+  taskId: string,
+  cardId: string,
+  slot: string,
+  items: unknown[],
+): Promise<void> {
+  await publishCardOp({
+    op: 'append_to_card',
+    taskId,
+    cardId,
+    slot,
+    items,
+    timestamp: new Date().toISOString(),
+  });
+}
+
 async function finalizeCard(taskId: string, cardId: string): Promise<void> {
   await publishCardOp({
     op: 'finalize_card',
@@ -754,18 +770,18 @@ This is critical — present results as a structured card, not plain text in you
         // Emit thinking step from manifest or generic fallback
         if (stepIndex < predefinedSteps.length) {
           const step = predefinedSteps[stepIndex];
-          await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+          await appendToCard(taskId, thinkingCardId!, 'steps', [{
             label: step.label,
             content: step.content || '',
             status: 'active',
-          }));
+          }]);
           stepIndex++;
         } else {
-          await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+          await appendToCard(taskId, thinkingCardId!, 'steps', [{
             label: turnCount === 1 ? 'Analyzing' : `Processing (step ${turnCount})`,
             content: '',
             status: 'active',
-          }));
+          }]);
         }
       }
 
@@ -874,20 +890,20 @@ This is critical — present results as a structured card, not plain text in you
       // Emit any remaining pre-defined steps as "done"
       while (stepIndex < predefinedSteps.length) {
         const step = predefinedSteps[stepIndex];
-        await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
+        await appendToCard(taskId, thinkingCardId, 'steps', [{
           label: step.label,
           content: step.content || '',
           status: 'done',
-        }));
+        }]);
         stepIndex++;
       }
 
       // Final completion step
-      await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
+      await appendToCard(taskId, thinkingCardId, 'steps', [{
         label: 'Complete',
         content: 'Analysis finished.',
         status: 'done',
-      }));
+      }]);
       await finalizeCard(taskId, thinkingCardId);
     }
 

@@ -32,7 +32,7 @@ export const config = {
   apiServerUrl: optional('API_SERVER_URL', 'http://localhost:8000'),
 
   // Internal API auth token
-  internalApiToken: optional('INTERNAL_API_TOKEN', 'nanoclaw'),
+  internalApiToken: optional('INTERNAL_API_TOKEN', 'vi-internal-dev-token'),
 
   // Health endpoint
   healthPort: parseInt(optional('HEALTH_PORT', '3100'), 10),
