@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:rive_rolls_collection/common.dart';
 
-import '../../../../app.dart';
 import '../../../../service/global_provider.dart';
 import '../../../../service/network/api_service.dart';
 import '../../../models/live_kit_action_model.dart';
@@ -16,12 +15,9 @@ import 'live_kit_connection_state.dart';
 import 'live_kit_room_service.dart';
 import 'media_hardware_controller.dart';
 
-/// 模拟用户获取失败的开关（仅 debug 使用）
-bool kSimulateAuthFailure = false;
-
 /// liveKit 控制器定义
 final liveKitControllerProvider = Provider<LiveKitController>(
-  (ref) => LiveKitController(ref),
+      (ref) => LiveKitController(ref),
   name: 'liveKitControllerProvider',
 );
 
@@ -95,43 +91,12 @@ class LiveKitController {
       }
     });
 
-    // auth 状态监听 → 成功获取 token，失败则标记 failed
+    // auth 就绪 → 获取 token（仅一次）
     ref.listen(onAuthChangedProvider, (_, next) {
-      next.when(
-        data: (authInfo) {
-          // 模拟失败（debug 开关）
-          if (kSimulateAuthFailure) {
-            loge('[LiveKit] Simulated auth failure');
-            _transitionTo(LiveKitConnectionState.failed);
-            return;
-          }
-          if (!authInfo.logged) {
-            // Firebase 认证失败或用户未登录
-            loge('[LiveKit] Auth not logged in, marking failed');
-            _transitionTo(LiveKitConnectionState.failed);
-            return;
-          }
-          if (authInfo.self != null) {
-            // 认证成功 + 用户信息已加载 → 获取房间 token
-            _fetchRoomInfoIfNeeded();
-          }
-        },
-        error: (err, _) {
-          loge('[LiveKit] Auth provider error: $err');
-          _transitionTo(LiveKitConnectionState.failed);
-        },
-        loading: () {
-          // 仍在加载，不做任何操作
-        },
-      );
-    });
-
-    // 监听用户查询失败（userCompleter 异常完成时标记 failed）
-    App().auth.userCompleter.future.then((_) {
-      // 用户查询成功，不需要额外处理（auth stream 会发出带 self 的 AuthInfo）
-    }).catchError((err) {
-      loge('[LiveKit] User query failed: $err');
-      _transitionTo(LiveKitConnectionState.failed);
+      final resp = next.maybeWhen(data: (value) => value, orElse: () => null);
+      if (resp != null && resp.self != null) {
+        _fetchRoomInfoIfNeeded();
+      }
     });
   }
 

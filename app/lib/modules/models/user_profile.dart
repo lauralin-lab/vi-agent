@@ -20,7 +20,7 @@ class SelfProfile {
 
   static SelfProfile? fromUserProfile(UserProfile? profile) {
     if (profile == null) return null;
-    return SelfProfile(profile.userId, profile.displayName, profile.photoUrl, profile.firebaseUid);
+    return SelfProfile(profile.viUserId, profile.displayName, profile.photoUrl, profile.firebaseUid);
   }
 
   @override
