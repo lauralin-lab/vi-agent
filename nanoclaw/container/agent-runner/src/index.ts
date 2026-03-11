@@ -32,6 +32,10 @@ interface ContainerInput {
   skillPrompt?: string;
   packageId?: string;
   secrets?: Record<string, string>;
+  manifestOutput?: {
+    template: string;
+    slots: Record<string, unknown>;
+  };
 }
 
 interface ContainerOutput {
@@ -48,6 +52,79 @@ interface ContainerOutput {
 const CARD_OP_MARKER = 'CARD_OP::';
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+
+/**
+ * Extract structured card data from Claude output.
+ * Looks for ```card-data or ```json blocks containing valid JSON.
+ */
+function extractCardData(text: string): Record<string, unknown> | null {
+  // Try ```card-data first (explicit marker)
+  const cardDataMatch = text.match(/```card-data\s*\n([\s\S]*?)\n```/);
+  if (cardDataMatch) {
+    try {
+      return JSON.parse(cardDataMatch[1].trim());
+    } catch { /* parse failed */ }
+  }
+
+  // Fall back to last ```json block
+  const jsonBlocks = [...text.matchAll(/```json\s*\n([\s\S]*?)\n```/g)];
+  for (let i = jsonBlocks.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(jsonBlocks[i][1].trim());
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch { /* try previous block */ }
+  }
+
+  return null;
+}
+
+/** Strip the card-data/json block from output text for display */
+function stripCardDataBlock(text: string): string {
+  return text
+    .replace(/```card-data\s*\n[\s\S]*?\n```/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Normalize card data to match template slot names.
+ * Handles common AI output variations (e.g., "title" → "food_name",
+ * "protein" → "protein_g", nested "totals" → flat fields).
+ */
+function normalizeCardData(
+  data: Record<string, unknown>,
+  template: string,
+): Record<string, unknown> {
+  if (template !== 'nutrition-card') return data;
+
+  const result = { ...data };
+
+  // Flatten nested "totals" object to top-level fields
+  if (result.totals && typeof result.totals === 'object') {
+    const totals = result.totals as Record<string, unknown>;
+    if (totals.calories != null && result.calories == null) result.calories = totals.calories;
+    if (totals.protein != null && result.protein_g == null) result.protein_g = totals.protein;
+    if (totals.carbs != null && result.carbs_g == null) result.carbs_g = totals.carbs;
+    if (totals.fat != null && result.fat_g == null) result.fat_g = totals.fat;
+    if (totals.fiber != null && result.fiber_g == null) result.fiber_g = totals.fiber;
+    delete result.totals;
+  }
+
+  // Rename common field name variations
+  if (result.title && !result.food_name) { result.food_name = result.title; delete result.title; }
+  if (result.name && !result.food_name) { result.food_name = result.name; delete result.name; }
+  if (result.protein != null && result.protein_g == null) { result.protein_g = result.protein; delete result.protein; }
+  if (result.carbs != null && result.carbs_g == null) { result.carbs_g = result.carbs; delete result.carbs; }
+  if (result.fat != null && result.fat_g == null) { result.fat_g = result.fat; delete result.fat; }
+  if (result.fiber != null && result.fiber_g == null) { result.fiber_g = result.fiber; delete result.fiber; }
+
+  // Remove non-slot fields that would clutter the card
+  delete result.items;
+
+  return result;
+}
 
 /** IPC card ops file path (persistent mode) — append-only JSONL */
 const IPC_CARDOPS_DIR = '/workspace/ipc/cardops';
@@ -181,50 +258,18 @@ function setupClaudeMd(): void {
     log('No base CLAUDE.md found in container image');
     return;
   }
-
-  let content = fs.readFileSync(srcPath, 'utf-8');
-
-  // Build dynamic skill catalog from package manifests
-  const packagesDir = '/workspace/packages';
-  if (fs.existsSync(packagesDir)) {
-    const catalogLines: string[] = [
-      '',
-      '## Available Skills Catalog',
-      '',
-      'Below are your available skills. **Automatically select the best skill** based on the user\'s request and any photos provided. You do NOT need a hashtag — just match the content to the right skill.',
-      '',
-    ];
-    for (const entry of fs.readdirSync(packagesDir)) {
-      if (entry.startsWith('_') || entry.startsWith('.')) continue;
-      const manifestPath = path.join(packagesDir, entry, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) continue;
-      try {
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-        const name = manifest.name || entry;
-        const triggers = manifest.triggers || {};
-        const visualCues = (triggers.visual_cues || []).join(', ');
-        const voiceKw = (triggers.voice_keywords || []).join(', ');
-        const template = manifest.output?.template || 'text';
-        catalogLines.push(`### ${name} (\`${entry}\`)`);
-        catalogLines.push(`- **Skill file**: \`.claude/skills/${entry}/SKILL.md\``);
-        catalogLines.push(`- **Output template**: \`${template}\``);
-        if (visualCues) catalogLines.push(`- **Use when you see**: ${visualCues}`);
-        if (voiceKw) catalogLines.push(`- **Use when user asks about**: ${voiceKw}`);
-        catalogLines.push('');
-      } catch { /* skip malformed manifests */ }
-    }
-    catalogLines.push('**How to use**: Read the SKILL.md for the matched skill, then follow its phases and output format. If the skill specifies a card template, output a `card-data` JSON block matching the template schema.');
-    content += '\n' + catalogLines.join('\n') + '\n';
-    log(`Added skill catalog to CLAUDE.md`);
-  }
-
   // Always overwrite — ensures updates to CLAUDE.md take effect
   // even on persistent volumes with stale copies
   try {
-    fs.writeFileSync(destPath, content);
-    log('Wrote CLAUDE.md with skill catalog to workspace');
+    fs.copyFileSync(srcPath, destPath);
+    log('Copied base CLAUDE.md to workspace');
   } catch (err) {
-    log(`Could not set up CLAUDE.md: ${err}`);
+    try {
+      fs.writeFileSync(destPath, fs.readFileSync(srcPath, 'utf-8'));
+      log('Wrote base CLAUDE.md to workspace (fallback)');
+    } catch {
+      log(`Could not set up CLAUDE.md: ${err}`);
+    }
   }
 }
 
@@ -489,12 +534,8 @@ async function executeTask(input: ContainerInput): Promise<ContainerOutput> {
   const { cleanPrompt, activatedSkills } = processHashTags(input.prompt);
   let fullPrompt = cleanPrompt;
 
-  // Legacy skill prompt fallback
-  const hasSkillFiles = fs.existsSync('/workspace/group/.claude/skills') &&
-    fs.readdirSync('/workspace/group/.claude/skills').length > 0;
-  if (input.skillPrompt && !hasSkillFiles) {
-    fullPrompt = `${input.skillPrompt}\n\n---\n\nUser request: ${cleanPrompt}`;
-  }
+  // Skills are loaded via .claude/skills/ — Claude auto-discovers and invokes them.
+  // No need to inject skill prompts or structured output instructions here.
 
   // Download media files
   if (input.mediaUrls && input.mediaUrls.length > 0) {
@@ -550,6 +591,58 @@ async function executeTask(input: ContainerInput): Promise<ContainerOutput> {
   try {
     const resultText = await runClaudeCli(fullPrompt, input, sdkEnv);
 
+    // Extract structured card data from Claude's output (card-data JSON block with _template)
+    let templateCardCreated = false;
+    const cardData = extractCardData(resultText);
+    if (cardData && cardData._template) {
+      const templateName = String(cardData._template);
+      delete cardData._template; // Don't pass meta-field to the card renderer
+      // Normalize field names to match template slots (safety net for AI variations)
+      const normalizedData = normalizeCardData(cardData, templateName);
+      // Create the structured template card
+      const cardId = `card-${input.taskId}-${Date.now()}`;
+      emitCardOp({
+        op: 'create_card',
+        taskId: input.taskId,
+        cardId,
+        template: templateName,
+        data: normalizedData,
+      });
+      emitCardOp({
+        op: 'finalize_card',
+        taskId: input.taskId,
+        cardId,
+      });
+      templateCardCreated = true;
+      log(`Created template card: ${templateName} from _template field`);
+    } else if (cardData) {
+      // Card data without _template — check manifestOutput fallback
+      const fallbackTemplate = input.manifestOutput?.template;
+      if (fallbackTemplate) {
+        const normalizedData = normalizeCardData(cardData, fallbackTemplate);
+        const cardId = `card-${input.taskId}-${Date.now()}`;
+        emitCardOp({
+          op: 'create_card',
+          taskId: input.taskId,
+          cardId,
+          template: fallbackTemplate,
+          data: normalizedData,
+        });
+        emitCardOp({
+          op: 'finalize_card',
+          taskId: input.taskId,
+          cardId,
+        });
+        templateCardCreated = true;
+        log(`Created template card: ${fallbackTemplate} from manifestOutput fallback`);
+      }
+    }
+
+    // Replace thinking card with text-result (analysis text)
+    const displayText = templateCardCreated
+      ? stripCardDataBlock(resultText).slice(0, 4000)
+      : resultText.slice(0, 4000);
+
     emitCardOp({
       op: 'replace_card',
       taskId: input.taskId,
@@ -557,7 +650,7 @@ async function executeTask(input: ContainerInput): Promise<ContainerOutput> {
       template: 'text-result',
       data: {
         title: skillLabel || 'Result',
-        content: resultText.slice(0, 4000),
+        content: displayText,
         status: 'complete',
       },
     });

@@ -1,6 +1,6 @@
 ---
 description: "Create or improve experience packages. Try: /package-drive help"
-version: "1.0.0"
+version: "2.0.0"
 ---
 
 # /package-drive — Experience Package Workshop
@@ -24,24 +24,35 @@ WHAT IS AN EXPERIENCE PACKAGE?
   It can be simple (add a skill) or transformative (turn the app into a scanner).
 
   Examples:
-  • "Movie Poster Creator" — user takes a photo → AI makes a movie poster
+  • "Nutrition Analyzer" — user asks about food → AI shows nutrition card
   • "Document Scanner" — app becomes a scanner with guides and "Scan" button
-  • "Calorie Calculator" — app tracks daily intake with running totals
+  • "Style Advisor" — user sends outfit photo → AI gives fashion advice
 
   A package has:
-  • SKILL.md — the skill prompt (what the AI does, in plain English)
-  • manifest.json — metadata (name, triggers, templates, app mode)
-  • templates/ — how results look (card layouts)
+  • SKILL.md — the skill prompt with Claude Code frontmatter (THIS IS THE SKILL)
+  • manifest.json — metadata (name, icon, category, templates)
+  • templates/ — card layout definitions (optional, most use shared templates)
   • examples/ — saved test runs showing input → output
 
-  At runtime, SKILL.md gets auto-deployed to .claude/skills/{id}/SKILL.md
-  where the Claude Code agent discovers it as a native skill.
+HOW SKILLS WORK (Claude Code Native Pattern):
+  SKILL.md uses Claude Code frontmatter with `name`, `description`, and
+  `user-invocable: false`. At runtime, SKILL.md gets auto-deployed to
+  .claude/skills/{id}/SKILL.md inside the agent container.
+
+  Claude sees all skill DESCRIPTIONS in its context (~2% budget).
+  When a user's prompt matches a description, Claude auto-invokes
+  the full skill — no keyword matching, no host-side routing.
+
+  Skills that need rich card output include a ```card-data JSON block
+  with a "_template" field. The agent-runner extracts this and creates
+  the card. Skills without cards output plain markdown.
 
 WHERE TO FIND THINGS:
   • Packages live in:      packages/{package-id}/
   • SKILL.md lives in:     packages/{package-id}/SKILL.md
   • Shared templates:      packages/_shared/
-  • Dashboard Skills tab:  shows all SKILL.md content (Shared + From Package)
+  • Reference skill:       packages/nutrition-analyzer/SKILL.md (card output)
+  • Reference skill:       packages/scene-describer/SKILL.md (markdown output)
 
 NO CODING NEEDED:
   You write what the AI should do in plain English (SKILL.md).
@@ -235,21 +246,45 @@ At runtime, SKILL.md auto-deploys to .claude/skills/{id}/SKILL.md
 so the agent discovers it as a native skill.
 ```
 
+**Create SKILL.md** in `packages/{id}/SKILL.md` — THIS IS THE MOST IMPORTANT FILE:
+
+SKILL.md uses Claude Code's native skill format with YAML frontmatter:
+
+```yaml
+---
+name: {package-id}
+description: {What this skill does and when to use it. Include keywords users would naturally say. Claude uses this description to decide when to auto-invoke the skill.}
+user-invocable: false
+---
+```
+
+After the frontmatter, write the skill instructions in plain English:
+- Structure: `# Title` → `## What to do` (numbered steps) → `## Guidelines` → `## Output`
+- Keep it under 50 lines — concise instructions, not a novel
+- The `description` field is critical — it's what Claude sees to decide skill relevance
+
+**Two output patterns** (choose based on whether this skill needs a rich card):
+
+**Pattern A: Card output** (use when results have structured data like nutrition, scores, stats):
+- In the `## Output` section, include a `card-data` JSON example with `"_template": "{template-name}"`
+- Field names MUST match the template's slot schema exactly
+- Tell Claude the block is REQUIRED
+- Reference: `packages/nutrition-analyzer/SKILL.md`
+
+**Pattern B: Markdown output** (use for analysis, advice, descriptions):
+- In the `## Output` section, say "Present as well-structured markdown text"
+- No JSON block needed
+- Reference: `packages/scene-describer/SKILL.md`, `packages/style-advisor/SKILL.md`
+
 **Create manifest.json** in `packages/{id}/manifest.json`:
 - Use the user's description for `name` and `description`
 - Pick an appropriate emoji for `icon`
 - Set `category` (health, creative, lifestyle, productivity, general)
-- Define `trigger.voice_keywords` from the user's description
-- Set `skill.model` to `claude-sonnet-4-6` (default)
+- Set `instruction.file` to `"SKILL.md"`
+- Set `instruction.model` to `claude-sonnet-4-6` (default)
 - Pick appropriate `templates.shared` from `packages/_shared/`
-- Estimate `output.estimated_time` and `output.estimated_cost`
-
-**Create SKILL.md** in `packages/{id}/SKILL.md`:
-- Write in plain English — this IS the skill
-- Structure: what to analyze → how to think → what cards to output → how to present results
-- Reference the card templates by name
-- Keep it under 50 lines — concise instructions, not a novel
-- Use existing packages as style reference: `packages/nutrition-analyzer/SKILL.md`
+- If using Pattern A card output, set `output.template` to the template name
+- Note: `trigger.voice_keywords` is for reference/documentation only — Claude does NOT use manifest triggers for routing. Skill selection is driven entirely by the SKILL.md `description` frontmatter field.
 
 **Create examples directory** `packages/{id}/examples/`
 
@@ -260,17 +295,16 @@ Show the user what was created:
 ```
 ✅ Package created: {name}
 
-Here's your SKILL.md (this is what the AI will do):
+Here's your SKILL.md (this is what the AI does):
 ──────────────────────────────────────
 {content of SKILL.md}
 ──────────────────────────────────────
 
-And here's the manifest.json summary:
-  Name:      {name}
-  Triggers:  {voice_keywords}
-  Templates: {template list}
-  Model:     {model}
-  Est. cost: {cost}
+Key details:
+  Description: {description from frontmatter — Claude uses this to find the skill}
+  Output:      {card template name OR "plain markdown"}
+  Templates:   {shared template list}
+  Model:       {model}
 ```
 
 Use `AskUserQuestion`:
@@ -447,17 +481,17 @@ Read `packages/{id}/manifest.json` and `packages/{id}/SKILL.md`.
 
 **Show the user what exists:**
 ```
-📦 Package: {name} (v{version})
-   {description}
+📦 Package: {name}
+   {description from SKILL.md frontmatter}
 
    SKILL.md preview:
    ──────────────────────────────────────
    {first 20 lines of SKILL.md}
    ──────────────────────────────────────
 
-   Templates: {list}
-   Triggers:  {voice_keywords}
-   Model:     {model}
+   Description: {frontmatter description — how Claude finds this skill}
+   Output:      {card template OR "plain markdown"}
+   Templates:   {shared template list}
 ```
 
 ### 2.2 What to Improve?
@@ -470,9 +504,9 @@ options:
   - label: "Change what the AI does"
     description: "Edit the skill prompt (SKILL.md) — make it smarter, more detailed, or different"
   - label: "Change how results look"
-    description: "Switch templates, add more cards, change the output sequence"
-  - label: "Change triggers"
-    description: "Update voice keywords or visual cues that activate this skill"
+    description: "Switch templates, add card output, or change from markdown to card format"
+  - label: "Improve skill discovery"
+    description: "Change when this skill activates — update the description so Claude recognizes more user prompts"
   - label: "Fix a problem"
     description: "Something isn't working right — let me describe the issue"
 ```
@@ -534,8 +568,8 @@ options:
 ### 3.3 Fix Based on Feedback
 
 - **Output was wrong** → Edit SKILL.md to be more specific about what the AI should do
-- **Cards looked wrong** → Check template references in SKILL.md and manifest.json
-- **Didn't trigger** → Update `trigger.voice_keywords` in manifest.json, check if the skill slug matches
+- **Cards looked wrong** → Check the `card-data` JSON example in SKILL.md — field names must match the template's slot schema exactly. Read the template JSON in `packages/_shared/` to verify field names.
+- **Didn't trigger** → Improve the `description` field in SKILL.md frontmatter. Claude uses this description to decide when to invoke the skill. Add more natural keywords the user might say. Check that `user-invocable: false` is set (so Claude auto-invokes). Note: manifest.json `trigger.voice_keywords` is NOT used for routing — only the SKILL.md description matters.
 
 After each fix, tell the user to test again. Loop until satisfied.
 
@@ -561,13 +595,42 @@ Throughout the entire flow, follow these rules:
 
 ---
 
+## Architecture Reference
+
+### How skills work at runtime
+
+```
+packages/{id}/SKILL.md
+    ↓ (bind-mounted into container at /workspace/packages/)
+agent-runner setupSkills()
+    ↓ (copies to /workspace/group/.claude/skills/{id}/SKILL.md)
+Claude Code auto-discovery
+    ↓ (description loaded into context, full content on invocation)
+Claude decides to invoke skill based on user's prompt
+    ↓ (Claude outputs card-data JSON with _template OR plain markdown)
+agent-runner extractCardData()
+    ↓ (extracts _template field, creates card via IPC)
+Frontend renders card
+```
+
+### Key design principles
+
+1. **SKILL.md IS the skill** — the frontmatter `description` drives discovery, the content drives behavior
+2. **No host-side routing** — Claude selects skills, not keyword matching
+3. **`_template` in card-data** — skills that need cards include `"_template": "template-name"` in their JSON output; agent-runner reads this to create the card
+4. **manifest.json is metadata** — for the package registry/gallery, NOT for skill routing
+5. **Shared templates** in `packages/_shared/` take priority over bundled templates
+
+---
+
 ## Drive Integration
 
 This skill uses the `/drive` execution engine for implementation work. When creating or editing package files, follow Drive Mode's discipline:
 
-- **Verify after changes:** Check that manifest.json is valid JSON, SKILL.md is well-formatted
+- **Verify after changes:** Check that manifest.json is valid JSON, SKILL.md has correct frontmatter
 - **Self-review:** Re-read created files before presenting to user
 - **Don't stop:** After each user answer, immediately proceed to the next step
 - **AskUserQuestion always:** Never output questions as plain text — always use the AskUserQuestion tool
+- **Check template slots:** When creating card output skills, read the target template JSON in `packages/_shared/` to verify field names match exactly
 
 But unlike `/team-drive`, there is NO Mission Contract, NO GitHub Issue, NO branch management. This is a lightweight creative workshop, not a code mission.

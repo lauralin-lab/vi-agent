@@ -24,7 +24,6 @@ import { runContainerAgent, type ContainerOutput } from './container-runner.js';
 import { getContainerManager } from './container-manager.js';
 import { UserQueue } from './user-queue.js';
 import { config } from '../config.js';
-import { getPackage } from '../packages/package-loader.js';
 import { cardMiddleware } from '../persistence/card-middleware.js';
 import { getSessionCardState } from '../persistence/card-store.js';
 
@@ -184,14 +183,10 @@ async function handleExecRequestPersistent(
       return url;
     });
 
-    // Load skill prompt if specified
-    let skillPrompt: string | undefined;
+    // Skills are handled inside the container by Claude auto-discovery via .claude/skills/.
+    // The host just passes the raw prompt — no skill routing or prompt injection needed.
     if (request.skillSlug) {
-      const pkg = getPackage(request.skillSlug);
-      if (pkg) {
-        skillPrompt = pkg.skillPrompt;
-        console.log(`[exec-channel] using package "${pkg.manifest.id}" for task ${taskId}`);
-      }
+      console.log(`[exec-channel] skill hint: ${request.skillSlug} for task ${taskId}`);
     }
 
     // Write task to IPC
@@ -204,8 +199,6 @@ async function handleExecRequestPersistent(
       skillSlug: request.skillSlug,
       mediaUrls: resolvedMediaUrls,
       context: request.context,
-      skillPrompt,
-      packageId: request.skillSlug,
     };
 
     // Atomic write: .tmp → rename to .json
@@ -336,16 +329,7 @@ async function handleExecRequestLegacy(
   );
 
   try {
-    let skillPrompt: string | undefined;
-    if (request.skillSlug) {
-      const pkg = getPackage(request.skillSlug);
-      if (pkg) {
-        skillPrompt = pkg.skillPrompt;
-        console.log(`[exec-channel] using package "${pkg.manifest.id}" for task ${taskId}`);
-      }
-    }
-
-    const augmentedRequest = { ...request, userId, skillPrompt };
+    const augmentedRequest = { ...request, userId };
 
     let hadOutputMarker = false;
     const result = await runContainerAgent(
