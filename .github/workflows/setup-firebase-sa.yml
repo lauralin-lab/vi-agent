@@ -1,0 +1,22 @@
+name: Setup Firebase SA on Server
+run-name: "Write Firebase SA to /opt/vi-agent/firebase/sa.json"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Write Firebase SA to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEV_SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            mkdir -p /opt/vi-agent/firebase
+            echo "${{ secrets.FIREBASE_SA_JSON }}" | base64 -d > /opt/vi-agent/firebase/sa.json
+            chmod 644 /opt/vi-agent/firebase/sa.json
+            echo "Done: $(ls -la /opt/vi-agent/firebase/sa.json)"
