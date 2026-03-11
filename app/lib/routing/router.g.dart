@@ -10,7 +10,6 @@ List<RouteBase> get $appRoutes => [
   $loginRoute,
   $homeRoute,
   $centerRoute,
-  $guidanceRoute,
   $sessionRoute,
   $threadRoute,
   $sessionDetailRoute,
@@ -73,28 +72,6 @@ extension $CenterRouteExtension on CenterRoute {
   static CenterRoute _fromState(GoRouterState state) => const CenterRoute();
 
   String get location => GoRouteData.$location('/center');
-
-  void go(BuildContext context) => context.go(location);
-
-  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
-
-  void pushReplacement(BuildContext context) =>
-      context.pushReplacement(location);
-
-  void replace(BuildContext context) => context.replace(location);
-}
-
-RouteBase get $guidanceRoute => GoRouteData.$route(
-  path: '/guidance',
-  name: '/guidance',
-
-  factory: $GuidanceRouteExtension._fromState,
-);
-
-extension $GuidanceRouteExtension on GuidanceRoute {
-  static GuidanceRoute _fromState(GoRouterState state) => const GuidanceRoute();
-
-  String get location => GoRouteData.$location('/guidance');
 
   void go(BuildContext context) => context.go(location);
 

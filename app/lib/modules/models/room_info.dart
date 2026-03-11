@@ -4,30 +4,28 @@ part 'room_info.g.dart';
 
 @JsonSerializable()
 class RoomInfo {
-  @JsonKey(name: 'url')
-  String? serverUrl;
-  @JsonKey(name: 'token')
-  String? token;
-  @JsonKey(name: 'roomName')
-  String? roomName;
-  @JsonKey(name: 'thread_id')
-  String? threadId;
-  @JsonKey(name: 'participantName')
-  String? pId;
+  @JsonKey(name: 'livekit_url', defaultValue: '')
+  String liveKitUrl;
+  @JsonKey(name: 'token', defaultValue: '')
+  String token;
+  @JsonKey(name: 'room_name', defaultValue: '')
+  String roomName;
 
-  RoomInfo({this.serverUrl, this.token, this.roomName, this.threadId, this.pId});
+  RoomInfo({required this.liveKitUrl, required this.token, required this.roomName});
 
   factory RoomInfo.fromJson(Map<String, dynamic> json) => _$RoomInfoFromJson(json);
 
   Map<String, dynamic> toJson() => _$RoomInfoToJson(this);
 
   RoomInfo copyWith({
-    String? serverUrl,
+    String? liveKitUrl,
     String? token,
+    String? roomName,
   }) {
     return RoomInfo(
-      serverUrl: serverUrl ?? this.serverUrl,
+      liveKitUrl: liveKitUrl ?? this.liveKitUrl,
       token: token ?? this.token,
+      roomName: roomName ?? this.roomName,
     );
   }
 }

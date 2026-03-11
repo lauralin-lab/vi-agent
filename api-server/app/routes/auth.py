@@ -88,47 +88,61 @@ async def create_or_login_user(
     is_new_user = user is None
 
     if is_new_user:
-        # Invite code check for new users
-        invite_req = await is_invite_required(db)
-        if invite_req and not invite_code:
-            raise HTTPException(status_code=403, detail="Invite code required")
-
         # Get full user info from Firebase
         firebase_user = await firebase_mgr.get_user(package_name, firebase_uid)
 
-        user = User(
-            firebase_uid=firebase_uid,
-            package_name=package_name,
-            sign_in_provider=sign_in_provider,
-            firebase_info={
-                "display_name": firebase_user.display_name,
-                "email": firebase_user.email,
-                "photo_url": firebase_user.photo_url,
-                "phone_number": firebase_user.phone_number,
-                "email_verified": firebase_user.email_verified,
-                "provider_data": [
-                    {"provider_id": p.provider_id, "uid": p.uid}
-                    for p in (firebase_user.provider_data or [])
-                ],
-            },
-            vi_user_id=generate_vi_user_id(),
-            display_name=firebase_user.display_name or "",
-            email=firebase_user.email,
-            photo_url=firebase_user.photo_url,
-            phone_number=firebase_user.phone_number,
-            language=language,
-            app_version=app_version,
-            last_login=datetime.now(timezone.utc),
-        )
-        db.add(user)
-        await db.flush()  # get user.id before consuming invite code
+        # Check if a user with the same email already exists (cross-package login)
+        if firebase_user.email:
+            existing = await db.execute(select(User).where(User.email == firebase_user.email))
+            user = existing.scalar_one_or_none()
 
-        # Consume invite code (validate + create record + increment used_count)
-        if invite_code:
-            await consume_invite_code(db, invite_code, invitee_id=user.id)
+        if user is not None:
+            # Same person, different package/firebase_uid — update existing user
+            is_new_user = False
+            user.firebase_uid = firebase_uid
+            user.package_name = package_name
+            user.sign_in_provider = sign_in_provider
+            user.last_login = datetime.now(timezone.utc)
+            user.app_version = app_version or user.app_version
+            await db.commit()
+        else:
+            # Truly new user
+            invite_req = await is_invite_required(db)
+            if invite_req and not invite_code:
+                raise HTTPException(status_code=403, detail="Invite code required")
 
-        await db.commit()
-        await db.refresh(user)
+            user = User(
+                firebase_uid=firebase_uid,
+                package_name=package_name,
+                sign_in_provider=sign_in_provider,
+                firebase_info={
+                    "display_name": firebase_user.display_name,
+                    "email": firebase_user.email,
+                    "photo_url": firebase_user.photo_url,
+                    "phone_number": firebase_user.phone_number,
+                    "email_verified": firebase_user.email_verified,
+                    "provider_data": [
+                        {"provider_id": p.provider_id, "uid": p.uid}
+                        for p in (firebase_user.provider_data or [])
+                    ],
+                },
+                vi_user_id=generate_vi_user_id(),
+                display_name=firebase_user.display_name or "",
+                email=firebase_user.email,
+                photo_url=firebase_user.photo_url,
+                phone_number=firebase_user.phone_number,
+                language=language,
+                app_version=app_version,
+                last_login=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            await db.flush()
+
+            if invite_code:
+                await consume_invite_code(db, invite_code, invitee_id=user.id)
+
+            await db.commit()
+            await db.refresh(user)
     else:
         # Update existing user
         user.last_login = datetime.now(timezone.utc)

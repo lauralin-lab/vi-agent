@@ -22,13 +22,8 @@ import 'widget/main_top_tools_widget.dart';
 
 part 'main_page.ui.dart';
 
-part '../../../depreciated/main_page.guidance.dart';
-
 class MainPage extends ConsumerStatefulWidget {
   const MainPage({super.key});
-
-  /// 引导页设置的静态标志，用于通知 MainPage 显示引导遮罩
-  static bool showGuidanceOverlay = false;
 
   @override
   ConsumerState createState() => _MainPageState();

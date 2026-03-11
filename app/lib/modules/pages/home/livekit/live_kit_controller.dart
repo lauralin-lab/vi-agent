@@ -4,6 +4,8 @@ import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rive_rolls_collection/common.dart';
 import '../../../../service/global_provider.dart';
+import '../../../../service/network/api_service.dart';
+import '../../../models/room_info.dart';
 import '../provider/main_provider.dart';
 import '../widget/camera_action_button.dart';
 import 'live_kit_connection_state.dart';
@@ -33,6 +35,9 @@ class LiveKitController {
 
   LiveKitConnectionState get state => _state;
 
+  /// 缓存的房间信息（只获取一次，断线重连复用）
+  RoomInfo? _roomInfo;
+
   /// 子模块
   late final LiveKitRoomService _roomService = LiveKitRoomService();
   late final MediaHardwareController _mediaController = MediaHardwareController(ref, _roomService);
@@ -44,18 +49,8 @@ class LiveKitController {
 
   /// 初始化
   void init() {
-    logi('[LiveKitController] init');
-
-    // 注册断线/重连回调
-    _eventHandler.onReconnected = () {
-      logi('[LiveKitController] Room reconnected, re-joining gateway...');
-      _transitionTo(LiveKitConnectionState.connected);
-    };
-    _eventHandler.onDisconnected = () {
-      logi('[LiveKitController] Room disconnected, waiting for retry trigger...');
-      _transitionTo(LiveKitConnectionState.waitingPrerequisites);
-      _evaluateState();
-    };
+    // 注册断线、重连回调
+    _registerRoomCallbacks();
 
     // 监听房间事件
     _eventHandler.listen();
@@ -65,6 +60,19 @@ class LiveKitController {
     // liveKit 状态变更
     _transitionTo(LiveKitConnectionState.idle);
     _listenPrerequisites();
+  }
+
+  /// 注册 room 回调
+  void _registerRoomCallbacks() {
+    _eventHandler.onReconnected = () {
+      logi('[LiveKitController] Room reconnected');
+      _transitionTo(LiveKitConnectionState.connected);
+    };
+    _eventHandler.onDisconnected = () {
+      logi('[LiveKitController] Room disconnected');
+      _transitionTo(LiveKitConnectionState.waitingPrerequisites);
+      _evaluateState();
+    };
   }
 
   /// 释放资源
@@ -83,14 +91,29 @@ class LiveKitController {
       }
     });
 
-    // auth 就绪
+    // auth 就绪 → 获取 token（仅一次）
     ref.listen(onAuthChangedProvider, (_, next) {
       final resp = next.maybeWhen(data: (value) => value, orElse: () => null);
       if (resp != null && resp.self != null) {
-        _evaluateState();
+        _fetchRoomInfoIfNeeded();
       }
     });
 
+  }
+
+  /// 获取房间信息（只获取一次，缓存复用）
+  Future<void> _fetchRoomInfoIfNeeded() async {
+    if (_roomInfo != null) {
+      _evaluateState();
+      return;
+    }
+    try {
+      _roomInfo = await ApiService.requestRoomInfo();
+      _evaluateState();
+    } catch (e) {
+      _transitionTo(LiveKitConnectionState.failed);
+      loge('[LiveKitController] Failed to fetch RoomInfo: $e');
+    }
   }
 
   /// 状态机核心：根据当前 state + 条件决定下一步
@@ -98,8 +121,9 @@ class LiveKitController {
     switch (_state) {
       case LiveKitConnectionState.idle:
       case LiveKitConnectionState.waitingPrerequisites:
-        await _tryConnect();
-
+        if (_roomInfo != null) {
+          await _tryConnect();
+        }
       default:
         break;
     }
@@ -111,28 +135,24 @@ class LiveKitController {
 
     _transitionTo(LiveKitConnectionState.connecting);
     try {
-      await _roomService.connect();
+      await _roomService.connect(_roomInfo!);
       if (isConnected) {
         _transitionTo(LiveKitConnectionState.connected);
         _mediaController.syncMicState();
       } else {
-        // connect() 内部前置条件未满足，等待 _listenPrerequisites 重新触发
         _transitionTo(LiveKitConnectionState.waitingPrerequisites);
       }
     } catch (ex) {
       loge('[LiveKitController] Connect error: $ex');
-      // 等待 RoomDisconnectedEvent → onDisconnected → _evaluateState 触发下次重试
-      _transitionTo(LiveKitConnectionState.waitingPrerequisites);
+      _transitionTo(LiveKitConnectionState.failed);
     }
   }
-
 
   /// 状态转换
   void _transitionTo(LiveKitConnectionState newState) {
     if (_state == newState) return;
-    logi('LiveKit State: $_state -> $newState');
     _state = newState;
-    // 用 microtask 延迟，避免在 initState/build 阶段同步修改 provider
+    // 用 microTask 延迟，避免在 initState/build 阶段同步修改 provider
     Future.microtask(() {
       ref.read(connectionStatusProvider.notifier).state = newState;
     });

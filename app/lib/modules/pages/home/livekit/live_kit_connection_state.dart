@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 
 import '../../../../common/extension/ui_ext.dart';
 
@@ -19,9 +20,6 @@ enum LiveKitConnectionState {
   /// 失败
   failed;
 
-  /// 可连接状态
-  bool get ready => this == LiveKitConnectionState.idle || this == LiveKitConnectionState.waitingPrerequisites;
-
   /// liveKit连接
   bool get isConnected => this == LiveKitConnectionState.connected;
 
@@ -30,7 +28,16 @@ enum LiveKitConnectionState {
     return switch (this) {
       LiveKitConnectionState.connected => "LIVE",
       LiveKitConnectionState.failed => "OFFLINE",
-      _ => 'LINKING',
+      _ => 'CONNECTING',
+    };
+  }
+
+  /// title的颜色
+  Color getTitleColor() {
+    return switch (this) {
+      LiveKitConnectionState.connected => Colors.green.withValues(alpha: 0.8),
+      LiveKitConnectionState.failed => Colors.red.withValues(alpha: 0.6),
+      _ => Colors.blue.withValues(alpha: 0.8),
     };
   }
 

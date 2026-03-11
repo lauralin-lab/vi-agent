@@ -3,7 +3,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
-from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
+from livekit.api import AccessToken, VideoGrants
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,27 +36,6 @@ class AnonymousTokenResponse(BaseModel):
     session_id: str | None = None
 
 
-async def _dispatch_agent(room_name: str) -> None:
-    """Explicitly dispatch the vi-realtime agent to a room.
-
-    This ensures an agent is always available even when reconnecting
-    to an existing room where a previous agent may have left.
-    """
-    try:
-        async with LiveKitAPI(
-            url=settings.LIVEKIT_URL,
-            api_key=settings.LIVEKIT_API_KEY,
-            api_secret=settings.LIVEKIT_API_SECRET,
-        ) as lk_api:
-            req = CreateAgentDispatchRequest(room=room_name)
-            if settings.VI_AGENT_NAME:
-                req.agent_name = settings.VI_AGENT_NAME
-            dispatch = await lk_api.agent_dispatch.create_dispatch(req)
-            logger.info("Agent dispatched to room %s: %s", room_name, dispatch.id)
-    except Exception as e:
-        logger.warning("Failed to dispatch agent to room %s: %s", room_name, e)
-
-
 @router.post("/token", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def get_livekit_token(
@@ -87,8 +66,8 @@ async def get_livekit_token(
 
     jwt_token = token.to_jwt()
 
-    # Dispatch the agent to the room
-    await _dispatch_agent(room_name)
+    # Agent is auto-dispatched by LiveKit's rtc_session mechanism
+    # when the user joins the room — no explicit dispatch needed.
 
     return TokenResponse(
         token=jwt_token,
@@ -152,8 +131,8 @@ async def get_anonymous_livekit_token(
 
     jwt_token = token.to_jwt()
 
-    # Dispatch the agent to the room
-    await _dispatch_agent(room_name)
+    # Agent is auto-dispatched by LiveKit's rtc_session mechanism
+    # when the user joins the room — no explicit dispatch needed.
 
     return AnonymousTokenResponse(
         token=jwt_token,

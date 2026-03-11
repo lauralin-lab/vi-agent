@@ -85,7 +85,7 @@ class _MainTopToolsWidgetState extends ConsumerState<MainTopToolsWidget> {
                     Text(
                       connectStatus.getTitle(),
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
+                        color: connectStatus.getTitleColor(),
                         fontSize: 11.dpx,
                         fontWeight: FontWeight.w500,
                       ),

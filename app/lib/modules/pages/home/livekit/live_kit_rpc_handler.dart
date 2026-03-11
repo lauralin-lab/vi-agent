@@ -24,14 +24,10 @@ class LiveKitRpcHandler {
 
   /// 注册Server2App Rpc
   Future<void> registerServerRpc() async {
-    logi('[RpcHandler] Registering server RPC methods...');
-
     // 拍照
     _room.registerRpcMethod('rpcB2FTakePhoto', (data) async {
-      logi('[RpcHandler] ← rpcB2FTakePhoto received');
       try {
         await mediaController.takePhoto();
-        logi('[RpcHandler] → rpcB2FTakePhoto: success');
         return '{"success": true, "message": "处理完成"}';
       } catch (e) {
         loge('[RpcHandler] → rpcB2FTakePhoto error: $e');
@@ -39,25 +35,20 @@ class LiveKitRpcHandler {
       }
     });
 
+    // 意图识别卡
     _room.registerRpcMethod('rpcB2FShowActionCard', (data) async {
-      logi('[RpcHandler] ← rpcB2FShowActionCard received: ${data.payload}');
-
       try {
         final payload = jsonDecode(data.payload) as Map<String, dynamic>;
         final model = ActionCardModel.fromJson(payload);
-        logi('[RpcHandler] parsed actionCard: title=${model.title}, options=${model.options}');
 
         ref.read(actionCardProvider.notifier).state = model;
 
-        logi('[RpcHandler] → rpcB2FShowActionCard: success');
         return '{"success": true, "message": "处理完成"}';
       } catch (e) {
         loge('[RpcHandler] → rpcB2FShowActionCard error: $e');
         return '{"success": false, "message": "$e"}';
       }
     });
-
-    logi('[RpcHandler] All server RPC methods registered');
   }
 
   /// App2Sever Rpc
@@ -68,20 +59,14 @@ class LiveKitRpcHandler {
         pId = p.identity;
       }
     }
-    if (pId == null || pId.isEmpty) {
-      logw('[RpcHandler] app2ServerRpc: no agent found! participants=${_room.remoteParticipants.keys.toList()}');
-      return;
-    } else {
-      logi('[RpcHandler] → app2ServerRpc: method=${type.method}, agent=$pId, payloadLen=${payload.length}');
-    }
+    if (pId == null || pId.isEmpty) return;
     await _room.localParticipant?.performRpc(
       PerformRpcParams(
-        destinationIdentity: pId!,
+        destinationIdentity: pId,
         method: type.method,
         payload: jsonEncode({"text": payload}),
       ),
     );
-    logi('[RpcHandler] → app2ServerRpc sent');
   }
 }
 

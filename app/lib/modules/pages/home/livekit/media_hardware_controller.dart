@@ -83,20 +83,16 @@ class MediaHardwareController {
   /// 切换摄像头
   Future<void> toggleCamera() async {
     final isFront = ref.read(onSwitchCameraProvider);
-    logi('[MediaHW] toggleCamera: ${isFront ? "front→back" : "back→front"}, roomConnected=${roomService.isConnected}');
+
     final result = await HardWareInitializer.instance.toggleCamera(!isFront, roomService.isConnected);
     if (result) {
-      logi('[MediaHW] toggleCamera: success');
       ref.read(onSwitchCameraProvider.notifier).state = !isFront;
-    } else {
-      logw('[MediaHW] toggleCamera: failed');
     }
   }
 
   /// 切换静音模式
   Future<void> toggleMute() async {
     final isMute = ref.read(muteProvider);
-    logi('[MediaHW] toggleMute: ${isMute ? "muted→unmuted" : "unmuted→muted"}');
     _room.localParticipant?.setMicrophoneEnabled(isMute);
     ref.read(muteProvider.notifier).state = !isMute;
   }
@@ -104,7 +100,6 @@ class MediaHardwareController {
   /// 连接成功后同步 mic 状态（静音时关闭采集，未静音时开启）
   void syncMicState() {
     final isMute = ref.read(muteProvider);
-    logi('[MediaHW] syncMicState: isMute=$isMute');
     _room.localParticipant?.setMicrophoneEnabled(!isMute);
   }
 }

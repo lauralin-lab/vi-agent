@@ -19,13 +19,14 @@ base class ApiService {
   ///////////////////////////////////////////////////////////////////////////////
   /// region LiveKit相关
   /// 获取房间Token和Url
-  static Future<RoomInfo> requestRoomInfo(
-    String userID, {
+  static Future<RoomInfo> requestRoomInfo({
     RetryPolicy retryPolicy = RetryPolicy.defaultInAppRetry,
   }) async {
-    final params = {'userId': 'user-$userID', 'roomName': 'room-$userID'};
-
-    final resp = await dio.postPlus('/collov/livekit/token', data: params);
+    final resp = await appDio.postPlus(
+      '/livekit/token',
+      data: {},
+      plusOptions: DioPlusOptions(retryPolicy: retryPolicy),
+    );
 
     return RoomInfo.fromJson(resp.data);
   }

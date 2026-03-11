@@ -364,7 +364,7 @@ function ChatPage({ nanoClaw }) {
           try {
             const tasks = await fetchSessionHistory();
             setSessions(groupIntoSessions(tasks));
-          } catch {}
+          } catch { /* ignore */ }
         }, 2000);
       }
     } catch (err) {
