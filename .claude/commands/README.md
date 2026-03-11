@@ -104,21 +104,21 @@ All opt-in via `config.yml` (except worktree, which is per-user):
 
 ## Development Utilities
 
-Scripts in `scripts/`:
+Scripts in `scripts/` (Von Neumann separation: deterministic ops in scripts, LLM judgment in skill.md):
 
-| Script | Purpose | Called by |
-|--------|---------|----------|
-| `tw-config.sh` | Read/write config values from `.teamwork/config.yml` | All skills |
-| `tw-git.sh` | Git operations (branch, milestone, worktree, stash) | team-claim, team-ship, team-rc |
-| `tw-pr.sh` | PR operations (create, exists, check CI) | team-ship, team-rc |
-| `tw-label.sh` | GitHub label operations (set, transition) | team-issue, team-claim, team-ship |
-| `tw-contract.sh` | Mission Contract CRUD (create, read, delete) | team-claim, team-drive, team-ship |
-| `tw-notify.sh` | Notification dispatch (Slack, Feishu, webhook) | team-issue, team-ship |
-| `setup-github-labels.sh` | Initialize GitHub labels on repo | team (init) |
-| `tw-bump-version.sh` | Bump version across all skill files + docs | Maintenance |
-| `tw-e2e-test.sh` | End-to-end validation harness | Maintenance |
+| Script | Subcommands | Purpose |
+|--------|-------------|---------|
+| `tw-config.sh` | 8 | Config reader + team queries (key lookup, detect-dir, resolve-labels, get-user-level, team-mode, resolve-member, list-members, migrate, has-section) |
+| `tw-git.sh` | 21 | All git operations (branch, worktree, release, slug, milestone) |
+| `tw-pr.sh` | 8 | PR lifecycle (exists, commit-type, create, comment, watch, wait-merged, add-reviewer, verify-merged) |
+| `tw-label.sh` | 4 | Label state machine (transition, set, verify, pr-label) |
+| `tw-contract.sh` | 6 | Contract lifecycle (read-field, hash, check-freshness, toggle-task, sync-all-checkboxes, delete) |
+| `tw-notify.sh` | — | Notification dispatch (Slack, Feishu, webhook) |
+| `setup-github-labels.sh` | — | Initialize GitHub labels on repo |
+| `tw-bump-version.sh` | — | Bump version strings across all skill files |
+| `tw-e2e-test.sh` | — | End-to-end validation (8 phases, 40+ tests) |
 
 ## Version
 
-- Skill version: 3.8.1
+- Skill version: 3.8.3
 - Config schema: 3

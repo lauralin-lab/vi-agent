@@ -1,6 +1,6 @@
 ---
 description: "Claim Issue → Contract → Branch. Try: /team-claim help"
-version: "3.8.1"
+version: "3.8.3"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -61,6 +61,7 @@ TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/nu
   # STOP
 }
 ```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 - If no config → "**ERROR:** Teamwork not initialized. Run `/team` first." → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
@@ -90,9 +91,26 @@ ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
 WORKTREE_ENABLED=$(git config --local teamwork.worktree 2>/dev/null || echo "false")
 ```
 
-**If worktree DISABLED (default):** If any Contract exists → read it, display the active mission info.
-- "You already have an active mission: **#{issue}** — {title}. Complete it with `/team-ship` first. To abandon: run `/team doctor fix` to clean up (you can re-claim the Issue later with `/team-claim`)."
-- **STOP** (enforce one-at-a-time rule)
+**If worktree DISABLED (default):** If any Contract exists → read it, display the active mission info, then offer options:
+
+Use `AskUserQuestion`:
+```
+question: "已有活跃 mission: **#{issue}** — {title}。如何处理？"
+options:
+  - label: "继续当前 mission"
+    description: "运行 /team-drive 继续执行"
+  - label: "交付当前 mission"
+    description: "运行 /team-ship 提交 PR"
+  - label: "放弃当前 mission"
+    description: "清理 Contract，释放 claim 位（代码保留在分支上）"
+  - label: "取消"
+    description: "不操作"
+```
+
+- If "继续当前 mission" → output "Run `/team-drive`" → **STOP**
+- If "交付当前 mission" → output "Run `/team-ship`" → **STOP**
+- If "放弃当前 mission" → delete Contract file → output "Contract cleared. You can now `/team-claim` a new Issue." → **STOP**
+- If "取消" → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 **If worktree ENABLED:** Allow multiple active Contracts. Each mission gets its own worktree directory, so parallel work is safe.
@@ -257,7 +275,7 @@ BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER"
 
 ```bash
 # Derive main repo path (works from any worktree or the main repo)
-MAIN_REPO=$(git worktree list --porcelain | head -1 | sed 's/worktree //')
+MAIN_REPO=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-main-repo)
 REPO_NAME=$(basename "$MAIN_REPO")
 
 # Fetch latest base to ensure worktree starts from up-to-date base
@@ -265,9 +283,8 @@ BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_bran
 BASE_BRANCH="${BASE_BRANCH:-main}"
 git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
 
-# Build branch name from config pattern
-BRANCH_PATTERN=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.branch_pattern "mission/{issue}-{slug}-{user}" 2>/dev/null)
-BRANCH=$(echo "$BRANCH_PATTERN" | sed "s/{issue}/$ISSUE_NUMBER/g; s/{slug}/$SLUG/g; s/{user}/$GH_USER/g")
+# Build branch name from config pattern (script handles pattern substitution safely)
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh build-branch-name "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
 
 # Determine worktree root path from per-user config
 WORKTREE_ROOT=$(git config --local teamwork.worktree-root 2>/dev/null || echo "")
@@ -284,23 +301,49 @@ else
   WORKTREE_PATH="${MAIN_REPO}/../${REPO_NAME}-wt-${SLUG}"
 fi
 
-git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BASE_BRANCH" 2>/dev/null || {
-  # Branch may already exist — try without -b
-  git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || {
-    echo "ERROR: Could not create worktree at $WORKTREE_PATH"
-    exit 1
+# Check if branch is already checked out somewhere (main repo or another worktree)
+BRANCH_WORKTREE=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-find-by-branch "$BRANCH" 2>/dev/null) || true
+
+if [ -n "$BRANCH_WORKTREE" ]; then
+  # Branch already checked out — DON'T create new worktree, just point user there
+  echo "BRANCH_ALREADY_CHECKED_OUT:$BRANCH_WORKTREE"
+  # STOP — output will tell user to cd to existing worktree
+  # 💡 Something wrong? Run /team doctor to diagnose, or /team doctor fix to auto-repair.
+else
+  git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BASE_BRANCH" 2>/dev/null || {
+    # Branch may already exist but not checked out — try without -b
+    git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || {
+      echo "ERROR: Could not create worktree at $WORKTREE_PATH"
+      echo "Possible causes:"
+      echo "  - Path already exists (another worktree or directory)"
+      echo "  - Permission denied on parent directory"
+      echo "  - Branch already checked out in another worktree"
+      # 💡 Something wrong? Run /team doctor to diagnose, or /team doctor fix to auto-repair.
+      exit 1
+    }
   }
-}
+fi
 
 echo "$ISSUE_NUMBER" > "$WORKTREE_PATH/.mission"
 
 # Contract is gitignored (active/), so copy it into the worktree
-mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR/active"
-cp "$TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md" "$WORKTREE_PATH/$TEAMWORK_DIR/active/"
+mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR/active" || {
+  echo "ERROR: Cannot create config directory in worktree. Check permissions."
+  # 💡 Something wrong? Run /team doctor to diagnose, or /team doctor fix to auto-repair.
+  exit 1
+}
+cp "$TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md" "$WORKTREE_PATH/$TEAMWORK_DIR/active/" || {
+  echo "ERROR: Failed to copy Contract to worktree. Source: $TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md"
+  # 💡 Something wrong? Run /team doctor to diagnose, or /team doctor fix to auto-repair.
+  exit 1
+}
 
 # Copy config into worktree (needed for /team-drive and /team-ship to find config)
-mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR"
-cp "$TEAMWORK_DIR/config.yml" "$WORKTREE_PATH/$TEAMWORK_DIR/"
+cp "$TEAMWORK_DIR/config.yml" "$WORKTREE_PATH/$TEAMWORK_DIR/" || {
+  echo "ERROR: Failed to copy config.yml to worktree."
+  # 💡 Something wrong? Run /team doctor to diagnose, or /team doctor fix to auto-repair.
+  exit 1
+}
 ```
 
 Key differences from non-worktree flow:
@@ -346,7 +389,7 @@ Contract:  `$TEAMWORK_DIR/active/MISSION-{issue}.md`
 **CONTEXT FILES**
   {list of relevant files}
 
-{If worktree:}
+{If worktree (newly created OR branch already had worktree):}
 ⚠️ **DO NOT run `/team-drive` in this terminal**
 ────────────────────────────────────────────
 当前终端在主仓库。Worktree 模式下，所有操作必须在 worktree 目录中执行。
@@ -355,6 +398,13 @@ Contract:  `$TEAMWORK_DIR/active/MISSION-{issue}.md`
 **打开新终端 tab，执行：**
   `cd {worktree_path} && claude`
   Then: `/team-drive` to execute │ `/team-ship` when done
+────────────────────────────────────────────
+
+{If branch was already checked out in main repo (BRANCH_ALREADY_CHECKED_OUT):}
+⚠️ Branch *{branch}* 已在主仓库 checkout。Worktree 模式下不应在主仓库操作 mission 分支。
+建议：在主仓库切回 base branch，然后为此 mission 创建 worktree：
+  `git checkout {base_branch}`
+  `/team-claim #{issue}` (重新 claim，会自动创建 worktree)
 ────────────────────────────────────────────
 
 💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
@@ -378,7 +428,17 @@ Contract:  `$TEAMWORK_DIR/active/MISSION-{issue}.md`
   - Check if corresponding Issue is still OPEN (via `gh issue view {issue} --json state --jq '.state'`)
   - If Issue is CLOSED → warn: "⚠ Branch exists but Issue **#{issue}** is closed. This is an orphan branch. Run `/team doctor fix` to clean up, then `/team-claim` again." → **STOP**
     💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
-  - If Issue is OPEN → "Branch *{name}* already exists. Switching to it." → `git checkout {branch}`
+  - If Issue is OPEN:
+    - **If worktree DISABLED** → "Branch *{name}* already exists. Switching to it." → `git checkout {branch}`
+    - **If worktree ENABLED** → Check if branch is already checked out in a worktree (`git worktree list`):
+      - If branch has a worktree → find the worktree path, output:
+        ⚠️ Branch *{name}* already has a worktree at `{worktree_path}`.
+        **打开新终端 tab，执行：** `cd {worktree_path} && claude`
+        Then: `/team-drive` to execute │ `/team-ship` when done
+        → **STOP** (do NOT checkout in main repo — it would conflict with the worktree)
+      - If branch exists but NO worktree → create worktree for it:
+        `git worktree add "$WORKTREE_PATH" "$BRANCH"` (without `-b`, branch already exists)
+        Then copy Contract + config into worktree (same as Step 5 worktree flow)
 - Network errors → "**ERROR:** GitHub API error. Check your connection and `gh auth status`." → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 

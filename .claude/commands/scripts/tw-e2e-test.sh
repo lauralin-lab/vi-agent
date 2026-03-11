@@ -80,7 +80,9 @@ else
 fi
 
 ORIGINAL_BRANCH=$(git branch --show-current)
+GH_USER=$(gh api user --jq '.login' 2>/dev/null || echo "test")
 info "Current branch: $ORIGINAL_BRANCH"
+info "GitHub user: $GH_USER"
 
 # ─── Phase 1: Config reads ───────────────────────────────
 section "PHASE 1: CONFIG READS (tw-config.sh)"
@@ -119,6 +121,216 @@ pass "status_prefix = $STATUS_PREFIX"
 VERSIONS_CURRENT=$(run_script tw-config.sh versions.current "" 2>/dev/null)
 if [ -n "$VERSIONS_CURRENT" ]; then
   info "versions.current = $VERSIONS_CURRENT (will NOT be modified)"
+fi
+
+# ─── Phase 1b: Pure-function subcommands (no API) ───────
+section "PHASE 1b: PURE-FUNCTION SUBCOMMANDS"
+
+# build-branch-name
+BBN_OUT=$(run_script tw-git.sh build-branch-name 42 "fix-login" "alice" 2>/dev/null)
+if echo "$BBN_OUT" | grep -q "42" && echo "$BBN_OUT" | grep -q "fix-login"; then
+  pass "build-branch-name → $BBN_OUT"
+else
+  fail "build-branch-name: expected branch with 42 + fix-login, got '$BBN_OUT'"
+fi
+
+# build-branch-name — missing args
+BBN_ERR_EXIT=0
+BBN_ERR=$(run_script tw-git.sh build-branch-name 2>&1) || BBN_ERR_EXIT=$?
+if [ "$BBN_ERR_EXIT" -ne 0 ]; then
+  pass "build-branch-name (no args) → correctly rejected (exit $BBN_ERR_EXIT)"
+else
+  fail "build-branch-name (no args) should have failed"
+fi
+
+# extract-issue-number — from branch name
+EIN_OUT=$(run_script tw-git.sh extract-issue-number "mission/42-fix-login-alice" 2>/dev/null)
+if [ "$EIN_OUT" = "42" ]; then
+  pass "extract-issue-number → 42"
+else
+  fail "extract-issue-number: expected 42, got '$EIN_OUT'"
+fi
+
+# extract-issue-number — multi-digit
+EIN2_OUT=$(run_script tw-git.sh extract-issue-number "mission/153-add-auth-bob" 2>/dev/null)
+if [ "$EIN2_OUT" = "153" ]; then
+  pass "extract-issue-number (3-digit) → 153"
+else
+  fail "extract-issue-number (3-digit): expected 153, got '$EIN2_OUT'"
+fi
+
+# extract-issue-number — no number → error
+EIN_ERR_EXIT=0
+EIN_ERR=$(run_script tw-git.sh extract-issue-number "main" 2>&1) || EIN_ERR_EXIT=$?
+if [ "$EIN_ERR_EXIT" -ne 0 ]; then
+  pass "extract-issue-number (no number) → correctly rejected"
+else
+  fail "extract-issue-number 'main' should have failed"
+fi
+
+# worktree-main-repo
+WMR_OUT=$(run_script tw-git.sh worktree-main-repo 2>/dev/null)
+if [ -n "$WMR_OUT" ] && [ -d "$WMR_OUT" ]; then
+  pass "worktree-main-repo → $WMR_OUT"
+else
+  fail "worktree-main-repo: got '$WMR_OUT'"
+fi
+
+# worktree-find-by-branch — current branch (should find main repo)
+WFB_OUT=$(run_script tw-git.sh worktree-find-by-branch "$ORIGINAL_BRANCH" 2>/dev/null) || true
+if [ -n "$WFB_OUT" ]; then
+  pass "worktree-find-by-branch '$ORIGINAL_BRANCH' → $WFB_OUT"
+else
+  skip "worktree-find-by-branch '$ORIGINAL_BRANCH' → not found (may be detached HEAD)"
+fi
+
+# worktree-find-by-branch — nonexistent branch → exit 1
+run_script tw-git.sh worktree-find-by-branch "nonexistent-branch-xyz" >/dev/null 2>&1
+WFB_EXIT=$?
+if [ "$WFB_EXIT" -ne 0 ]; then
+  pass "worktree-find-by-branch (nonexistent) → correctly not found (exit $WFB_EXIT)"
+else
+  fail "worktree-find-by-branch should fail for nonexistent branch"
+fi
+
+# team-mode
+TM_OUT=$(run_script tw-config.sh team-mode 2>/dev/null)
+if [ "$TM_OUT" = "solo" ] || [ "$TM_OUT" = "team" ]; then
+  pass "team-mode → $TM_OUT"
+else
+  fail "team-mode: expected solo/team, got '$TM_OUT'"
+fi
+
+# list-members
+LM_OUT=$(run_script tw-config.sh list-members 2>/dev/null)
+if [ -n "$LM_OUT" ]; then
+  LM_COUNT=$(echo "$LM_OUT" | wc -l | tr -d ' ')
+  pass "list-members → $LM_COUNT member(s)"
+else
+  skip "list-members → empty (no members in config)"
+fi
+
+# resolve-member — resolve current user (should succeed if in config)
+if [ -n "$GH_USER" ]; then
+  RM_OUT=$(run_script tw-config.sh resolve-member "$GH_USER" 2>/dev/null) || true
+  if [ "$RM_OUT" = "$GH_USER" ]; then
+    pass "resolve-member '$GH_USER' → $RM_OUT"
+  elif [ -n "$RM_OUT" ]; then
+    pass "resolve-member '$GH_USER' → $RM_OUT (name match)"
+  else
+    skip "resolve-member '$GH_USER' → not in config (expected in some setups)"
+  fi
+fi
+
+# resolve-member — nonexistent user → error
+run_script tw-config.sh resolve-member "nonexistent-user-xyz-99" >/dev/null 2>&1
+RM_EXIT=$?
+if [ "$RM_EXIT" -ne 0 ]; then
+  pass "resolve-member (nonexistent) → correctly rejected (exit $RM_EXIT)"
+else
+  fail "resolve-member should fail for nonexistent user"
+fi
+
+# ─── Phase 1c: More pure-function subcommands ────────────
+section "PHASE 1c: CONFIG + GIT PURE FUNCTIONS"
+
+# detect-dir
+DD_OUT=$(run_script tw-config.sh detect-dir 2>/dev/null) || true
+if [ "$DD_OUT" = ".teamwork" ] || [ "$DD_OUT" = ".teamspace" ]; then
+  pass "detect-dir → $DD_OUT"
+else
+  fail "detect-dir: expected .teamwork or .teamspace, got '$DD_OUT'"
+fi
+
+# resolve-labels
+RL_OUT=$(run_script tw-config.sh resolve-labels 2>/dev/null)
+if echo "$RL_OUT" | grep -q "MISSION_LABEL=" && echo "$RL_OUT" | grep -q "STATUS_PREFIX="; then
+  pass "resolve-labels → outputs MISSION_LABEL + STATUS_PREFIX + PRIORITY_PREFIX"
+else
+  fail "resolve-labels: unexpected output '$RL_OUT'"
+fi
+
+# get-user-level
+if [ -n "$GH_USER" ]; then
+  UL_OUT=$(run_script tw-config.sh get-user-level "$GH_USER" 2>/dev/null) || true
+  if [ "$UL_OUT" = "solo" ] || [ "$UL_OUT" = "leader" ] || [ "$UL_OUT" = "member" ] || [ "$UL_OUT" = "unknown" ]; then
+    pass "get-user-level '$GH_USER' → $UL_OUT"
+  else
+    fail "get-user-level: expected solo/leader/member/unknown, got '$UL_OUT'"
+  fi
+fi
+
+# slugify
+SL_OUT=$(run_script tw-git.sh slugify "Fix Login Bug on Safari" 2>/dev/null)
+if echo "$SL_OUT" | grep -qE "^[a-z0-9-]+$"; then
+  pass "slugify → $SL_OUT"
+else
+  fail "slugify: expected lowercase-with-hyphens, got '$SL_OUT'"
+fi
+
+# slugify — empty → error
+run_script tw-git.sh slugify "" >/dev/null 2>&1
+SL_EXIT=$?
+if [ "$SL_EXIT" -ne 0 ]; then
+  pass "slugify (empty) → correctly rejected"
+else
+  fail "slugify (empty) should have failed"
+fi
+
+# next-version
+NV_OUT=$(run_script tw-git.sh next-version "V0.1" 2>/dev/null) || true
+if echo "$NV_OUT" | grep -qE "^V0\.1\.[0-9]+$"; then
+  pass "next-version V0.1 → $NV_OUT"
+else
+  skip "next-version → '$NV_OUT' (may need tags to exist)"
+fi
+
+# find-rc
+FR_OUT=$(run_script tw-git.sh find-rc 2>/dev/null) || true
+FR_EXIT=$?
+if [ $FR_EXIT -eq 0 ] && [ -n "$FR_OUT" ]; then
+  pass "find-rc → $FR_OUT"
+elif [ "$FR_EXIT" -ne 0 ]; then
+  skip "find-rc → no RC branches found (expected in many repos)"
+else
+  skip "find-rc → empty output"
+fi
+
+# list-merged-branches (may return empty if no merged PRs — that's OK)
+LMB_OUT=$(run_script tw-git.sh list-merged-branches 2>/dev/null) || true
+LMB_EXIT=$?
+if [ $LMB_EXIT -eq 0 ]; then
+  LMB_COUNT=$(echo "$LMB_OUT" | grep -c "." 2>/dev/null || echo "0")
+  pass "list-merged-branches → $LMB_COUNT branch(es)"
+else
+  fail "list-merged-branches failed (exit $LMB_EXIT)"
+fi
+
+# milestone-resolve (needs versions.current — skip if not set)
+if [ -n "$VERSIONS_CURRENT" ]; then
+  MR_OUT=$(run_script tw-git.sh milestone-resolve "$VERSIONS_CURRENT" 2>/dev/null) || true
+  if [ -n "$MR_OUT" ]; then
+    pass "milestone-resolve '$VERSIONS_CURRENT' → $MR_OUT"
+  else
+    skip "milestone-resolve → empty (milestone may not exist on GitHub)"
+  fi
+else
+  skip "milestone-resolve → no versions.current in config"
+fi
+
+# commit-type (tw-pr.sh)
+CT_OUT=$(run_script tw-pr.sh commit-type "fix: camera broken on Safari" 2>/dev/null)
+if [ "$CT_OUT" = "fix" ]; then
+  pass "commit-type (fix) → $CT_OUT"
+else
+  fail "commit-type: expected 'fix', got '$CT_OUT'"
+fi
+
+CT2_OUT=$(run_script tw-pr.sh commit-type "add user authentication" 2>/dev/null)
+if [ "$CT2_OUT" = "feat" ]; then
+  pass "commit-type (feat) → $CT2_OUT"
+else
+  fail "commit-type: expected 'feat', got '$CT2_OUT'"
 fi
 
 # ─── Phase 2: Create test issue ──────────────────────────
@@ -162,7 +374,6 @@ else
 fi
 
 # create-branch
-GH_USER=$(gh api user --jq '.login' 2>/dev/null || echo "test")
 TEST_BRANCH=$(run_script tw-git.sh create-branch "$TEST_ISSUE" "e2e-auto-test" "$GH_USER" 2>/dev/null) || {
   fail "create-branch failed"
 }
@@ -283,7 +494,7 @@ fi
 # toggle-task out of range
 TOGGLE_OOR=$(run_script tw-contract.sh toggle-task "$TW_DIR/active/MISSION-${TEST_ISSUE}.md" 99 2>&1)
 TOGGLE_OOR_EXIT=$?
-if [ $TOGGLE_OOR_EXIT -ne 0 ]; then
+if [ "$TOGGLE_OOR_EXIT" -ne 0 ]; then
   pass "toggle-task 99 → correctly rejected (exit $TOGGLE_OOR_EXIT)"
 else
   fail "toggle-task 99 should have failed"

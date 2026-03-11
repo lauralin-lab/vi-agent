@@ -1,6 +1,6 @@
 ---
 description: "Execute mission from Contract. Try: /team-drive help"
-version: "3.8.1"
+version: "3.8.3"
 ---
 
 # /team-drive — Execute Mission
@@ -89,8 +89,8 @@ ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
 # Check if there's a mission branch with an open Issue (recoverable state)
 CURRENT_BRANCH=$(git branch --show-current)
 if [[ "$CURRENT_BRANCH" == mission/* ]]; then
-  # Extract issue number from branch name (strip "mission/" prefix, then take leading digits)
-  ISSUE_NUM=$(echo "${CURRENT_BRANCH#mission/}" | grep -oE '^[0-9]+')
+  # Extract issue number from branch name (handles mission/42-*, bugfix/T-044-*, etc.)
+  ISSUE_NUM=$(bash ~/.claude/commands/scripts/tw-git.sh extract-issue-number "$CURRENT_BRANCH" 2>/dev/null) || true
   if [ -n "$ISSUE_NUM" ]; then
     ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state' 2>/dev/null)
     if [ "$ISSUE_STATE" = "OPEN" ]; then
@@ -116,7 +116,7 @@ Read the Contract file fully. Extract from YAML frontmatter:
 Extract from body:
 - **Objective**
 - **Sub-tasks** (with checkbox status)
-- **Acceptance Criteria**
+- **Success Criteria**
 - **Context Files**
 - **Test Command**
 
@@ -149,8 +149,8 @@ The Issue description has changed since you generated this Contract.
 ────────────────────────────────────────────
 
 Use `AskUserQuestion`:
-- "Update Contract?" → Re-extract Objective, Sub-tasks, Acceptance Criteria from new body. Update `issue_content_hash`. Preserve Context Files and AI Notes (locally generated).
-- "Continue with current Contract" → proceed without changes
+- "Update Contract (recommended)" → Re-extract Objective, Sub-tasks, Success Criteria from new body. Update `issue_content_hash`. Preserve Context Files and AI Notes (locally generated).
+- "Continue with old Contract" → proceed without changes. ⚠️ Risk: sub-tasks may be outdated — could do redundant or wrong work.
 - "Abort" → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
@@ -173,30 +173,48 @@ Find the correct worktree path for this Contract's branch:
 ```bash
 # Get the Contract's branch from frontmatter (already extracted in Step 0)
 # Search worktree list for a matching branch
-git worktree list --porcelain | grep -B2 "branch refs/heads/${CONTRACT_BRANCH}" | head -1 | sed 's/worktree //'
+bash ~/.claude/commands/scripts/tw-git.sh worktree-find-by-branch "$CONTRACT_BRANCH" 2>/dev/null || true
 ```
 
 If a worktree path is found for this branch:
 
-**⚠️ WORKTREE MISMATCH**
-────────────────────────────────────────────
-Worktree mode is enabled but you're in the main repo.
-Your mission worktree: `{worktree_path}`
+Output the mismatch warning, then use `AskUserQuestion` to let the user choose:
 
-Switch to it:  `cd {worktree_path}`
-Then re-run:   `/team-drive`
-────────────────────────────────────────────
-→ **STOP**
-  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+**⚠️ WORKTREE MISMATCH** — mission worktree: `{worktree_path}`
+
+```
+question: "Worktree mode 已启用，但你在主仓库。Mission #{issue} 的 worktree 在 {worktree_path}。"
+options:
+  - label: "新开 tab 切到 worktree（推荐）"
+    description: "打开新终端 tab，cd {worktree_path} && claude，然后 /team-drive"
+  - label: "在主仓库继续"
+    description: "忽略 worktree，直接在当前目录执行（本次）"
+  - label: "关闭 worktree 模式"
+    description: "git config --local teamwork.worktree false，然后继续"
+```
+
+- If "新开 tab 切到 worktree" → output: "**打开新终端 tab，执行：** `cd {worktree_path} && claude` → `/team-drive`" → **STOP**
+- If "在主仓库继续" → proceed to Step 1 (skip worktree check for this run)
+- If "关闭 worktree 模式" → `git config --local teamwork.worktree false` → proceed to Step 1
 
 If no worktree exists for this branch (e.g., worktree was deleted or claim was done before enabling worktree mode):
 
-**⚠️ NO WORKTREE FOUND**
-Worktree mode is enabled but no worktree exists for branch *{branch}*.
-Run `/team-claim` **#{issue}** to recreate with worktree isolation.
-Or disable worktree mode: `git config --local teamwork.worktree false`
-→ **STOP**
-  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+**⚠️ NO WORKTREE** — branch *{branch}* has no worktree
+
+```
+question: "Worktree mode 已启用，但 branch {branch} 没有对应的 worktree。"
+options:
+  - label: "在主仓库继续"
+    description: "忽略 worktree，直接在当前目录执行（本次）"
+  - label: "重新 claim（创建 worktree）"
+    description: "删除 Contract，重新 /team-claim #{issue}"
+  - label: "关闭 worktree 模式"
+    description: "git config --local teamwork.worktree false，然后继续"
+```
+
+- If "在主仓库继续" → proceed to Step 1
+- If "重新 claim" → delete Contract, output `/team-claim #{issue}` → **STOP**
+- If "关闭 worktree 模式" → `git config --local teamwork.worktree false` → proceed to Step 1
 
 ---
 
@@ -211,12 +229,28 @@ CURRENT_BRANCH=$(git branch --show-current)
 
 Compare with Contract's `branch` field.
 - If on wrong branch → `git checkout {contract.branch}`
-- If branch doesn't exist locally → display the following and **STOP**:
+- If branch doesn't exist locally → check remote and offer interactive recovery:
 
-  **ERROR:** Branch *{branch}* not found locally. Options:
-    1. Restore from remote: `git checkout -b {branch} origin/{branch}`
-    2. Re-claim the mission: `/team-claim` **#{issue}**
-    Re-claiming will regenerate the Contract from the Issue. Committed changes are preserved on remote if pushed.
+  ```bash
+  REMOTE_EXISTS=$(git ls-remote --heads origin "{contract.branch}" 2>/dev/null | wc -l | tr -d ' ')
+  ```
+
+  Use `AskUserQuestion`:
+  ```
+  question: "Branch *{branch}* 不在本地。如何恢复？"
+  options:
+    {If REMOTE_EXISTS > 0:}
+    - label: "从 remote 恢复"
+      description: "git checkout -b {branch} origin/{branch}"
+    - label: "重新 claim"
+      description: "重新生成 Contract（remote 上已 push 的代码不受影响）"
+    - label: "取消"
+      description: "不操作"
+  ```
+
+  - If "从 remote 恢复" → `git checkout -b {branch} origin/{branch}` → continue
+  - If "重新 claim" → delete Contract → output "Run `/team-claim` **#{issue}** to re-claim." → **STOP**
+  - If "取消" → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ---
@@ -357,7 +391,7 @@ You are a **super-sage** with independent judgment. NOT a compliant executor.
 
 ## Plan Validation — "未经审视的计划不值得执行"
 
-> The Contract's sub-tasks are the issue creator's HYPOTHESIS about how to achieve the Objective — written with limited codebase knowledge. You, the executor, now have ground truth. **Objective + Acceptance Criteria are immutable orders (WHAT). Sub-tasks are a suggested route (HOW) — challenge, revise, or confirm them.**
+> The Contract's sub-tasks are the issue creator's HYPOTHESIS about how to achieve the Objective — written with limited codebase knowledge. You, the executor, now have ground truth. **Objective + Success Criteria are immutable orders (WHAT). Sub-tasks are a suggested route (HOW) — challenge, revise, or confirm them.**
 
 ### Read the terrain
 
@@ -389,7 +423,7 @@ For each unchecked sub-task, ask:
 **📊 PLAN ASSESSMENT**
 ────────────────────────────────────────────
 **🎯 Objective:** {restate in own words — proves understanding}
-**✅ Acceptance Criteria:** `{N}` criteria — all achievable: {yes/no}
+**✅ Success Criteria:** `{N}` criteria — all achievable: {yes/no}
 
 **Sub-task review:**
   ✅ [1] {task} — **CONFIRM:** {why it's correct}
@@ -418,7 +452,7 @@ After validation, ensure the final task list follows these principles:
 - **Risky/uncertain tasks FIRST** — surface unknowns early, not late
 - **One substantive change per task** — atomic, reviewable, testable
 - **Scaffold + verify pipeline first** — first task should confirm the build/test toolchain works
-- **Final task = verification against Acceptance Criteria** — the last thing you do is prove you're done
+- **Final task = verification against Success Criteria** — the last thing you do is prove you're done
 
 ---
 
@@ -864,6 +898,46 @@ gh issue comment {issue} --body "All code tasks complete — ready for review. B
 
 Non-fatal: if comment fails, warn but continue.
 
+### AI-Suggested Issue Comment (conditional)
+
+**Evaluate whether the execution produced insights worth sharing on the Issue.** Review the AI Notes (key decisions, issues encountered, plan deviations) and determine if any of these are true:
+
+| Signal | Why it's worth commenting |
+|--------|--------------------------|
+| Fixed a bug not described in the Issue | Reviewer needs to know about extra changes |
+| Implementation deviated from Issue description | Explain why a different approach was taken |
+| Hit a blocker and switched approach | Decision context is valuable for the team |
+| Discovered a related problem outside scope | Needs follow-up Issue |
+| Performance, security, or compatibility concern | Reviewer should pay attention |
+
+**If none of these signals are present** (pure execution, no surprises) → **skip silently**. No need to comment when everything went as planned.
+
+**If any signal is present** → generate a concise comment draft and present to the user:
+
+```
+💬 **建议追加 Issue 备注** — AI 执行过程中发现值得记录的信息：
+
+{draft comment — 2-5 sentences, focusing on what's NOT already in the Issue body or PR body}
+```
+
+Use `AskUserQuestion`:
+```
+question: "追加这条备注到 Issue？"
+options:
+  - label: "发送"
+    description: "直接发送上述备注"
+  - label: "编辑后发送"
+    description: "我修改一下内容"
+  - label: "跳过"
+    description: "不需要追加"
+```
+
+- "发送" → `gh issue comment {issue} --body "{draft}"` (non-fatal)
+- "编辑后发送" → use `AskUserQuestion` with `useTextArea: true` to collect edited text → post
+- "跳过" → continue
+
+**In `/team auto` mode:** skip this step entirely (auto = zero interaction).
+
 ### Update Contract AI Notes
 
 Add execution notes to the Contract's **AI Notes** section:
@@ -914,7 +988,7 @@ Tests:    ✅ passing
 ────────────────────────────────────────────
 `/team-ship` to create PR
 
-💡 Tip: {random tip — read ~/.claude/commands/scripts/tw-tips.txt, pick one non-comment line at random}
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
 ### If manual tasks exist — Manual Ops Handoff:
 
@@ -946,10 +1020,34 @@ These require your action — AI cannot perform them.
 ────────────────────────────────────────────
 
 Then use `AskUserQuestion` to ask:
+- **"引导执行"** → AI walks user through each manual step interactively (see Guided Execution below)
 - **"Done — all manual steps complete"** → proceed to show acceptance criteria + suggest `/team-ship`
 - **"Will do later — ship PR first"** → proceed to suggest `/team-ship` (note manual steps in PR description)
-- **"Need help with a step"** → assist with the specific manual step
 - **"Skip — not needed"** → proceed, note in AI Notes
+
+#### Guided Execution (引导执行)
+
+When user selects "引导执行", AI assists with each manual step **one at a time**:
+
+For each manual task:
+1. **Assess executability** — can AI run this directly (e.g., SSH command, API call) or does it truly require human-only action (e.g., browser UI, physical access)?
+
+2. **If AI can execute** (SSH, CLI commands, API calls):
+   - Show the command(s) about to run
+   - Use `AskUserQuestion`: "执行这条命令？" → "执行" / "我自己来" / "跳过"
+   - If "执行" → run via Bash tool, show output, verify result
+   - If verification fails → diagnose, suggest fix, retry
+
+3. **If truly human-only** (browser console, physical hardware, third-party UI):
+   - Show step-by-step instructions with concrete actions
+   - Use `AskUserQuestion`: "完成了吗？" → "完成" / "遇到问题" / "跳过"
+   - If "遇到问题" → troubleshoot interactively
+
+4. **After each step** → check off the sub-task in Contract, move to next
+
+After all steps processed (done or skipped), continue to acceptance criteria block.
+
+**Key principle:** Many tasks labeled MANUAL are only "manual" because they require server/infra access — but if the user has SSH keys or CLI tools configured, AI can execute them directly. The label means "needs human judgment to initiate", not "AI must not touch".
 
 After user responds, output the full acceptance criteria block and the `/team-ship` prompt:
 
@@ -959,7 +1057,7 @@ After user responds, output the full acceptance criteria block and the `/team-sh
 ────────────────────────────────────────────
 `/team-ship` to create PR
 
-💡 Tip: {random tip — read ~/.claude/commands/scripts/tw-tips.txt, pick one non-comment line at random}
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
 ### Post-Mission Ecosystem Scan (2-3 min)
 

@@ -1,6 +1,6 @@
 ---
 description: "Create mission Issue from natural language. Try: /team-issue help"
-version: "3.8.1"
+version: "3.8.3"
 ---
 
 # /team-issue — Mission Contract Issue Manager
@@ -27,7 +27,7 @@ version: "3.8.1"
 
 If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
 
-**`/team-issue` — Mission Contract Issue Manager** (`v3.8.0`)
+**`/team-issue` — Mission Contract Issue Manager** (`v3.8.3`)
 
 **USAGE**
   `/team-issue <description>`                    Create MC (solo: self-assign; team: prompt)
@@ -130,10 +130,12 @@ CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current 
 
 ### Team Mode Detection
 
-Read the full config file. Count entries in `members:` (or `team:` array for schema v1).
+```bash
+TEAM_MODE=$(bash ~/.claude/commands/scripts/tw-config.sh team-mode 2>/dev/null)
+```
 
-- If members count == 1 → **SOLO_MODE=true** (auto-assign to self, no assignee prompt)
-- If members count > 1 → **SOLO_MODE=false** (team mode — prompt for assignee if not specified)
+- If `TEAM_MODE == "solo"` → **SOLO_MODE=true** (auto-assign to self, no assignee prompt)
+- If `TEAM_MODE == "team"` → **SOLO_MODE=false** (team mode — prompt for assignee if not specified)
 
 ---
 
@@ -160,8 +162,8 @@ For create flow, also extract:
 # Extract --milestone if present
 MILESTONE_OVERRIDE=""
 if echo "$ARGUMENTS" | grep -q '\-\-milestone'; then
-  MILESTONE_OVERRIDE=$(echo "$ARGUMENTS" | sed 's/.*--milestone  *\([^ ]*\).*/\1/')
-  ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--milestone  *[^ ]*//' | sed 's/^ *//')
+  MILESTONE_OVERRIDE=$(echo "$ARGUMENTS" | sed 's/.*--milestone[[:space:]]*\([^[:space:]]*\).*/\1/')
+  ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--milestone[[:space:]]*[^[:space:]]*//' | sed 's/^ *//')
 fi
 
 # Final milestone: arg override > config > empty
@@ -176,9 +178,13 @@ fi
 
 **Extract @assignee** (if present in remaining args):
 - Find `@mention` at end of description
-- Match against config `members[].github` (exact) or `members[].name` (case-insensitive partial)
+- Resolve via script:
+  ```bash
+  ASSIGNEE_GH=$(bash ~/.claude/commands/scripts/tw-config.sh resolve-member "{mention}" 2>/dev/null)
+  ```
+  Match priority: github exact → name exact → partial (case-insensitive).
 - Remove `@mention` from description text
-- If `@mention` doesn't match any member → "**ERROR:** Member '@{mention}' not found. Available: {list}" → **STOP**
+- If resolve-member fails (exit 1) → output its stderr message (lists available members) → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ---
@@ -191,7 +197,11 @@ fi
 
 **Solo mode** (members==1, no `@assignee`): Auto-assign to self (`$GH_USER`). No prompt needed.
 
-**Team mode** (members > 1, no `@assignee`): Use `AskUserQuestion` to select assignee from config members list.
+**Team mode** (members > 1, no `@assignee`): List members via script, then AskUserQuestion:
+```bash
+bash ~/.claude/commands/scripts/tw-config.sh list-members
+# Output: github:name:role per line. Use to build AskUserQuestion options (max 3 members + "自己").
+```
 
 Any team member can create Issues and assign to anyone — no role restriction.
 
@@ -217,7 +227,7 @@ Before investing in body generation, search for existing Issues that may already
 **Extract 2-3 key terms** from the analyzed title/description (not the full title verbatim — wider net catches more).
 
 ```bash
-gh issue list --search "{key terms}" --state open --json number,title,url --limit 10
+gh search issues "{key terms}" --repo "$REPO" --state open --json number,title,url --limit 10
 ```
 
 **AI evaluates results**: Compare each returned Issue's title and purpose against the user's intent. Judge **semantic similarity**, not string match. "fix camera on Safari" and "iOS media permission broken" are the same problem even though they share zero words.
@@ -304,10 +314,21 @@ Display the full Issue preview to the user:
 {formatted Issue body}
 ────────────────────────────────────────────
 
-Use `AskUserQuestion` to confirm:
-- "Publish this Issue?" → Publish / Edit title / Edit priority / Cancel
+Use `AskUserQuestion`:
+```
+question: "确认发布这个 Issue？"
+options:
+  - label: "发布"
+    description: "创建 GitHub Issue 并分配"
+  - label: "编辑标题"
+    description: "修改标题后重新预览"
+  - label: "编辑优先级"
+    description: "修改优先级/大小后重新预览"
+  - label: "取消"
+    description: "不创建"
+```
 
-If user wants edits → apply and re-preview.
+If "编辑标题" or "编辑优先级" → apply changes and re-preview (loop back to Step 5).
 If cancel → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
@@ -327,7 +348,20 @@ gh issue create \
   ${MILESTONE:+--milestone "$MILESTONE"}
 ```
 
-- If milestone assignment fails (milestone doesn't exist yet) → warn "⚠️ **WARNING:** Issue created without milestone. Create the milestone on GitHub first, then assign: `gh issue edit #{N} --milestone '{MILESTONE}'`. Or re-run `/team init` to set up milestones." Non-fatal: issue is still created without milestone.
+- If milestone assignment fails (milestone doesn't exist yet):
+
+  Use `AskUserQuestion`:
+  ```
+  question: "Milestone '{MILESTONE}' 不存在。如何处理？"
+  options:
+    - label: "创建 milestone"
+      description: "自动创建 '{MILESTONE}' milestone 并关联"
+    - label: "跳过"
+      description: "Issue 已创建，不关联 milestone"
+  ```
+
+  If "创建 milestone" → `gh api repos/$REPO/milestones --method POST --field title="$MILESTONE"` → then assign: `gh issue edit #{N} --milestone "$MILESTONE"`
+  If "跳过" → continue (non-fatal)
 
 Extract Issue number from output URL.
 
@@ -410,6 +444,7 @@ Output:
   {first 80 chars of text}...
   **URL** `{comment URL}`
 ────────────────────────────────────────────
+`/team-issue #N` view · `/team-claim #N` claim · `/team` dashboard
 
 💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
@@ -674,9 +709,19 @@ For each MC entry:
   {priority_dot} MC3: {title} → @{assignee}
 ────────────────────────────────────────────
 
-Use `AskUserQuestion`: "Publish all / Edit / Cancel"
+Use `AskUserQuestion`:
+```
+question: "确认批量发布？"
+options:
+  - label: "全部发布"
+    description: "创建 milestone + 所有 MC Issues"
+  - label: "编辑"
+    description: "修改某个 MC 后重新预览"
+  - label: "取消"
+    description: "不创建（milestone 已创建但无 MC）"
+```
 
-- If Edit → allow modifications and re-preview
+- If "编辑" → allow modifications and re-preview
 - If Cancel → **STOP** (milestone already created but no MCs)
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 

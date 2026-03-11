@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "3.8.1"
+version: "3.8.3"
 ---
 
 # /team — Init + Dashboard (Teamwork v3)
@@ -51,18 +51,9 @@ Parse `$ARGUMENTS`:
 
 ## Operation Help
 
-Read `skill_version` from config for the header:
+**Version**: `3.8.3` (from skill frontmatter — `tw-bump-version.sh` keeps in sync)
 
-```bash
-TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=""
-if [ -n "$TEAMWORK_DIR" ]; then
-  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.1" 2>/dev/null)
-else
-  SKILL_VERSION="3.8.1"
-fi
-```
-
-Output the following guide (substitute `{SKILL_VERSION}`) directly to the user, then **STOP**:
+Output the following guide directly to the user, then **STOP**:
 
 **TEAMWORK v{SKILL_VERSION}** — AI-Native Team Coordination (Push Model)
 ────────────────────────────────────────────
@@ -76,8 +67,12 @@ Output the following guide (substitute `{SKILL_VERSION}`) directly to the user, 
   `/team #42`             View MC **#042** details (branch, commits, PRs)
   `/team doctor`          Local git + issue health diagnostics
   `/team doctor fix`      Interactive fix — execute actions with confirmation
+  `/team doctor help`     Doctor usage guide (12 checks explained)
   `/team-issue <desc>`    Create MC (solo: self-assign; team: prompt for assignee)
   `/team-issue <desc> @user`  Create MC + assign to @user
+  `/team-issue #N`        View Issue details
+  `/team-issue #N <text>` Comment on Issue
+  `/team-issue update #N` Update Issue fields (title, priority, assignee)
   `/team-issue fix #N`    Fix untracked Issue (add teamwork labels)
   `/team-issue batch ...` Batch create milestone + multiple MCs
   `/team-claim #N`        Claim assigned Issue → generate Contract + branch
@@ -99,6 +94,7 @@ Output the following guide (substitute `{SKILL_VERSION}`) directly to the user, 
 
 **RC LIFECYCLE**
   `/team-rc`              Prepare: cut rc branch from *develop* → staging
+  `/team-rc cancel`       Cancel: delete RC, fix on base, re-cut
   `/team-rc promote`      Promote: squash merge rc → *main*, tag, GitHub Release
 
 **CONFIG & INFO**
@@ -129,18 +125,9 @@ Output the following guide (substitute `{SKILL_VERSION}`) directly to the user, 
 
 Read and present the design philosophy behind this workflow. Output the content from the manual with visual diagrams, then **STOP**.
 
-Read `skill_version` from config for the header:
+**Version**: `3.8.3` (from skill frontmatter — `tw-bump-version.sh` keeps in sync)
 
-```bash
-TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=""
-if [ -n "$TEAMWORK_DIR" ]; then
-  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.1" 2>/dev/null)
-else
-  SKILL_VERSION="3.8.1"
-fi
-```
-
-Output the following (substitute `{SKILL_VERSION}`) directly and **STOP** (no file reading needed — content is self-contained):
+Output the following directly and **STOP** (no file reading needed — content is self-contained):
 
 **TEAMWORK v{SKILL_VERSION}** — Design Philosophy & Complete Guide
 ────────────────────────────────────────────────────────────────
@@ -192,23 +179,30 @@ main ────────────── [V0.1.0] ──►          ← 
 **3. ISSUE LIFECYCLE — STATE MACHINE**
 ────────────────────────────────────
 
-Every Issue transitions through exactly these states:
+Every Issue transitions through these states:
 
 ```
-  ┌───────────┐     /team-issue     ┌───────────┐
-  │  backlog  │ ──────────────────► │    wip    │
-  └───────────┘                     └─────┬─────┘
-                                          │ /team-ship
-                                    ┌─────▼─────┐
-                                    │  review   │
-                                    └─────┬─────┘
-                                          │ PR merged
-                                    ┌─────▼─────┐
-                                    │   done    │
-                                    └───────────┘
+  ┌───────────┐    (assigned)     ┌───────────┐
+  │  created  │──────────────────►│    wip    │
+  └─────┬─────┘                   └─────┬─────┘
+        │                               ▲ │
+        │(unassigned)      /team-claim  │ │ /team-ship
+        │               ┌──────────────┘ │
+  ┌─────▼─────┐         │         ┌─────▼─────┐
+  │  queued   │─────────┘         │  review   │
+  └───────────┘                   └─────┬─────┘
+                                        │ PR merged
+                                  ┌─────▼─────┐
+                                  │   done    │
+                                  └───────────┘
+
+  ┌───────────┐
+  │  blocked  │  (any state can enter/exit, temporary)
+  └───────────┘
 ```
 
-Labels:  `status:backlog` → `status:wip` → `status:review` → `status:done`
+Labels:  `status:queued` → `status:wip` → `status:review` → `status:done`
+         `status:blocked` (any state, temporary)
 GitHub:  Issue OPEN ─────────────────────────────► Issue CLOSED
 
 
@@ -351,19 +345,23 @@ Sometimes you don't follow the standard flow:
 **9. RC LIFECYCLE** (the key innovation)
 ────────────────────────────────────
 
-  `/team-rc`           → cut *rc/V0.1.0* from *develop* (frozen)
-  verify on staging    → hotfix if needed (cherry-pick to *develop*)
+  `/team-rc`           → cut *rc/V0.1.0* from *develop* (frozen snapshot)
+  verify on staging    → found bug? fix on *develop* → `/team-rc cancel` → `/team-rc`
   `/team-rc promote`   → squash merge rc → *main*, tag `V0.1.0`, GitHub Release
+
+  **Upstream-first model**: RC is immutable. Never commit directly to RC.
+  All fixes go to *develop* first, then cancel + re-cut RC.
+  No merge-back needed — *develop* is always the superset.
 
   Think of RC as a bus: missed this one? Take the next one.
 
 ```
-  develop ── A ── B ── C ──────── D ── E ──►
+  develop ── A ── B ── C ── [fix D] ── E ──►
                         │                │
-                   rc/V0.1.0        rc/V0.2.0
-                     (bus 1)         (bus 2)
-                        │                │
-  main ─────────── [V0.1.0] ───── [V0.2.0] ──►
+                   rc/V0.1.0        rc/V0.1.0  (re-cut with fix D)
+                   (has bug)        (cancel ↗)
+                        ✗                │
+  main ──────────────────────── [V0.1.0] ──►
 ```
 
 
@@ -387,7 +385,7 @@ Two layers of config — shared team settings vs personal preferences.
   ┌──────────────────────────────────────────────────────┐
   │ .teamwork/config.yml (or .teamspace/config.yml)      │
   │                                                      │
-  │ schema_version, skill_version                        │
+  │ schema_version                                        │
   │ roles, members                                       │
   │ project (language, test/lint/build commands)          │
   │ conventions (branch pattern, base/production branch) │
@@ -487,14 +485,16 @@ TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/nu
   # STOP
 }
 ```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### Display config
 
 ```bash
-SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "" 2>/dev/null)
 WORKTREE_ENABLED=$(git config --local teamwork.worktree 2>/dev/null || echo "not set")
 cat $TEAMWORK_DIR/config.yml
 ```
+
+**Version**: `3.8.3` (from skill frontmatter — `tw-bump-version.sh` keeps in sync)
 
 Output formatted display:
 
@@ -531,6 +531,7 @@ TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/nu
   # STOP
 }
 ```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### Fetch and display
 
@@ -674,6 +675,21 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 ---
 
 ## Step 1: Route — Init or Dashboard?
+
+**Worktree guard (init only):**
+
+```bash
+# Init modifies config + commits to base branch — MUST run from main repo
+if [ -f .mission ]; then
+  MAIN_REPO=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-main-repo)
+  echo "⚠️ /team init must run from the main repo, not a mission worktree."
+  echo "Switch to main repo: cd $MAIN_REPO"
+  echo "Then retry: /team init"
+  # STOP
+fi
+```
+
+This guard only applies to `init` (and first-run auto-init). Dashboard, help, learn, config, queue, doctor, `#N` detail are all read-only and safe from worktrees.
 
 ```bash
 # Force init if $ARGUMENTS == "init"
@@ -911,36 +927,22 @@ ls $TEAMWORK_DIR/config.yml 2>/dev/null
 
 #### MERGE MODE (config exists)
 
-Preserve all existing content. Only update `skill_version` and append missing top-level sections.
+Preserve all existing content. Run migration, then append missing top-level sections.
 
-**Step 1 — Update skill_version and schema_version in place:**
+**Step 1 — Migrate config to current schema:**
 
 ```bash
-# Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 3.8.1/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.8.1/" $TEAMWORK_DIR/config.yml
-
-# Update schema_version if present
-if grep -q "^schema_version:" $TEAMWORK_DIR/config.yml; then
-  sed -i '' "s/^schema_version:.*/schema_version: 3/" $TEAMWORK_DIR/config.yml
-else
-  # Prepend schema_version before skill_version
-  sed -i '' "/^skill_version:/i\\
-schema_version: 3" $TEAMWORK_DIR/config.yml
-fi
+bash ~/.claude/commands/scripts/tw-config.sh migrate
 ```
+
+This handles: schema_version → 3, removes stale skill_version, migrates worktree section to git config.
 
 **Step 2 — Detect which top-level sections are missing:**
 
 ```bash
-# Detect missing top-level sections (no PyYAML dependency — pure grep)
+# Check each required section
 for section in project conventions label_prefix quality roles members notifications; do
-  if [ "$section" = "label_prefix" ]; then
-    # Accept either label_prefix: or labels: (vi_agent schema compat)
-    grep -q "^label_prefix:\|^labels:" $TEAMWORK_DIR/config.yml || echo "$section"
-  else
-    grep -q "^${section}:" $TEAMWORK_DIR/config.yml || echo "$section"
-  fi
+  bash ~/.claude/commands/scripts/tw-config.sh has-section "$section" 2>/dev/null || echo "$section"
 done
 ```
 
@@ -1024,15 +1026,7 @@ notifications:
 
 Worktree mode moved from shared config to local git config in v3.4.0.
 
-```bash
-if grep -q "^worktree:" $TEAMWORK_DIR/config.yml 2>/dev/null; then
-  # Migrate: set local git config
-  git config --local teamwork.worktree true
-  # Remove worktree section from config.yml (no longer shared)
-  sed -i '' '/^worktree:/,/^[^ #]/{ /^worktree:/d; /^  /d; }' $TEAMWORK_DIR/config.yml
-  echo "Migrated: worktree mode → git config --local (per-user, no longer shared)"
-fi
-```
+Note: worktree migration is already handled by `tw-config.sh migrate` in Step 1.
 
 **Step 5 — Per-user local setup:**
 
@@ -1044,7 +1038,7 @@ For `quality:` section, if missing, use safe defaults instead of referencing Ste
 
 ```bash
 # If quality section is missing, append with safe defaults
-if ! grep -q "^quality:" $TEAMWORK_DIR/config.yml; then
+if ! bash ~/.claude/commands/scripts/tw-config.sh has-section quality 2>/dev/null; then
   cat >> $TEAMWORK_DIR/config.yml <<'EOF'
 
 quality:
@@ -1058,16 +1052,15 @@ fi
 
 **Step 7 — Show merge summary:**
 
-Read `SKILL_VERSION` from the config file AFTER the sed update in Step 1 (to get the updated value):
-
 ```bash
-SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.1" 2>/dev/null)
 WORKTREE_STATUS=$(git config --local teamwork.worktree 2>/dev/null || echo "not set")
 ```
 
+**Version**: `3.8.3` (from skill frontmatter — `tw-bump-version.sh` keeps in sync)
+
 ```
 ✅ Config updated (merge mode — existing config preserved)
-   skill_version → {SKILL_VERSION}
+   schema_version → `3`
    Preserved sections: {list of sections kept}
    Added sections: {list of sections appended, or "(none — already complete)"}
    {If worktree migrated:} Migrated: worktree → git config --local
@@ -1087,7 +1080,6 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 3
-skill_version: 3.8.1
 
 roles:
   - id: leader
@@ -1486,6 +1478,18 @@ jobs:
             if (numbers.length === 0) {
               console.log('No closing keywords found in PR body — skipping cleanup');
             }
+
+            // 4. Check all checkboxes in PR body itself
+            const prBody = context.payload.pull_request.body || '';
+            if (prBody.includes('- [ ]')) {
+              const updatedPr = prBody.replace(/- \[ \]/g, '- [x]');
+              await github.rest.pulls.update({
+                ...context.repo,
+                pull_number: context.payload.pull_request.number,
+                body: updatedPr
+              });
+              console.log(`Checked ${(prBody.match(/- \[ \]/g) || []).length} PR checkboxes`);
+            }
 ```
 
 **Note**: `{STATUS_PREFIX}` is substituted at generation time with the value from config (default: `status:`). This means the generated workflow contains literal strings like `status:wip`, not template variables.
@@ -1597,31 +1601,35 @@ All features configured. `/team config` to modify settings.
 
 → Proceed to next step (no AskUserQuestion needed).
 
-**If ANY are NOT configured** → use `AskUserQuestion` to offer setup:
+**If ANY are NOT configured** → use `AskUserQuestion` to offer setup.
 
-Build the options list dynamically from unconfigured items:
+⚠️ Claude Code AskUserQuestion has a **4-option limit**. Use a two-step flow:
+
+**Step 1 — Overview question** (always ≤ 4 options):
 
 ```
-question: "以下功能推荐开启，选择要配置的项目："
+question: "有 {N} 项本地功能未配置：{list unconfigured names, comma-separated}。如何处理？"
 options:
-  {Only include unconfigured items:}
   - label: "全部开启（推荐）"
-    description: "一键配置所有未开启的功能"
-  - label: "Worktree 隔离"    # only if WORKTREE_ENABLED is empty (never configured)
-    description: "每个 mission 独立目录，多任务不冲突"
-  - label: "Worktree 根目录"  # only if WORKTREE_ENABLED=true but WORKTREE_ROOT empty
-    description: "设置 worktree 创建位置（当前：默认同级目录）"
-  - label: "Tab 标题+颜色"    # only if tab not configured
-    description: "终端标签页自动显示 branch 名 + 类型着色"
-  - label: "桌面通知"          # only if notify not configured
-    description: "Claude 需要操作时弹出 macOS 通知"
+    description: "一键配置所有 {N} 项功能"
+  - label: "逐项选择"
+    description: "我来选要开启哪些"
   - label: "跳过"
-    description: "以后用 /team config 配置"
+    description: "以后用 /team init 配置"
 ```
 
-**If user selects "全部开启"** → execute ALL unconfigured items below in sequence.
-**If user selects a specific item** → execute only that item.
-**If user selects "跳过"** → proceed to next step.
+**If "全部开启"** → execute ALL unconfigured items below in sequence.
+**If "跳过"** → proceed to next step.
+**If "逐项选择"** → for each unconfigured item, ask a simple yes/no AskUserQuestion:
+
+```
+question: "{feature name} — {one-line description}。开启？"
+options:
+  - label: "开启"
+    description: "{what it does}"
+  - label: "跳过"
+    description: "保持未配置"
+```
 
 ---
 
@@ -1644,29 +1652,38 @@ If "自定义路径" → use `AskUserQuestion`:
 question: "输入 worktree 根目录的绝对路径（worktree 会在此目录下创建子目录）"
 ```
 
-Save the user's choice:
+Save the user's choice — **explicit mapping from UI option to stored value:**
+
 ```bash
 git config --local teamwork.worktree true
+```
 
-# Save worktree root path
-# "claude" → .claude/worktrees/ (relative to repo root, same as Claude Code native)
-# "sibling" → (empty — uses default ../repo-wt-slug)
-# custom → the user-provided absolute path
-git config --local teamwork.worktree-root "{chosen_path}"
+**⚠️ CRITICAL: map user selection to the correct stored value:**
 
-# Create the root directory if it doesn't exist
-mkdir -p "{chosen_path}"
+| User selected | Store as `teamwork.worktree-root` | Effect in `/team-claim` |
+|---|---|---|
+| `.claude/worktrees/` | `.claude/worktrees/` | `{repo}/.claude/worktrees/{slug}` |
+| `项目同级目录` | *(unset — do NOT set worktree-root)* | `../{repo}-wt-{slug}` |
+| `自定义路径` | the user-provided absolute path | `{custom_path}/{slug}` |
 
-# Ensure .claude/worktrees/ is in .gitignore (for "claude" option)
+```bash
+# Option 1: ".claude/worktrees/"
+git config --local teamwork.worktree-root ".claude/worktrees/"
+mkdir -p ".claude/worktrees/"
+# Add to .gitignore if not already there
 if ! grep -q '.claude/worktrees/' .gitignore 2>/dev/null; then
   echo '.claude/worktrees/' >> .gitignore
 fi
+
+# Option 2: "项目同级目录" — do NOT set worktree-root (leave unset for sibling fallback)
+git config --local --unset teamwork.worktree-root 2>/dev/null || true
+
+# Option 3: "自定义路径" — store the user-provided absolute path
+git config --local teamwork.worktree-root "{user_provided_path}"
+mkdir -p "{user_provided_path}"
 ```
 
-**Worktree root values:**
-- `.claude/worktrees/` → stored as relative path to repo root (matches Claude Code native behavior)
-- Empty / unset → sibling mode (backward compat: `../{repo}-wt-{slug}`)
-- Custom absolute path → stored as-is
+**⛔ Never store Chinese text or UI labels as the config value.** Only store: a valid path string, or leave unset for sibling mode.
 
 ---
 
@@ -2181,7 +2198,8 @@ eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)
 BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "main" 2>/dev/null)
 BASE_BRANCH="${BASE_BRANCH:-main}"
 CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
-SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "?" 2>/dev/null)
+# SKILL_VERSION: hardcoded from frontmatter, tw-bump-version.sh keeps in sync
+SKILL_VERSION="3.8.3"
 ```
 
 **Performance: fetch data in parallel.** Make these calls using **parallel Bash tool calls** (not sequential):
@@ -2342,7 +2360,7 @@ Teamwork v{SKILL_VERSION} · **{VERSION}**  `{progress_bar}`  {pct}%  {done}/{to
 1. Orphan contract (issue closed, contract exists) → `/team doctor fix` to clean up, then `/team-claim`
 2. Merged PR branch still exists locally → `/team-ship done` to clean up
 3. PR behind base → PR **#{N}** is {M} behind — `/team-ship sync`
-4. PR CI passed + approved → PR **#{N}** ready to merge. `/team-ship done`
+4. PR CI passed + approved → PR **#{N}** ready to merge — merge on GitHub, then `/team-ship done`
 5. PR CI passed, no review → PR **#{N}** CI passed — awaiting review/merge
 6. PR CI failing → PR **#{N}** CI failing — fix before merge
 7. Active mission, no PR → `/team-drive` to continue or `/team-ship` to deliver
@@ -2489,6 +2507,7 @@ BASE_BRANCH="${BASE_BRANCH:-main}"
 eval "$(bash ~/.claude/commands/scripts/tw-config.sh resolve-labels 2>/dev/null)"
 # Now MISSION_LABEL, STATUS_PREFIX, PRIORITY_PREFIX are set
 ```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### Data Collection Phase
 
@@ -2674,8 +2693,7 @@ Parse git worktree list --porcelain output:
        For each active Contract, find its worktree path from git worktree list.
        Message: "Worktree mode enabled but you're in the main repo.
        Running /team-drive or /team-ship here bypasses worktree isolation.
-       Switch to your mission worktree:
-         cd {worktree_path}  ← #{issue} {title}"
+       打开新终端 tab，执行：cd {worktree_path} && claude  ← #{issue} {title}"
 ```
 
 #### Check 6: Shippable PRs
@@ -3091,8 +3109,8 @@ options:
 ```
 question: "Action [N]: Worktree mode enabled but you're in the main repo. Mission #{issue} has a worktree at {path}."
 options:
-  - label: "Show worktree path"
-    description: "Print: cd {worktree_path}"
+  - label: "新开 tab 切到 worktree（推荐）"
+    description: "打开新终端 tab，cd {worktree_path} && claude"
   - label: "Disable worktree mode"
     description: "git config --local teamwork.worktree false"
   - label: "Skip"
@@ -3149,6 +3167,9 @@ if [ -z "$GH_USER" ]; then
 fi
 ```
 
+- If auth fails → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
   echo "No teamwork config found. Run /team init first."
@@ -3161,13 +3182,22 @@ BASE_BRANCH="${BASE_BRANCH:-main}"
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 ```
 
-Check for worktree mode — auto doesn't support worktrees:
+- If no config → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+Check worktree mode:
 ```bash
+WORKTREE_ENABLED=$(git config --local teamwork.worktree 2>/dev/null || echo "false")
+
+# If running FROM INSIDE a worktree (not the main repo), reject — auto must run from main repo
 if [ -f .mission ]; then
-  echo "ERROR: You're in a worktree. Run /team auto from the main repo."
+  echo "ERROR: You're inside a worktree. Run /team auto from the main repo."
   # STOP
 fi
 ```
+
+- If inside a worktree → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 Check for clean working tree — auto switches branches, so uncommitted changes would be lost:
 ```bash
@@ -3177,11 +3207,15 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 ```
 
+- If dirty tree → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
 Check for active Contract — if one exists, user should finish or abandon it first:
 ```bash
 ls "$TEAMWORK_DIR"/active/MISSION-*.md 2>/dev/null
 ```
 If active Contract exists → "You have an active mission. Finish it with `/team-drive` + `/team-ship`, or run `/team doctor fix` to clean up." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### A1: Select Issue
 
@@ -3196,18 +3230,22 @@ gh issue list --label "$MISSION_LABEL" --state open --assignee "$GH_USER" --json
 ```
 
 - If none → "No missions assigned to you. Create one with `/team-issue` first." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - Sort by priority (P0 first)
-- Display:
+- Display summary then use `AskUserQuestion` with top 3 Issues (AskUserQuestion max = 4 options):
 
-🤖 **AUTO MODE** — Select Issue
-────────────────────────────────────────────
-Your assigned missions:
-  🔴 1. **#042** fix: camera permission on iOS Safari
-  🟠 2. **#045** feat: add rate limiting
-  🟡 3. **#047** docs: write API documentation
-────────────────────────────────────────────
-
-- Use `AskUserQuestion` to pick one
+Use `AskUserQuestion`:
+```
+question: "哪个 Issue 要 auto？（按优先级排列）"
+options:
+  {For TOP 3 assigned Issues, sorted by priority (skip rest — 4-option limit):}
+  - label: "#{issue} {title}"
+    description: "{priority_dot} {Pn} · {size} · {milestone or '—'}"
+  - label: "取消"
+    description: "返回"
+```
+If "取消" → **STOP**
+If user has 4+ assigned Issues, show note before AskUserQuestion: "显示前 3 个（共 {N} 个）。指定 Issue: `/team auto #N`"
 
 ### A2: Validate Issue
 
@@ -3216,10 +3254,13 @@ ISSUE_DATA=$(gh issue view {issue} --json number,title,body,labels,milestone,ass
 ```
 
 - If Issue not found → "Issue #{issue} not found." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - If Issue is closed → "Issue #{issue} is already closed." → **STOP**
-- If Issue has no assignee → auto-assign to `$GH_USER`: `gh issue edit {issue} --add-assignee "$GH_USER"`
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+- If Issue has no assignee → auto-assign to `$GH_USER`: `gh issue edit {issue} --repo "$REPO" --add-assignee "$GH_USER"`
 - If Issue is assigned to someone else → warn "Issue #{issue} is assigned to someone else." Use `AskUserQuestion`: "Claim anyway?" / "Cancel". If cancel → **STOP**. If claim → also add `$GH_USER` as assignee.
 - If Issue is missing `$MISSION_LABEL` → warn "Issue #{issue} is not a mission Issue (missing `$MISSION_LABEL` label). Use `/team-issue fix #{issue}` first." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 Display the issue summary and announce auto mode:
 
@@ -3281,7 +3322,7 @@ issue_content_hash: "$(bash ~/.claude/commands/scripts/tw-contract.sh hash "$TIT
 ## Sub-tasks
 {from Issue body}
 
-## Acceptance Criteria
+## Success Criteria
 {from Issue body}
 
 ## Context Files
@@ -3296,13 +3337,60 @@ issue_content_hash: "$(bash ~/.claude/commands/scripts/tw-contract.sh hash "$TIT
 
 **Context Files scanning** is the key AI value-add — scan the project to identify files that will need modification, related tests, and config files. Use `Glob` and `Grep` with keywords from the Issue.
 
-#### Create branch
+#### Create branch (+ worktree if enabled)
+
+**If worktree DISABLED (default):**
 
 ```bash
 SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$ISSUE_TITLE")
 bash ~/.claude/commands/scripts/tw-git.sh ensure-base
 BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
 ```
+
+**If worktree ENABLED:**
+
+⚠ Do NOT run `ensure-base` — it would checkout the base branch, disrupting the working tree.
+
+```bash
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$ISSUE_TITLE")
+
+# Derive main repo path (works from any worktree or the main repo)
+MAIN_REPO=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-main-repo)
+
+# Fetch latest base
+git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
+
+# Build branch name from config pattern
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh build-branch-name "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
+
+# Determine worktree path from per-user config
+WORKTREE_ROOT=$(git config --local teamwork.worktree-root 2>/dev/null || echo "")
+if [ -n "$WORKTREE_ROOT" ]; then
+  if [[ "$WORKTREE_ROOT" != /* ]]; then
+    WORKTREE_ROOT="${MAIN_REPO}/${WORKTREE_ROOT}"
+  fi
+  mkdir -p "$WORKTREE_ROOT"
+  WORKTREE_PATH="${WORKTREE_ROOT}/${SLUG}"
+else
+  REPO_NAME=$(basename "$MAIN_REPO")
+  WORKTREE_PATH="${MAIN_REPO}/../${REPO_NAME}-wt-${SLUG}"
+fi
+
+# Create worktree
+git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BASE_BRANCH" 2>/dev/null || {
+  git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || {
+    echo "ERROR: Could not create worktree at $WORKTREE_PATH"
+    # STOP
+  }
+}
+
+# Copy Contract + config into worktree
+mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR/active"
+cp "$TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md" "$WORKTREE_PATH/$TEAMWORK_DIR/active/"
+cp "$TEAMWORK_DIR/config.yml" "$WORKTREE_PATH/$TEAMWORK_DIR/"
+echo "$ISSUE_NUMBER" > "$WORKTREE_PATH/.mission"
+```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 #### Post claim comment
 
@@ -3314,11 +3402,34 @@ Non-fatal if comment fails.
 
 #### Announce Phase 1 complete
 
+**If worktree DISABLED:**
+
 ✅ **PHASE 1: CLAIMED**
    Contract: `$TEAMWORK_DIR/active/MISSION-{issue}.md`
    Branch:   *{branch}*
    Proceeding to drive...
 ────────────────────────────────────────────
+
+**If worktree ENABLED → ⛔ STOP here. Do NOT proceed to A4.**
+
+Output:
+
+✅ **PHASE 1: CLAIMED** (worktree mode)
+   Contract: `$TEAMWORK_DIR/active/MISSION-{issue}.md`
+   Branch:   *{branch}*
+   Worktree: `{worktree_path}`
+
+⚠️ **Worktree 模式下 auto 在 claim 后停止**
+────────────────────────────────────────────
+当前终端在主仓库。后续操作必须在 worktree 目录中执行。
+
+**打开新终端 tab，执行：**
+  `cd {worktree_path} && claude`
+  Then: `/team-drive` to execute │ `/team-ship` when done
+────────────────────────────────────────────
+
+Then **STOP**. Do NOT proceed to A4.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### A4: Phase 2 — Drive (full protocol)
 
@@ -3385,6 +3496,7 @@ Execute the ship flow without interactive confirmations.
    fi
    ```
    - If tests fail → "Tests failing. Fix before shipping." → attempt to fix, re-run. If still failing after 3 attempts → **STOP** with clear error.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 #### Push
 
@@ -3398,6 +3510,7 @@ bash ~/.claude/commands/scripts/tw-git.sh rebase "$BASE_BRANCH"
 bash ~/.claude/commands/scripts/tw-git.sh push "$BRANCH"
 ```
 If still fails → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 #### Create PR
 
@@ -3430,7 +3543,7 @@ Closes #{issue}
 ## Changes
 {completed sub-tasks as bullet list}
 
-## Acceptance Criteria
+## Success Criteria
 {from Contract}
 
 ## Test
@@ -3530,6 +3643,9 @@ if [ -z "$GH_USER" ]; then
 fi
 ```
 
+- If auth fails → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
   echo "No teamwork config found. Run /team init first."
@@ -3548,11 +3664,20 @@ if [ -n "$MILESTONE" ]; then
 fi
 ```
 
+- If no config → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+Check worktree mode:
+```bash
+WORKTREE_ENABLED=$(git config --local teamwork.worktree 2>/dev/null || echo "false")
+```
+
 Check for active Contract — if one exists, wrap is not the right tool:
 ```bash
 ls $TEAMWORK_DIR/active/MISSION-*.md 2>/dev/null
 ```
 If active Contract exists → "You have an active mission. Use `/team-drive` and `/team-ship` instead." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### W1: Detect Code State
 
@@ -3693,6 +3818,9 @@ Verify stash succeeded:
 }
 ```
 
+- If stash fails → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
 #### A2: Create Issue
 
 Use the same logic as `/team-issue` Create Flow (Steps 2-6), but with the AI-generated title/body from W2. Specifically:
@@ -3715,13 +3843,80 @@ Extract `ISSUE_NUMBER` from output.
 
 #### A3: Claim (create mission branch from clean base)
 
+**If worktree DISABLED (default):**
+
 ```bash
 SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$TITLE")
 bash ~/.claude/commands/scripts/tw-git.sh ensure-base
 BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
 ```
 
-Generate Mission Contract at `$TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md` — same structure as `/team-claim` Step 4.
+**If worktree ENABLED:**
+
+⚠ Do NOT run `ensure-base`.
+
+```bash
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$TITLE")
+MAIN_REPO=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-main-repo)
+git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
+
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh build-branch-name "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
+
+WORKTREE_ROOT=$(git config --local teamwork.worktree-root 2>/dev/null || echo "")
+if [ -n "$WORKTREE_ROOT" ]; then
+  if [[ "$WORKTREE_ROOT" != /* ]]; then
+    WORKTREE_ROOT="${MAIN_REPO}/${WORKTREE_ROOT}"
+  fi
+  mkdir -p "$WORKTREE_ROOT"
+  WORKTREE_PATH="${WORKTREE_ROOT}/${SLUG}"
+else
+  REPO_NAME=$(basename "$MAIN_REPO")
+  WORKTREE_PATH="${MAIN_REPO}/../${REPO_NAME}-wt-${SLUG}"
+fi
+
+git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BASE_BRANCH" 2>/dev/null || {
+  git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || {
+    echo "ERROR: Could not create worktree at $WORKTREE_PATH"
+    # STOP
+  }
+}
+mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR/active"
+echo "$ISSUE_NUMBER" > "$WORKTREE_PATH/.mission"
+```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+Generate Mission Contract at `$TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md` — same structure as `/team-claim` Step 4. Copy Contract + config into worktree:
+```bash
+cp "$TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md" "$WORKTREE_PATH/$TEAMWORK_DIR/active/"
+cp "$TEAMWORK_DIR/config.yml" "$WORKTREE_PATH/$TEAMWORK_DIR/"
+```
+
+**If worktree ENABLED → ⛔ STOP here. Do NOT proceed to A4.**
+
+The stash is still in the main repo. User must apply it in the worktree. Output:
+
+🔄 **WRAPPED** (stash → worktree) ── **#{ISSUE_NUMBER}** {title}
+────────────────────────────────────────────
+**Issue:**     **#{ISSUE_NUMBER}**
+**Branch:**    *{BRANCH}*
+**Worktree:**  `{worktree_path}`
+**Contract:**  `$TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md`
+**Stash:**     still in main repo (apply in worktree)
+
+⚠️ **Worktree 模式下 wrap 在 claim 后停止**
+────────────────────────────────────────────
+当前终端在主仓库。后续操作必须在 worktree 目录中执行。
+
+**打开新终端 tab，执行：**
+  `cd {worktree_path}`
+  `git stash pop`  ← apply your stashed changes
+  Then: `/team-drive` to verify │ `/team-ship` when done
+────────────────────────────────────────────
+
+Then **STOP**.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+**If worktree DISABLED → continue to A4:**
 
 #### A4: Apply stash on mission branch
 
@@ -3748,7 +3943,43 @@ Output:
   `/team-ship`     Push + create PR
 ────────────────────────────────────────────
 
-Then invoke `/team-drive` automatically. **Important**: since this is a wrap (code already written), team-drive should focus on **verifying and committing** the existing changes, not re-implementing sub-tasks. The Contract's AI Notes section should contain: `"Wrap mode: code already applied. Verify correctness, run tests, commit. Do not re-implement."`
+Use `AskUserQuestion`:
+```
+question: "Wrap 完成。接下来？"
+options:
+  - label: "立即 drive"
+    description: "运行 /team-drive 验证代码、跑测试、提交"
+  - label: "稍后再说"
+    description: "我手动运行 /team-drive"
+```
+
+If "立即 drive" → invoke `/team-drive` automatically. **Important**: since this is a wrap (code already written), team-drive should focus on **verifying and committing** the existing changes, not re-implementing sub-tasks. The Contract's AI Notes section should contain: `"Wrap mode: code already applied. Verify correctness, run tests, commit. Check off each sub-task after verifying it passes. Do not re-implement."`
+
+**⚠️ Wrap-mode checkbox rule**: After drive completes verification, ALL code sub-tasks in the Contract MUST be checked off (`- [x]`). In wrap mode the code is already written — verification = confirmation of completion. If drive didn't check them (common oversight), force-check before proceeding to ship:
+
+```bash
+# Force-check all unchecked code sub-tasks in Contract (wrap mode: code already complete)
+python3 -c "
+import re, sys
+path = sys.argv[1]
+with open(path) as f: content = f.read()
+# Check all unchecked items that are NOT manual tasks
+updated = re.sub(r'^(- )\[ \]( (?!🔧))', r'\1[x]\2', content, flags=re.MULTILINE)
+if updated != content:
+    with open(path, 'w') as f: f.write(updated)
+    count = content.count('- [ ] ') - updated.count('- [ ] ')
+    print(f'Wrap: force-checked {count} sub-task(s) in Contract')
+else:
+    print('All sub-tasks already checked')
+" "$CONTRACT_PATH"
+
+# Sync to GitHub Issue
+bash ~/.claude/commands/scripts/tw-contract.sh sync-all-checkboxes "$CONTRACT_PATH" "$ISSUE_NUMBER"
+```
+
+Then proceed to `/team-ship`.
+
+If "稍后再说" → **STOP**
 
 ### W5: Execute — Path B (COMMITTED_NOT_PUSHED)
 
@@ -3781,13 +4012,80 @@ Same as Path A, Step A2.
 
 #### B3: Claim (create mission branch from clean base)
 
+**If worktree DISABLED (default):**
+
 ```bash
 SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$TITLE")
 bash ~/.claude/commands/scripts/tw-git.sh ensure-base
 BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh create-branch "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
 ```
 
-Generate Mission Contract — same as Path A, Step A3.
+**If worktree ENABLED:**
+
+⚠ Do NOT run `ensure-base`.
+
+```bash
+SLUG=$(bash ~/.claude/commands/scripts/tw-git.sh slugify "$TITLE")
+MAIN_REPO=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-main-repo)
+git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
+
+BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh build-branch-name "$ISSUE_NUMBER" "$SLUG" "$GH_USER")
+
+WORKTREE_ROOT=$(git config --local teamwork.worktree-root 2>/dev/null || echo "")
+if [ -n "$WORKTREE_ROOT" ]; then
+  if [[ "$WORKTREE_ROOT" != /* ]]; then
+    WORKTREE_ROOT="${MAIN_REPO}/${WORKTREE_ROOT}"
+  fi
+  mkdir -p "$WORKTREE_ROOT"
+  WORKTREE_PATH="${WORKTREE_ROOT}/${SLUG}"
+else
+  REPO_NAME=$(basename "$MAIN_REPO")
+  WORKTREE_PATH="${MAIN_REPO}/../${REPO_NAME}-wt-${SLUG}"
+fi
+
+git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BASE_BRANCH" 2>/dev/null || {
+  git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || {
+    echo "ERROR: Could not create worktree at $WORKTREE_PATH"
+    # STOP
+  }
+}
+mkdir -p "$WORKTREE_PATH/$TEAMWORK_DIR/active"
+echo "$ISSUE_NUMBER" > "$WORKTREE_PATH/.mission"
+```
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+Generate Mission Contract — same as Path A, Step A3. Copy Contract + config into worktree:
+```bash
+cp "$TEAMWORK_DIR/active/MISSION-$ISSUE_NUMBER.md" "$WORKTREE_PATH/$TEAMWORK_DIR/active/"
+cp "$TEAMWORK_DIR/config.yml" "$WORKTREE_PATH/$TEAMWORK_DIR/"
+```
+
+**If worktree ENABLED → ⛔ STOP here. Do NOT proceed to B4.**
+
+The commits are still on the current branch. User must cherry-pick in the worktree. Output:
+
+🔄 **WRAPPED** (worktree created) ── **#{ISSUE_NUMBER}** {title}
+────────────────────────────────────────────
+**Issue:**     **#{ISSUE_NUMBER}**
+**Branch:**    *{BRANCH}*
+**Worktree:**  `{worktree_path}`
+**Contract:**  `$TEAMWORK_DIR/active/MISSION-{ISSUE_NUMBER}.md`
+**Commits:**   `{COMMIT_COUNT}` on *{ORIGINAL_BRANCH}* (cherry-pick in worktree)
+
+⚠️ **Worktree 模式下 wrap 在 claim 后停止**
+────────────────────────────────────────────
+当前终端在主仓库。后续操作必须在 worktree 目录中执行。
+
+**打开新终端 tab，执行：**
+  `cd {worktree_path}`
+  `git cherry-pick {COMMIT_SHAS}`  ← move your commits
+  Then: `/team-drive` to verify │ `/team-ship` when done
+────────────────────────────────────────────
+
+Then **STOP**.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+**If worktree DISABLED → continue to B4:**
 
 #### B4: Cherry-pick commits onto mission branch
 
@@ -3812,6 +4110,9 @@ if [ -n "$DIFF_CHECK" ]; then
   # STOP — do NOT reset. User must investigate.
 fi
 ```
+
+- If diff mismatch → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 If `ORIGINAL_BRANCH` is the base branch (user committed directly on main/develop):
 - Use `AskUserQuestion`: "You committed on `{BASE_BRANCH}`. Reset it to `origin/{BASE_BRANCH}`? This removes your local commits (they're now on the mission branch)."
@@ -3847,7 +4148,18 @@ Output:
   `/team-ship`     Push + create PR
 ────────────────────────────────────────────
 
-Then invoke `/team-drive` automatically. Same wrap-mode note as Path A — team-drive verifies and commits, does not re-implement.
+Use `AskUserQuestion`:
+```
+question: "Wrap 完成。接下来？"
+options:
+  - label: "立即 drive"
+    description: "运行 /team-drive 验证代码、跑测试、提交"
+  - label: "稍后再说"
+    description: "我手动运行 /team-drive"
+```
+
+If "立即 drive" → invoke `/team-drive` automatically. Same wrap-mode note as Path A — team-drive verifies and commits, does not re-implement. After drive completes, apply the same **wrap-mode checkbox rule** (force-check + sync) before proceeding to `/team-ship`.
+If "稍后再说" → **STOP**
 
 ### W6: Execute — Path C (COMMITTED_PUSHED)
 

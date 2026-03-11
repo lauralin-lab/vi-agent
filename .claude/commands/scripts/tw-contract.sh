@@ -6,7 +6,6 @@
 #   bash tw-contract.sh hash TITLE BODY                    # Compute SHA256 hash
 #   bash tw-contract.sh check-freshness PATH ISSUE         # Compare hashes (0=fresh, 1=stale, 2=no-hash)
 #   bash tw-contract.sh toggle-task PATH N                  # Check off Nth subtask
-#   bash tw-contract.sh sync-checkbox ISSUE SUBTASK_TEXT   # (DEPRECATED) Update one checkbox
 #   bash tw-contract.sh sync-all-checkboxes PATH ISSUE     # Batch-sync all checked items to Issue
 #   bash tw-contract.sh delete PATH                         # Remove contract file
 #
@@ -33,7 +32,7 @@ _teamwork_dir() {
 usage() {
   echo "Usage: tw-contract.sh <subcommand> [args...]" >&2
   echo "Subcommands: read-field, hash, check-freshness," >&2
-  echo "             toggle-task, sync-checkbox, sync-all-checkboxes, delete" >&2
+  echo "             toggle-task, sync-all-checkboxes, delete" >&2
   exit 1
 }
 
@@ -153,47 +152,6 @@ print(f'Task {n} checked off at {ts}')
 " "$path" "$n" "$timestamp"; then
     echo "ERROR: Failed to update Contract at $path (task $n)" >&2
     exit 1
-  fi
-}
-
-cmd_sync_checkbox() {
-  # DEPRECATED: use sync-all-checkboxes instead (batch, fuzzy, one API call)
-  echo "DEPRECATED: sync-checkbox — use sync-all-checkboxes instead" >&2
-  local issue="${1:-}" subtask_text="${2:-}"
-  if [ -z "$issue" ] || [ -z "$subtask_text" ]; then
-    echo "ERROR: sync-checkbox requires ISSUE and SUBTASK_TEXT" >&2
-    exit 1
-  fi
-
-  local issue_body
-  issue_body=$(gh issue view "$issue" --json body --jq '.body' 2>/dev/null) || {
-    echo "WARNING: Could not fetch Issue body (network error)" >&2
-    return 0
-  }
-
-  if [ -z "$issue_body" ]; then
-    echo "WARNING: Issue body is empty" >&2
-    return 0
-  fi
-
-  local updated_body
-  updated_body=$(python3 -c "
-import sys
-body = sys.stdin.read()
-task = sys.argv[1]
-body = body.replace('- [ ] ' + task, '- [x] ' + task, 1)
-print(body, end='')
-" "$subtask_text" <<< "$issue_body" 2>/dev/null) || {
-    echo "WARNING: Could not process Issue body" >&2
-    return 0
-  }
-
-  if [ -n "$updated_body" ]; then
-    gh issue edit "$issue" --body "$updated_body" 2>/dev/null || {
-      echo "WARNING: Could not sync sub-task to GitHub Issue (non-fatal)" >&2
-      return 0
-    }
-    echo "Synced checkbox to Issue #$issue"
   fi
 }
 
@@ -327,12 +285,13 @@ else:
     for item in unmatched:
         print(f'UNMATCHED:{item}', file=sys.stderr)
     sys.exit(1)
-" "$contract_path" 3>/tmp/tw-sync-body.$$ <<< "$issue_body" 2>&1) || {
-    local exit_code=$?
+" "$contract_path" 3>/tmp/tw-sync-body.$$ <<< "$issue_body" 2>&1)
+  local exit_code=$?
+  if [ "$exit_code" -ne 0 ]; then
     echo "WARNING: Sync matching failed (exit $exit_code): $result" >&2
     rm -f /tmp/tw-sync-body.$$
     exit "$exit_code"
-  }
+  fi
 
   if [ -f /tmp/tw-sync-body.$$ ] && [ -s /tmp/tw-sync-body.$$ ]; then
     # Write updated body back to GitHub (one write)
@@ -386,7 +345,6 @@ case "$SUBCOMMAND" in
   hash)             cmd_hash "$@" ;;
   check-freshness)  cmd_check_freshness "$@" ;;
   toggle-task)      cmd_toggle_task "$@" ;;
-  sync-checkbox)          cmd_sync_checkbox "$@" ;;
   sync-all-checkboxes)   cmd_sync_all_checkboxes "$@" ;;
   delete)                cmd_delete "$@" ;;
   *)                     usage ;;

@@ -1,6 +1,6 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "3.8.1"
+version: "3.8.3"
 ---
 
 # /team-ship — Deliver Mission
@@ -70,7 +70,7 @@ Parse `$ARGUMENTS`:
 CURRENT=$(git branch --show-current)
 bash ~/.claude/commands/scripts/tw-git.sh protect-check 2>/dev/null || {
   echo "ERROR: You're on a protected branch ($CURRENT). Switch to a mission branch first."
-  # STOP
+  # STOP — 💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 }
 ```
 
@@ -86,7 +86,7 @@ fi
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
   echo "No teamwork config found. Run /team init first."
-  # STOP
+  # STOP — 💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 }
 ```
 
@@ -129,7 +129,7 @@ Read the Contract file fully. Extract from YAML frontmatter:
 
 Extract from body:
 - **Sub-tasks** (with checkbox status)
-- **Acceptance Criteria**
+- **Success Criteria**
 - **AI Notes**
 
 ---
@@ -149,32 +149,48 @@ The user has worktree mode enabled but is running `/team-ship` from the main rep
 Find the correct worktree path for this Contract's branch:
 
 ```bash
-git worktree list --porcelain | grep -B2 "branch refs/heads/${CONTRACT_BRANCH}" | head -1 | sed 's/worktree //'
+bash ~/.claude/commands/scripts/tw-git.sh worktree-find-by-branch "$CONTRACT_BRANCH" 2>/dev/null || true
 ```
 
 If a worktree path is found:
 
-**⚠️ WORKTREE MISMATCH**
-────────────────────────────────────────────
-Worktree mode is enabled but you're in the main repo.
-Your mission worktree: `{worktree_path}`
+Output the mismatch warning, then use `AskUserQuestion` to let the user choose:
 
-Switch to it:  `cd {worktree_path}`
-Then re-run:   `/team-ship`
-────────────────────────────────────────────
-→ **STOP**
-  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+**⚠️ WORKTREE MISMATCH** — mission worktree: `{worktree_path}`
+
+```
+question: "Worktree mode 已启用，但你在主仓库。Mission #{issue} 的 worktree 在 {worktree_path}。"
+options:
+  - label: "新开 tab 切到 worktree（推荐）"
+    description: "打开新终端 tab，cd {worktree_path} && claude，然后 /team-ship"
+  - label: "在主仓库继续"
+    description: "忽略 worktree，直接在当前目录 ship（本次）"
+  - label: "关闭 worktree 模式"
+    description: "git config --local teamwork.worktree false，然后继续"
+```
+
+- If "新开 tab 切到 worktree" → output: "**打开新终端 tab，执行：** `cd {worktree_path} && claude` → `/team-ship`" → **STOP**
+- If "在主仓库继续" → proceed to Step 1 (skip worktree check for this run)
+- If "关闭 worktree 模式" → `git config --local teamwork.worktree false` → proceed to Step 1
 
 If no worktree exists for this branch:
 
-**⚠️ NO WORKTREE FOUND**
-────────────────────────────────────────────
-Worktree mode is enabled but no worktree exists for branch *{branch}*.
-Run `/team-claim` **#{issue}** to recreate with worktree isolation.
-Or disable worktree mode: `git config --local teamwork.worktree false`
-────────────────────────────────────────────
-→ **STOP**
-  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+**⚠️ NO WORKTREE** — branch *{branch}* has no worktree
+
+```
+question: "Worktree mode 已启用，但 branch {branch} 没有对应的 worktree。"
+options:
+  - label: "在主仓库 ship"
+    description: "忽略 worktree，直接在当前目录 ship（本次）"
+  - label: "重新 claim（创建 worktree）"
+    description: "删除 Contract，重新 /team-claim #{issue}"
+  - label: "关闭 worktree 模式"
+    description: "git config --local teamwork.worktree false，然后继续"
+```
+
+- If "在主仓库 ship" → proceed to Step 1
+- If "重新 claim" → delete Contract, output `/team-claim #{issue}` → **STOP**
+- If "关闭 worktree 模式" → `git config --local teamwork.worktree false` → proceed to Step 1
 
 ---
 
@@ -338,7 +354,7 @@ Closes #{issue}
 {For each manual sub-task:}
 - [ ] {manual task description}
 
-## Acceptance Criteria
+## Success Criteria
 {criteria from Contract — see FILTER RULE below}
 
 **FILTER RULE**: When copying criteria from Contract to PR body, **drop any criterion
@@ -415,6 +431,48 @@ bash ~/.claude/commands/scripts/tw-pr.sh watch {pr}
   "Fix the failures, commit, and push to {branch} — the PR will update automatically. Or run /team-drive to fix in mission mode."
 
 If CI is not enabled → skip this step.
+
+---
+
+## Step 5b: AI-Suggested PR Comment (conditional)
+
+**Evaluate whether the PR would benefit from an additional comment** beyond the PR body. Review the execution context and determine if any of these are true:
+
+| Signal | Why it's worth commenting |
+|--------|--------------------------|
+| Deployment needs special steps (env vars, migrations, config) | Merger needs to know before/after merge actions |
+| Specific files/areas need careful review | Focus reviewer attention |
+| Known limitation or tech debt introduced | Transparency for the team |
+| CI failed on a flaky test (not a real issue) | Prevent reviewer confusion |
+| Breaking change or API change | Downstream consumers need to know |
+
+**If none of these signals are present** → **skip silently**.
+
+**If any signal is present** → generate a concise comment draft:
+
+```
+💬 **建议追加 PR 备注** — 有信息值得提醒 reviewer/merger：
+
+{draft comment — 2-5 sentences, actionable}
+```
+
+Use `AskUserQuestion`:
+```
+question: "追加这条备注到 PR？"
+options:
+  - label: "发送"
+    description: "直接发送上述备注"
+  - label: "编辑后发送"
+    description: "我修改一下内容"
+  - label: "跳过"
+    description: "不需要追加"
+```
+
+- "发送" → `gh pr comment {pr} --body "{draft}"` (non-fatal)
+- "编辑后发送" → use `AskUserQuestion` with `useTextArea: true` to collect edited text → post
+- "跳过" → continue
+
+**In `/team auto` mode:** skip this step entirely.
 
 ---
 
@@ -509,7 +567,14 @@ BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh current)
 bash ~/.claude/commands/scripts/tw-pr.sh verify-merged "$BRANCH"
 ```
 
-- If exit code 1 → "No merged PR found for branch `{branch}`. PR must be merged before running `done`." → **STOP**
+- If exit code 1 → display and **STOP**:
+
+**No merged PR found** for branch *{branch}*.
+────────────────────────────────────────────
+PR must be merged on GitHub before running `done`.
+  1. Check PR status: `gh pr view {branch}`
+  2. If just merged, GitHub may need a few seconds — wait and retry: `/team-ship done`
+  3. If PR is still open, merge it on GitHub first
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### D3: Close Issue (fallback — usually handled by "Closes #N" in PR)
@@ -560,6 +625,7 @@ if [ -n "$DIRTY" ]; then
   git stash push -u -m "$STASH_MSG" || {
     echo "ERROR: git stash failed. Commit or discard changes manually before cleanup."
     # STOP — do not proceed to checkout, risk losing changes
+    # 💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
   }
   echo "⚠️ Stashed uncommitted changes. Recover with: git stash pop"
 fi
@@ -569,7 +635,7 @@ bash ~/.claude/commands/scripts/tw-git.sh ensure-base || {
   if [ -n "$DIRTY" ]; then
     echo "Your changes are saved in stash. Recover with: git stash pop"
   fi
-  # STOP
+  # STOP — 💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 }
 # Note: ensure-base already does checkout + pull, so base branch is up-to-date
 # (includes the just-merged PR squash commit)
@@ -769,7 +835,7 @@ Output the following and **STOP**:
   Usually the last step: `/team-drive` → `/team-ship` → (merge) → `/team-ship done`
 
 **TROUBLESHOOTING**
-  "No merged PR found" → PR must be merged first. Check GitHub.
+  "No merged PR found" → Check `gh pr view {branch}`. If just merged, wait a few seconds and retry.
   "Cannot determine Issue" → Specify explicitly: `/team-ship done #42`
 
 ---

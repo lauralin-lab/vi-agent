@@ -71,3 +71,15 @@ jobs:
             if (numbers.length === 0) {
               console.log('No closing keywords found in PR body — skipping cleanup');
             }
+
+            // 4. Check all checkboxes in PR body itself
+            const prBody = context.payload.pull_request.body || '';
+            if (prBody.includes('- [ ]')) {
+              const updatedPr = prBody.replace(/- \[ \]/g, '- [x]');
+              await github.rest.pulls.update({
+                ...context.repo,
+                pull_number: context.payload.pull_request.number,
+                body: updatedPr
+              });
+              console.log(`Checked ${(prBody.match(/- \[ \]/g) || []).length} PR checkboxes`);
+            }
