@@ -126,6 +126,8 @@ services:
       - USER_DATA_DIR=/workspace
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - HOST_WORKSPACE_DIR=/var/lib/docker/volumes/vi-agent-staging_nanoclaw_workspace/_data
+      - CONTAINER_NETWORK=vi-agent-staging_vi-network
     volumes:
       - nanoclaw_workspace:/workspace
       - /var/run/docker.sock:/var/run/docker.sock

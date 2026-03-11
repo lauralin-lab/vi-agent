@@ -377,6 +377,23 @@ cmd_logs() {
   else
     docker compose logs --tail "$LINES" 2>&1
   fi
+
+  # Also show logs from spawned agent containers (not part of compose)
+  echo ""
+  echo "=== Spawned Agent Containers ==="
+  local SPAWNED
+  SPAWNED=$(docker ps -a --filter "label=vi-agent-spawned=true" --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true)
+  if [ -z "$SPAWNED" ]; then
+    echo "  (none)"
+  else
+    echo "$SPAWNED"
+    echo ""
+    for CNAME in $(docker ps -a --filter "label=vi-agent-spawned=true" --format "{{.Names}}"); do
+      echo "--- Logs: $CNAME (last 50 lines) ---"
+      docker logs --tail 50 "$CNAME" 2>&1 || echo "  (no logs available)"
+      echo ""
+    done
+  fi
 }
 
 # =====================================================================

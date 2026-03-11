@@ -22,6 +22,7 @@ interface ContainerState {
   userId: string;
   startedAt: number;
   idleTimer: ReturnType<typeof setTimeout>;
+  activeTasks: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +124,7 @@ class ContainerManager {
       userId,
       startedAt: Date.now(),
       idleTimer: setTimeout(() => this.onIdleTimeout(userId), IDLE_TIMEOUT_MS),
+      activeTasks: 0,
     };
     this.containers.set(userId, state);
 
@@ -137,7 +139,35 @@ class ContainerManager {
     const state = this.containers.get(userId);
     if (state) {
       clearTimeout(state.idleTimer);
-      state.idleTimer = setTimeout(() => this.onIdleTimeout(userId), IDLE_TIMEOUT_MS);
+      // Don't start idle timer if tasks are active — it will start when last task finishes
+      if (state.activeTasks <= 0) {
+        state.idleTimer = setTimeout(() => this.onIdleTimeout(userId), IDLE_TIMEOUT_MS);
+      }
+    }
+  }
+
+  /**
+   * Mark a task as active for a user. Pauses idle timeout while tasks are running.
+   */
+  markTaskActive(userId: string): void {
+    const state = this.containers.get(userId);
+    if (state) {
+      state.activeTasks++;
+      clearTimeout(state.idleTimer);
+    }
+  }
+
+  /**
+   * Mark a task as done for a user. Restarts idle timeout when no tasks remain.
+   */
+  markTaskDone(userId: string): void {
+    const state = this.containers.get(userId);
+    if (state) {
+      state.activeTasks = Math.max(0, state.activeTasks - 1);
+      if (state.activeTasks === 0) {
+        clearTimeout(state.idleTimer);
+        state.idleTimer = setTimeout(() => this.onIdleTimeout(userId), IDLE_TIMEOUT_MS);
+      }
     }
   }
 
@@ -229,6 +259,13 @@ class ContainerManager {
   }
 
   private onIdleTimeout(userId: string): void {
+    const state = this.containers.get(userId);
+    if (state && state.activeTasks > 0) {
+      // Tasks still running — reschedule idle check
+      console.log(`[container-manager] idle timeout deferred for ${userId} (${state.activeTasks} active tasks)`);
+      state.idleTimer = setTimeout(() => this.onIdleTimeout(userId), IDLE_TIMEOUT_MS);
+      return;
+    }
     console.log(`[container-manager] idle timeout for ${userId}, stopping container`);
     this.stopContainer(userId).catch((err) =>
       console.error(`[container-manager] error stopping idle container for ${userId}:`, err),
@@ -262,6 +299,9 @@ class ContainerManager {
 
     // Agent mode: persistent task loop
     args.push('-e', 'AGENT_MODE=persistent');
+
+    // Claude Code CLI requires TOS acceptance — non-interactive mode
+    args.push('-e', 'CLAUDE_CODE_ACCEPT_TOS=yes');
 
     // Pass secrets as env vars (persistent container, no stdin for secrets)
     const secretKeys = [

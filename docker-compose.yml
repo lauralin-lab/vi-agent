@@ -144,6 +144,8 @@ services:
       HEALTH_PORT: "3100"
       CONTAINER_MODE: "true"
       CONTAINER_NETWORK: vi_agent_vi-network
+      HOST_WORKSPACE_DIR: ${PWD}/data/dev/user
+      HOST_PROJECT_DIR: ${PWD}
     volumes:
       - ./data/dev/user:/workspace
       - ./nanoclaw/data/shared/skills:/skills:ro

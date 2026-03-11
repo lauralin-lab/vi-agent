@@ -173,7 +173,7 @@ async function handleExecRequestPersistent(
   try {
     // Ensure persistent container is running for this user
     await manager.getOrStartContainer(userId);
-    manager.resetIdleTimer(userId);
+    manager.markTaskActive(userId);
 
     // Resolve media URLs (local uploads → container paths)
     const resolvedMediaUrls = request.mediaUrls?.map((url) => {
@@ -286,6 +286,8 @@ async function handleExecRequestPersistent(
         recoverable: false,
       }),
     );
+  } finally {
+    manager.markTaskDone(userId);
   }
 }
 

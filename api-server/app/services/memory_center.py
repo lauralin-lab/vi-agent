@@ -168,9 +168,11 @@ class MemoryCenter:
 
     # -- User ID resolution --
 
-    async def _resolve_user_id(self, db: AsyncSession, vi_user_id: str):
-        """Resolve vi_user_id -> internal UUID. Raises ValueError if not found."""
-        return await resolve_user_id(db, vi_user_id)
+    async def _resolve_user_id(
+        self, db: AsyncSession, vi_user_id: str, *, auto_create: bool = False,
+    ):
+        """Resolve vi_user_id -> internal UUID. Auto-creates stub user when requested."""
+        return await resolve_user_id(db, vi_user_id, auto_create=auto_create)
 
     # ------------------------------------------------------------------
     # CRUD Operations
@@ -261,7 +263,7 @@ class MemoryCenter:
 
         If layer is not provided, it is inferred from filename and category.
         """
-        user_id = await self._resolve_user_id(db, vi_user_id)
+        user_id = await self._resolve_user_id(db, vi_user_id, auto_create=True)
 
         # Infer layer if not explicitly provided
         if not layer:
@@ -333,7 +335,7 @@ class MemoryCenter:
         redis=None,
     ) -> None:
         """Append content to an existing memory file, or create it."""
-        user_id = await self._resolve_user_id(db, vi_user_id)
+        user_id = await self._resolve_user_id(db, vi_user_id, auto_create=True)
 
         if not layer:
             layer, category = infer_layer_category(filename, category)
@@ -485,7 +487,11 @@ class MemoryCenter:
         This is the Working Memory: dynamically selected from identity,
         semantic, and episodic layers, ranked by importance score.
         """
-        user_id = await self._resolve_user_id(db, vi_user_id)
+        try:
+            user_id = await self._resolve_user_id(db, vi_user_id)
+        except ValueError:
+            # Unknown user — return empty context gracefully
+            return ""
         now = datetime.now(timezone.utc)
 
         # Fetch all non-expired memories
@@ -593,7 +599,10 @@ class MemoryCenter:
         redis=None,
     ) -> dict:
         """Periodic memory maintenance: recompute scores, delete expired."""
-        user_id = await self._resolve_user_id(db, vi_user_id)
+        try:
+            user_id = await self._resolve_user_id(db, vi_user_id)
+        except ValueError:
+            return {"recomputed": 0, "expired_deleted": 0}
         now = datetime.now(timezone.utc)
 
         result = await db.execute(

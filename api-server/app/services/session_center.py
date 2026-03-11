@@ -22,8 +22,8 @@ VALID_SESSION_STATUSES = {"created", "dispatched", "active", "paused", "complete
 class SessionCenter:
 
     async def _resolve_user_id(self, db: AsyncSession, vi_user_id: str):
-        """Resolve vi_user_id -> internal UUID. Raises ValueError if not found."""
-        return await resolve_user_id(db, vi_user_id)
+        """Resolve vi_user_id -> internal UUID. Auto-creates stub user if needed."""
+        return await resolve_user_id(db, vi_user_id, auto_create=True)
 
     async def create_session(
         self, db: AsyncSession, vi_user_id: str, context: dict | None = None,
