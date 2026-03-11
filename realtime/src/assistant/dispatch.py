@@ -79,13 +79,40 @@ class DispatchMixin:
         except Exception as e:
             logger.warning(f"[session_header] Failed to publish: {e}")
 
+    def _parse_hashtag_command(self, text: str) -> tuple[str | None, str]:
+        """Parse a #hashtag command from the beginning of text.
+
+        Returns (hashtag, remaining_text). If no hashtag found, returns (None, text).
+        Examples:
+            "#search find this plant" -> ("#search", "find this plant")
+            "#translate" -> ("#translate", "")
+            "analyze this" -> (None, "analyze this")
+        """
+        stripped = text.strip()
+        if not stripped.startswith("#"):
+            return None, text
+        parts = stripped.split(None, 1)
+        hashtag = parts[0].lower()
+        remaining = parts[1] if len(parts) > 1 else ""
+        return hashtag, remaining
+
     async def _dispatch_via_nanoclaw(self, text: str) -> dict:
         """Dispatch task to NanoClaw via Redis vi:exec:{uid}.
 
-        NanoClaw decides skill routing autonomously — no skill_slug needed.
+        Supports #hashtag commands: if the text starts with a #hashtag matching
+        an Experience Package, the EP's skill prompt patch is injected into the
+        request context so NanoClaw can route appropriately.
+
         Results are delivered asynchronously via vi:stream -> SSE -> Frontend.
         """
         from assistant.base import _get_redis
+        from assistant.experience_packages import get_package
+
+        # Parse #hashtag command if present
+        hashtag, remaining_text = self._parse_hashtag_command(text)
+        ep = get_package(hashtag) if hashtag else None
+        if ep:
+            logger.info(f"[dispatch] Matched EP: {ep.id} (hashtag={hashtag})")
 
         # Inject pending photo URLs if the prompt doesn't already contain them
         if self._pending_photo_urls:
@@ -117,18 +144,29 @@ class DispatchMixin:
             full_prompt=text,
         )
 
-        # Build ExecRequest — no skillSlug, NanoClaw auto-routes
+        # Build ExecRequest — include EP context if hashtag matched
         task_id = self._current_session_id or f"dispatch-{int(time.time())}"
         photo_urls = self._GCS_URL_RE.findall(text)
+
+        context = {
+            "photoUrls": photo_urls,
+            "viUserId": self._vi_user_id,
+        }
+        if ep:
+            context["experiencePackage"] = {
+                "id": ep.id,
+                "hashtag": ep.hashtag,
+                "skill": ep.skill.name,
+                "promptPatch": ep.skill.system_prompt_patch,
+                "outputFormat": ep.skill.output_format,
+                "cardTemplate": ep.card.template,
+            }
 
         exec_request = ExecRequest(
             taskId=task_id,
             sessionId=self.room_name,
             prompt=text,
-            context={
-                "photoUrls": photo_urls,
-                "viUserId": self._vi_user_id,
-            },
+            context=context,
             priority="thorough",
             mediaUrls=photo_urls,
         )

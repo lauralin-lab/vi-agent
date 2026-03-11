@@ -97,8 +97,11 @@ async def _cache_resumption_token(vi_user_id: str, token: str):
 
 BASE_PROMPT_PATH = Path(__file__).parent.parent / "base.md"
 try:
-    AGENT_INSTRUCTIONS = BASE_PROMPT_PATH.read_text(encoding="utf-8").replace("{{AGENT_NAME}}", AGENT_NAME)
-    AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS
+    AGENT_INSTRUCTIONS_TEMPLATE = BASE_PROMPT_PATH.read_text(encoding="utf-8")
+    AGENT_INSTRUCTIONS = AGENT_INSTRUCTIONS_TEMPLATE.replace("{{AGENT_NAME}}", AGENT_NAME)
+    # Append Experience Package registry to core instructions
+    from assistant.experience_packages import get_ep_registry_prompt
+    AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS + "\n\n" + get_ep_registry_prompt()
 except Exception as e:
     logger.error(f"Failed to load base.md: {e}")
     AGENT_INSTRUCTIONS = f"""You are {AGENT_NAME}, a warm and friendly voice assistant."""
@@ -107,8 +110,9 @@ except Exception as e:
 PAGE_PROMPTS = {
     "camera": (
         "## Camera Mode\n"
-        "- Focus on visual analysis, describe what you see\n"
-        "- Proactively suggest photo actions via suggest_action\n"
+        "- Analyze what you see, suggest matching Experience Package via suggest_action\n"
+        "- e.g., see text → suggest translate, see food → suggest nutrition\n"
+        "- Use rpc_b2f_action_button(hashtag, label) to offer one-tap actions\n"
         "- Use update_info_bar to show perception status\n"
         "- On dispatch, gather <media> material first\n"
     ),
@@ -223,7 +227,9 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         self._job_context: JobContext | None = None
         # API server for task persistence
         self._api_base = os.getenv("API_BASE_URL", "http://api-server:8000")
-        self._vi_user_id = room_name.replace("vi-room-", "") if room_name.startswith("vi-room-") else room_name
+        # Strip "vi-room-" prefix and trailing "-{timestamp}" suffix to get vi_user_id
+        raw_id = room_name.replace("vi-room-", "") if room_name.startswith("vi-room-") else room_name
+        self._vi_user_id = re.sub(r'-\d+$', '', raw_id)
         self._current_session_id: str | None = None  # Track active session for status updates
         self._current_dispatch_started_at: float | None = None  # Staleness detection
         self._dispatch_heartbeat_count: int = 0  # Max retries for heartbeat task prompts
@@ -700,6 +706,7 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         if participant.identity.startswith("user-"):
             user_state["identity"] = participant.identity
             assistant.set_user_identity(participant.identity)
+            asyncio.create_task(_publish_version())
 
             if session is not None:
                 try:
@@ -745,6 +752,26 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
     logger.info("Connecting to LiveKit room...")
     await ctx.connect()
     logger.info("Connected to room, setting up event handlers...")
+
+    # Publish agent version — called when user joins (reliable) and once after delay (fallback)
+    version_published = False
+    async def _publish_version():
+        nonlocal version_published
+        if version_published:
+            return
+        version_published = True
+        try:
+            from version import VERSION
+            await asyncio.sleep(1)  # Brief delay for DataChannel to stabilize
+            await ctx.room.local_participant.publish_data(
+                json.dumps({"type": "agent_version", "version": VERSION}).encode("utf-8"),
+                reliable=True,
+                topic="vi-agent",
+            )
+            logger.info(f"[init] Agent version: {VERSION}")
+        except Exception as e:
+            version_published = False  # Allow retry
+            logger.debug(f"[init] Failed to publish version: {e}")
 
     # Duplicate agent guard — kick old agent, new agent always proceeds
     my_identity = ctx.room.local_participant.identity
@@ -797,6 +824,7 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         if participant.identity.startswith("user-") and not user_state["identity"]:
             user_state["identity"] = participant.identity
             assistant.set_user_identity(participant.identity)
+            asyncio.create_task(_publish_version())
             logger.info(f"[init] User already in room (post-connect): {participant.identity}")
 
     logger.info("Creating AgentSession...")
@@ -820,9 +848,6 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         if identity:
             asyncio.create_task(publish_transcript(ctx.room, "user", event.transcript))
             assistant.record_timeline_entry("user", event.transcript)
-            asyncio.create_task(assistant._publish_user_event(
-                "voice_transcript", {"text": event.transcript[:500]}
-            ))
 
     @session.on("agent_speech_committed")
     def on_agent_speech_committed(event):

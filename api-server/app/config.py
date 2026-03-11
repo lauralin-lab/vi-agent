@@ -30,6 +30,10 @@ class Settings:
     # Invite Code System
     INVITE_REQUIRED: bool = os.getenv("INVITE_REQUIRED", "false").lower() in ("true", "1", "yes")
 
+    # Test Login Bypass — set to a secret code to enable test login without Firebase
+    # Leave empty to disable (production default)
+    TEST_LOGIN_CODE: str = os.getenv("TEST_LOGIN_CODE", "")
+
 
 settings = Settings()
 

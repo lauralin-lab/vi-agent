@@ -181,10 +181,14 @@ cmd_deploy() {
   echo "  Ports: frontend=$FRONTEND_PORT api=$API_PORT nanoclaw=$NANOCLAW_PORT"
 
   mkdir -p "$INSTANCE_DIR"
+  chown gitaction:docker "$INSTANCE_DIR"
+  chmod 2775 "$INSTANCE_DIR"
 
   # --- Generate SSL cert if missing ---
   if [ ! -f "$INSTANCE_DIR/ssl/cert.pem" ]; then
     mkdir -p "$INSTANCE_DIR/ssl"
+    chown gitaction:docker "$INSTANCE_DIR/ssl"
+    chmod 2775 "$INSTANCE_DIR/ssl"
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
       -keyout "$INSTANCE_DIR/ssl/key.pem" \
       -out "$INSTANCE_DIR/ssl/cert.pem" \
@@ -215,7 +219,8 @@ EOF
   # Ensure SERVER_IP is current
   sed -i "/^SERVER_IP=/d" "$INSTANCE_DIR/.env"
   echo "SERVER_IP=$SERVER_IP" >> "$INSTANCE_DIR/.env"
-  chmod 600 "$INSTANCE_DIR/.env"
+  chown gitaction:docker "$INSTANCE_DIR/.env"
+  chmod 660 "$INSTANCE_DIR/.env"
   echo "API keys updated from environment."
 
   # --- Setup Firebase SA file (shared → instance, readable by container) ---
@@ -223,11 +228,15 @@ EOF
   INSTANCE_SA_DIR="$INSTANCE_DIR/firebase"
   if [ -f "$SHARED_SA" ]; then
     mkdir -p "$INSTANCE_SA_DIR"
+    chown gitaction:docker "$INSTANCE_SA_DIR"
+    chmod 2775 "$INSTANCE_SA_DIR"
     cp "$SHARED_SA" "$INSTANCE_SA_DIR/sa.json"
     chmod 644 "$INSTANCE_SA_DIR/sa.json"
     echo "Firebase SA copied to instance (644 for container read access)."
   else
     mkdir -p "$INSTANCE_SA_DIR"
+    chown gitaction:docker "$INSTANCE_SA_DIR"
+    chmod 2775 "$INSTANCE_SA_DIR"
     echo "WARNING: No Firebase SA at $SHARED_SA — Firebase auth will be disabled."
   fi
 
@@ -367,6 +376,23 @@ cmd_logs() {
     docker compose logs --tail "$LINES" "$SERVICE" 2>&1
   else
     docker compose logs --tail "$LINES" 2>&1
+  fi
+
+  # Also show logs from spawned agent containers (not part of compose)
+  echo ""
+  echo "=== Spawned Agent Containers ==="
+  local SPAWNED
+  SPAWNED=$(docker ps -a --filter "label=vi-agent-spawned=true" --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true)
+  if [ -z "$SPAWNED" ]; then
+    echo "  (none)"
+  else
+    echo "$SPAWNED"
+    echo ""
+    for CNAME in $(docker ps -a --filter "label=vi-agent-spawned=true" --format "{{.Names}}"); do
+      echo "--- Logs: $CNAME (last 50 lines) ---"
+      docker logs --tail 50 "$CNAME" 2>&1 || echo "  (no logs available)"
+      echo ""
+    done
   fi
 }
 

@@ -376,7 +376,14 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
               setLastAgentText(content);
             }
           } else if (data.type === 'action_suggestion') {
-            setActionSuggestion({ action: data.action, icon: data.icon || 'camera', label: data.label || '' });
+            // Map icon to EP hashtag so handleDone sends the right #command
+            const icon = data.action || data.icon || 'camera';
+            const hashtag = icon !== 'camera' ? `#${icon}` : null;
+            setActionSuggestion({ action: data.action, icon: icon, label: data.label || '', hashtag });
+          } else if (data.type === 'action_button') {
+            setActionSuggestion({ action: 'dispatch', icon: data.hashtag?.replace('#', '') || 'camera', label: data.label || '', hashtag: data.hashtag });
+          } else if (data.type === 'agent_version') {
+            console.log(`[VI Agent] version: ${data.version}`);
           } else if (data.type === 'task_started' || data.type === 'task_progress' || data.type === 'task_result') {
             setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
           }
@@ -386,6 +393,38 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
         return;
       }
 
+      // Handle XML-based agent messages (legacy topics)
+      const agentTopics = [
+        'agent_transcript', 'agent_result', 'agent_info_bar',
+        'agent_action', 'agent_summary', 'agent_intention',
+      ];
+      if (!agentTopics.includes(topic)) return;
+
+      const parsed = parseAgentXml(payload);
+      if (!parsed) return;
+
+      if (parsed.kind === 'transcript') {
+        const cleanContent = parsed.type === 'agent' ? filterToolCallSyntax(parsed.content) : parsed.content;
+        if (!cleanContent) return;
+
+        const entry = { type: parsed.type, content: cleanContent, ts: Date.now() };
+        setTranscripts(prev => [...prev, entry].slice(-TRANSCRIPT_BUFFER_LIMIT));
+        if (parsed.type === 'agent') {
+          setLastAgentText(cleanContent);
+          const intent = detectIntentFromText(cleanContent);
+          if (intent) setLastDetectedIntent(intent);
+        }
+      } else if (parsed.kind === 'result') {
+        const entry = { type: parsed.type, content: parsed.content, ts: Date.now() };
+        setResults(prev => [...prev, entry].slice(-RESULT_BUFFER_LIMIT));
+        setLastResult(entry);
+      } else if (parsed.kind === 'info_bar') {
+        setInfoBar({ status: parsed.status, message: parsed.message });
+      } else if (parsed.kind === 'action_suggestion') {
+        const icon = parsed.action || parsed.icon || 'camera';
+        const hashtag = icon !== 'camera' ? `#${icon}` : null;
+        setActionSuggestion({ action: parsed.action, icon: parsed.icon, label: parsed.label, hashtag });
+      }
     });
   }, []);
 

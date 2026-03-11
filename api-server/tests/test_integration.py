@@ -77,7 +77,7 @@ class TestLiveKitFlow:
         assert resp.status_code == 200
         lk_data = resp.json()
         assert "token" in lk_data
-        assert lk_data["room_name"] == f"vi-room-{data['vi_user_id']}"
+        assert lk_data["room_name"].startswith(f"vi-room-{data['vi_user_id']}-")
 
 
 # ---------------------------------------------------------------------------

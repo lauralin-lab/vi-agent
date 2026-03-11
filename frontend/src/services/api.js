@@ -46,19 +46,25 @@ class ApiClient {
       ...options.headers,
     };
 
-    // Firebase Auth: attach ID Token if user is signed in
-    try {
-      const { auth } = await import('./firebase.js');
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const idToken = await currentUser.getIdToken();
-        headers['id-token'] = idToken;
-        headers['package-name'] = this.packageName;
-      } else {
+    // Auth: test token takes priority, then Firebase, then device ID
+    const testToken = localStorage.getItem('test-auth-token');
+    if (testToken) {
+      headers['id-token'] = testToken;
+      headers['package-name'] = this.packageName;
+    } else {
+      try {
+        const { auth } = await import('./firebase.js');
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const idToken = await currentUser.getIdToken();
+          headers['id-token'] = idToken;
+          headers['package-name'] = this.packageName;
+        } else {
+          headers['X-Device-Id'] = this.getDeviceId();
+        }
+      } catch {
         headers['X-Device-Id'] = this.getDeviceId();
       }
-    } catch {
-      headers['X-Device-Id'] = this.getDeviceId();
     }
 
     let lastError;

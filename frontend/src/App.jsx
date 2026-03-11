@@ -367,6 +367,7 @@ function App() {
         <DeviceFrame>
           <LoginPage
             onLoginWithGoogle={auth.loginWithGoogle}
+            onTestLogin={auth.loginWithTestCode}
             error={auth.error}
             needsInviteCode={auth.needsInviteCode}
           />

@@ -73,7 +73,28 @@ export function useAuth() {
           setError(e.message);
         }
       } else {
-        setUser(null);
+        // No Firebase user — check for test login session
+        const testToken = localStorage.getItem('test-auth-token');
+        if (testToken) {
+          try {
+            const resp = await fetch(`${api.baseUrl}/api/auth/me`, {
+              headers: { 'id-token': testToken, 'package-name': api.packageName },
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              setUser(data);
+              api.setViUserId(data.vi_user_id);
+            } else {
+              localStorage.removeItem('test-auth-token');
+              setUser(null);
+            }
+          } catch {
+            localStorage.removeItem('test-auth-token');
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
       }
       setLoading(false);
     });
@@ -90,12 +111,42 @@ export function useAuth() {
     }
   }, []);
 
+  const loginWithTestCode = useCallback(async (code) => {
+    setError(null);
+    setLoading(true);
+    try {
+      const response = await fetch(`${api.baseUrl}/api/auth/firebase`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'id-token': code,
+          'package-name': api.packageName,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem('test-auth-token', code);
+        setUser(data);
+        api.setViUserId(data.vi_user_id);
+        setNeedsInviteCode(false);
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setError(data.detail || `Test login failed: ${response.status}`);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await signOut(auth);
     } catch (e) {
       console.error('Sign out failed:', e);
     }
+    localStorage.removeItem('test-auth-token');
     setUser(null);
     api.setViUserId(null);
   }, []);
@@ -107,6 +158,7 @@ export function useAuth() {
     isAuthenticated: !!user,
     needsInviteCode,
     loginWithGoogle,
+    loginWithTestCode,
     logout,
   };
 }

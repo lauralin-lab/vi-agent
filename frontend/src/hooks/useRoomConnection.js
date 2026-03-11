@@ -342,6 +342,7 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
       setLocalAudioTrack(null);
       setConnectionState('disconnected');
       updateAgentIdentity(null);
+      _tokenCache = null; // Force fresh room on next connect
     }
   }, [roomRef, updateAgentIdentity]);
 

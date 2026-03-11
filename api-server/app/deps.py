@@ -4,6 +4,7 @@ from fastapi import Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import settings
 from .models import User, async_session
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,17 @@ async def get_firebase_user(
             detail={"code": "missing_credentials", "message": "Missing id-token or package-name header"},
         )
 
+    # --- Test login bypass ---
+    if settings.TEST_LOGIN_CODE and id_token == settings.TEST_LOGIN_CODE:
+        result = await db.execute(select(User).where(User.firebase_uid == "test-user-auto"))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail={"code": "user_not_found", "message": "Test user not registered. Call POST /api/auth/firebase first."})
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail={"code": "user_disabled", "message": "Account disabled"})
+        return user
+
+    # --- Normal Firebase verification ---
     firebase_mgr = getattr(request.app.state, "firebase_manager", None)
     if firebase_mgr is None:
         raise HTTPException(

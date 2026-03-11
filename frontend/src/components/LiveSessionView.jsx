@@ -1301,8 +1301,12 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               if (dispatchingSlug) return; // prevent double-tap
               setDispatchingSlug(slug);
               try {
+                // Send #{skill} hashtag command — NanoClaw routes via Experience Package
+                const hashtag = intention.skill_slug ? `#${intention.skill_slug}` : '';
+                const description = [intention.title, intention.description].filter(Boolean).join(' ');
+                const prompt = hashtag ? `${hashtag} ${description}` : description;
                 await dispatchWithSession({
-                  prompt: [intention.title, intention.description].filter(Boolean).join(' '),
+                  prompt,
                   skillSlug: intention.skill_slug,
                   mediaUrls: intention.params?.media_urls || [],
                   priority: 'thorough',
