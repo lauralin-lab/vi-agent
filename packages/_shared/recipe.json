@@ -1,0 +1,30 @@
+{
+  "$id": "recipe",
+  "category": "present",
+  "renderer": "react",
+  "component": "RecipeModule",
+  "mutable": false,
+  "streamable": false,
+  "description": "Recipe card with hero image, ingredients checklist, and step-by-step instructions",
+  "slots": {
+    "title": { "type": "string", "required": true },
+    "image_url": { "type": "string" },
+    "prep_time": { "type": "string" },
+    "cook_time": { "type": "string" },
+    "servings": { "type": "number" },
+    "ingredients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "string" },
+          "item": { "type": "string" }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -248,6 +248,213 @@ function setupSkills(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Card catalog setup — auto-discover all card templates and generate a
+// SKILL.md that teaches the agent which templates are available.
+// ---------------------------------------------------------------------------
+
+interface TemplateSlotDef {
+  type: string;
+  required?: boolean;
+  default?: unknown;
+  streamable?: boolean;
+  items?: { type: string; properties?: Record<string, { type: string }> };
+  properties?: Record<string, { type: string }>;
+}
+
+interface TemplateDef {
+  $id: string;
+  description?: string;
+  category?: string;
+  slots: Record<string, TemplateSlotDef>;
+}
+
+function setupCardCatalog(): void {
+  const packagesDir = '/workspace/packages';
+  const skillsDir = '/workspace/group/.claude/skills';
+  if (!fs.existsSync(packagesDir)) {
+    log('No packages directory, skipping card catalog');
+    return;
+  }
+
+  // Collect all template definitions from _shared/ and */templates/
+  const templates: TemplateDef[] = [];
+
+  const loadFromDir = (dir: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const file of fs.readdirSync(dir)) {
+      if (!file.endsWith('.json')) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8'));
+        if (parsed.$id && parsed.slots) {
+          templates.push(parsed as TemplateDef);
+        }
+      } catch { /* skip malformed */ }
+    }
+  };
+
+  // 1. Shared templates
+  loadFromDir(path.join(packagesDir, '_shared'));
+
+  // 2. Bundled per-package templates
+  for (const entry of fs.readdirSync(packagesDir)) {
+    if (entry.startsWith('_') || entry.startsWith('.')) continue;
+    const pkgDir = path.join(packagesDir, entry);
+    if (!fs.statSync(pkgDir).isDirectory()) continue;
+    loadFromDir(path.join(pkgDir, 'templates'));
+  }
+
+  // Deduplicate by $id (shared wins — loaded first)
+  const seen = new Set<string>();
+  const unique: TemplateDef[] = [];
+  for (const t of templates) {
+    if (!seen.has(t.$id)) {
+      seen.add(t.$id);
+      unique.push(t);
+    }
+  }
+
+  if (unique.length === 0) {
+    log('No card templates found, skipping catalog');
+    return;
+  }
+
+  // Sort alphabetically for stable output
+  unique.sort((a, b) => a.$id.localeCompare(b.$id));
+
+  const destDir = path.join(skillsDir, '_card-catalog');
+  const templatesDir = path.join(destDir, 'templates');
+  fs.mkdirSync(templatesDir, { recursive: true });
+
+  // ── Layer 1: SKILL.md — concise summary (auto-loaded by Claude) ──
+  // Only template name + one-line description + when-to-use hint.
+  // Agent reads the detail file on-demand when actually writing a card.
+  const lines: string[] = [
+    '---',
+    'name: _card-catalog',
+    'description: Card template catalog — rich UI cards for structured content. ALWAYS use a card when content matches a template.',
+    'user-invocable: false',
+    '---',
+    '',
+    '# Card Templates',
+    '',
+    'Output a ```card-data JSON block to render a rich UI card.',
+    '**Before writing a card**, read its detail file for exact field schema and example:',
+    '`Read .claude/skills/_card-catalog/templates/{template-name}.md`',
+    '',
+    '| Template | Use when... |',
+    '|----------|-------------|',
+  ];
+
+  for (const t of unique) {
+    const desc = t.description || t.$id;
+    // Keep the summary line short — just enough to pick the right template
+    lines.push(`| \`${t.$id}\` | ${desc} |`);
+  }
+
+  lines.push('');
+  lines.push('## Output Modes');
+  lines.push('');
+  lines.push('There are ONLY two output modes:');
+  lines.push('1. **Pure text** — simple short answers only');
+  lines.push('2. **Card** — ALL rich or structured content MUST be a card');
+  lines.push('');
+  lines.push('If a structured template fits → use that template.');
+  lines.push('If no structured template fits but content is rich → use `freeform-html` with well-formatted HTML.');
+  lines.push('There is NO middle ground — never output rich content as plain markdown.');
+  lines.push('');
+  lines.push('Read the template detail file BEFORE writing — field names must match exactly.');
+  lines.push('You may include brief text before the JSON block, but it is not required.');
+  lines.push('');
+
+  fs.writeFileSync(path.join(destDir, 'SKILL.md'), lines.join('\n'));
+
+  // ── Layer 2: Per-template detail files (read on-demand) ──
+  // Each file has: full field schema + example card-data JSON block
+  for (const t of unique) {
+    const detailLines: string[] = [
+      `# ${t.$id}`,
+      '',
+    ];
+    if (t.description) detailLines.push(t.description);
+    if (t.category) detailLines.push(`Category: ${t.category}`);
+    detailLines.push('');
+
+    // Field schema
+    detailLines.push('## Fields');
+    detailLines.push('');
+    for (const [name, slot] of Object.entries(t.slots)) {
+      let desc = slot.type;
+      if (slot.type === 'array' && slot.items) {
+        if (slot.items.properties) {
+          const props = Object.keys(slot.items.properties).join(', ');
+          desc = `array of { ${props} }`;
+        } else {
+          desc = `array of ${slot.items.type}`;
+        }
+      } else if (slot.type === 'object' && slot.properties) {
+        const props = Object.keys(slot.properties).join(', ');
+        desc = `{ ${props} }`;
+      }
+      const flags: string[] = [];
+      if (slot.required) flags.push('required');
+      if (slot.default !== undefined) flags.push(`default: ${JSON.stringify(slot.default)}`);
+      const flagStr = flags.length > 0 ? ` (${flags.join(', ')})` : '';
+      detailLines.push(`- **${name}**: ${desc}${flagStr}`);
+    }
+    detailLines.push('');
+
+    // Example card-data block
+    detailLines.push('## Example');
+    detailLines.push('');
+    const example: Record<string, unknown> = { _template: t.$id };
+    for (const [name, slot] of Object.entries(t.slots)) {
+      example[name] = generateExampleValue(name, slot);
+    }
+    detailLines.push('```card-data');
+    detailLines.push(JSON.stringify(example, null, 2));
+    detailLines.push('```');
+    detailLines.push('');
+
+    fs.writeFileSync(path.join(templatesDir, `${t.$id}.md`), detailLines.join('\n'));
+  }
+
+  log(`Generated card catalog: ${unique.length} templates (summary + per-template details)`);
+}
+
+/** Generate a representative example value for a template slot. */
+function generateExampleValue(name: string, slot: TemplateSlotDef): unknown {
+  if (slot.type === 'string') {
+    if (name.includes('url') || name.includes('image')) return 'https://example.com/image.jpg';
+    if (name.includes('title') || name.includes('name')) return 'Example Title';
+    if (name.includes('html')) return '<p>Example HTML content</p>';
+    return 'example ' + name;
+  }
+  if (slot.type === 'number') return 42;
+  if (slot.type === 'boolean') return true;
+  if (slot.type === 'array') {
+    if (slot.items?.properties) {
+      const item: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(slot.items.properties)) {
+        if ((v as { type: string }).type === 'number') item[k] = 1;
+        else if ((v as { type: string }).type === 'boolean') item[k] = false;
+        else item[k] = 'example';
+      }
+      return [item];
+    }
+    return ['item1', 'item2'];
+  }
+  if (slot.type === 'object' && slot.properties) {
+    const obj: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(slot.properties)) {
+      if ((v as { type: string }).type === 'number') obj[k] = 0;
+      else obj[k] = 'example';
+    }
+    return obj;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // CLAUDE.md setup
 // ---------------------------------------------------------------------------
 
@@ -708,6 +915,7 @@ async function taskLoop(): Promise<void> {
   // One-time setup
   try { setupClaudeMd(); } catch (err) { log(`setupClaudeMd failed (non-fatal): ${err}`); }
   try { setupSkills(); } catch (err) { log(`setupSkills failed (non-fatal): ${err}`); }
+  try { setupCardCatalog(); } catch (err) { log(`setupCardCatalog failed (non-fatal): ${err}`); }
   try { setupGit(); } catch (err) { log(`setupGit failed (non-fatal): ${err}`); }
 
   // Init IPC card ops file (host polls and relays to Redis)
@@ -784,6 +992,7 @@ async function oneShotMain(): Promise<void> {
   // One-time setup per container run
   try { setupClaudeMd(); } catch (err) { log(`setupClaudeMd failed (non-fatal): ${err}`); }
   try { setupSkills(); } catch (err) { log(`setupSkills failed (non-fatal): ${err}`); }
+  try { setupCardCatalog(); } catch (err) { log(`setupCardCatalog failed (non-fatal): ${err}`); }
   try { setupGit(); } catch (err) { log(`setupGit failed (non-fatal): ${err}`); }
 
   try {

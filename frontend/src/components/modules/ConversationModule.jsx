@@ -150,7 +150,7 @@ export default function ConversationModule({ data, onAction }) {
             w-10 h-10 rounded-xl flex items-center justify-center
             transition-all duration-200
             ${inputValue.trim()
-              ? 'bg-purple-500/25 border border-purple-500/30 text-purple-300 hover:bg-purple-500/35'
+              ? 'bg-purple-500/20 border border-purple-500/30 text-purple-600 hover:bg-purple-500/30'
               : 'bg-black/[0.04] border border-black/[0.06] text-black/15'
             }
           `}

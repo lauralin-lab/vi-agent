@@ -231,6 +231,16 @@ async function handleExecRequestPersistent(
     await cardOpsRelay.stop();
 
     if (result) {
+      // Collect finalized card state for persistence in VI Agent session
+      const cardState = getSessionCardState(sessionId);
+      const cards: Record<string, { template: string; data: Record<string, unknown>; status: string }> = {};
+      for (const [cardId, state] of Object.entries(cardState.finalState)) {
+        if (state.status !== 'removed') {
+          cards[cardId] = { template: state.template, data: state.data, status: state.status };
+        }
+      }
+      const hasCards = Object.keys(cards).length > 0;
+
       // Publish completion event
       if (result.status === 'success') {
         await requestContext.run({ userId, sessionId }, () =>
@@ -238,6 +248,7 @@ async function handleExecRequestPersistent(
             type: 'exec_result',
             taskId,
             summary: result.result || 'Task completed',
+            ...(hasCards ? { cards } : {}),
           }),
         );
       } else {

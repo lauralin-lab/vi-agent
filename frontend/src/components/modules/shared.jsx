@@ -211,7 +211,7 @@ export function CheckboxItem({ checked, onToggle, children, strikethrough = true
         mt-0.5 w-[18px] h-[18px] rounded-md border flex items-center justify-center shrink-0
         transition-all duration-200
         ${checked
-          ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
+          ? 'bg-purple-500/20 border-purple-500/40 text-purple-600'
           : 'bg-black/[0.03] border-black/[0.10] text-transparent group-hover:border-black/20'
         }
       `}>

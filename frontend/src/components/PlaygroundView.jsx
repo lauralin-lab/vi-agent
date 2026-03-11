@@ -110,6 +110,15 @@ function formatSkillTag(slug) {
 // ── Shared: render a card via ModuleRenderer ──
 
 function CardRenderer({ card }) {
+  // freeform-html uses raw HTML rendering, not a React module
+  if (card.template === 'freeform-html' && card.data?.html) {
+    return (
+      <div
+        style={{ padding: 16, fontSize: 14, lineHeight: 1.6, color: '#111' }}
+        dangerouslySetInnerHTML={{ __html: card.data.html }}
+      />
+    );
+  }
   return (
     <StreamingContext.Provider value={false}>
       <Suspense fallback={<div style={{ padding: 16, color: V.textDim, fontSize: 13 }}>Loading...</div>}>
@@ -989,23 +998,228 @@ function CardsPage() {
   );
 }
 
-// ── Sample data generator (ported from dashboard.js generateSampleData) ──
+// ── Sample data per template (matches what each React component expects) ──
+
+const SAMPLE_DATA = {
+  'weather': {
+    location: 'San Francisco, CA',
+    current: { temp: 18, condition: 'Partly Cloudy', icon: '⛅', humidity: 65, wind: '12 km/h', unit: 'C' },
+    forecast: [
+      { day: 'Mon', high: 20, low: 13, condition: 'Sunny', icon: '☀️' },
+      { day: 'Tue', high: 17, low: 11, condition: 'Cloudy', icon: '☁️' },
+      { day: 'Wed', high: 15, low: 10, condition: 'Rain', icon: '🌧️' },
+      { day: 'Thu', high: 19, low: 12, condition: 'Partly Cloudy', icon: '⛅' },
+      { day: 'Fri', high: 22, low: 14, condition: 'Sunny', icon: '☀️' },
+    ],
+  },
+  'recipe': {
+    title: 'Classic Margherita Pizza',
+    image_url: 'https://images.unsplash.com/photo-1604068549290-dea0e4a305ca?w=600&q=80',
+    prep_time: '20 min',
+    cook_time: '12 min',
+    servings: 4,
+    ingredients: [
+      { amount: '500g', item: 'Pizza dough' },
+      { amount: '200ml', item: 'San Marzano tomato sauce' },
+      { amount: '250g', item: 'Fresh mozzarella' },
+      { amount: '10', item: 'Fresh basil leaves' },
+      { amount: '2 tbsp', item: 'Extra virgin olive oil' },
+    ],
+    steps: [
+      'Preheat oven to 250°C (480°F) with a pizza stone inside.',
+      'Stretch dough into a 12-inch round on floured surface.',
+      'Spread tomato sauce evenly, leaving a 1-inch border.',
+      'Tear mozzarella into pieces and distribute over sauce.',
+      'Bake for 10-12 minutes until crust is golden and cheese bubbles.',
+      'Top with fresh basil and drizzle with olive oil. Serve immediately.',
+    ],
+  },
+  'checklist': {
+    title: 'Weekend Trip Packing',
+    items: [
+      { text: 'Passport & ID', checked: true, category: 'Documents' },
+      { text: 'Travel insurance printout', checked: false, category: 'Documents' },
+      { text: 'T-shirts (×3)', checked: true, category: 'Clothing' },
+      { text: 'Jacket', checked: false, category: 'Clothing' },
+      { text: 'Phone charger', checked: true, category: 'Electronics' },
+      { text: 'Camera', checked: false, category: 'Electronics' },
+      { text: 'Toothbrush', checked: false, category: 'Toiletries' },
+      { text: 'Sunscreen', checked: false, category: 'Toiletries' },
+    ],
+  },
+  'info-card': {
+    title: 'Golden Gate Bridge',
+    subtitle: 'Iconic suspension bridge',
+    icon: '🌉',
+    fields: [
+      { label: 'Location', value: 'San Francisco, CA' },
+      { label: 'Opened', value: 'May 27, 1937' },
+      { label: 'Total Length', value: '2,737 m (8,981 ft)', highlight: true },
+      { label: 'Architect', value: 'Joseph Strauss & Irving Morrow' },
+      { label: 'Daily Traffic', value: '~100,000 vehicles' },
+    ],
+    footer: 'Designated as a National Historic Landmark in 1987.',
+    accent_color: '#e3513c',
+  },
+  'image-gallery': {
+    title: 'Mountain Landscapes',
+    images: [
+      { url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&q=80', caption: 'Yosemite Valley at sunrise', alt: 'Yosemite Valley' },
+      { url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=600&q=80', caption: 'Alpine peaks in morning light', alt: 'Alpine mountains' },
+      { url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=600&q=80', caption: 'Starry night over mountains', alt: 'Mountain night sky' },
+    ],
+  },
+  'nutrition-card': {
+    food_name: 'Grilled Salmon Bowl',
+    photo_url: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80',
+    calories: 520,
+    protein_g: 38,
+    carbs_g: 45,
+    fat_g: 18,
+    fiber_g: 6,
+    serving_size: '1 bowl (350g)',
+    health_score: 8.5,
+    recommendation: 'Excellent source of omega-3 fatty acids and lean protein. Great post-workout meal.',
+    daily_percent: { calories: 26, protein: 76, carbs: 15, fat: 23 },
+  },
+  'shopping-list': {
+    title: 'Weekly Groceries',
+    items: [
+      { name: 'Organic eggs', quantity: '1 dozen', category: 'Dairy', price_estimate: '$5.99' },
+      { name: 'Whole milk', quantity: '1 gallon', category: 'Dairy', price_estimate: '$4.49' },
+      { name: 'Chicken breast', quantity: '2 lbs', category: 'Meat', price_estimate: '$8.99' },
+      { name: 'Salmon fillet', quantity: '1 lb', category: 'Meat', price_estimate: '$12.99' },
+      { name: 'Broccoli', quantity: '2 heads', category: 'Produce', price_estimate: '$3.49' },
+      { name: 'Avocados', quantity: '4', category: 'Produce', price_estimate: '$5.99' },
+      { name: 'Sourdough bread', quantity: '1 loaf', category: 'Bakery', price_estimate: '$4.99' },
+    ],
+    total_estimate: '$46.93',
+    store_suggestion: 'Whole Foods Market',
+  },
+  'place-card': {
+    name: 'Tartine Bakery',
+    category: 'Bakery & Cafe',
+    rating: 4.6,
+    price_level: 2,
+    address: '600 Guerrero St, San Francisco, CA 94110',
+    phone: '+1 (415) 487-2600',
+    hours: 'Mon-Sun: 7:30 AM - 7:00 PM',
+    image_url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80',
+    coordinates: { lat: 37.7614, lng: -122.4241 },
+    tags: ['Bakery', 'Coffee', 'Pastries', 'Brunch'],
+    url: 'https://www.tartinebakery.com',
+  },
+  'map-pins': {
+    title: 'Best Coffee Shops Nearby',
+    markers: [
+      { id: '1', lat: 37.7749, lng: -122.4194, label: 'Blue Bottle Coffee', description: 'Third-wave coffee roaster', rating: 4.5, icon: '☕' },
+      { id: '2', lat: 37.7694, lng: -122.4262, label: 'Sightglass Coffee', description: 'Artisan roaster with open loft', rating: 4.4, icon: '☕' },
+      { id: '3', lat: 37.7614, lng: -122.4241, label: 'Ritual Coffee Roasters', description: 'Single-origin specialists', rating: 4.3, icon: '☕' },
+    ],
+  },
+  'quiz': {
+    question: 'What is the tallest mountain in the solar system?',
+    image_url: 'https://images.unsplash.com/photo-1614728263952-84ea256f9679?w=600&q=80',
+    options: [
+      { id: 'a', text: 'Mount Everest (Earth)', correct: false },
+      { id: 'b', text: 'Olympus Mons (Mars)', correct: true },
+      { id: 'c', text: 'Maxwell Montes (Venus)', correct: false },
+      { id: 'd', text: 'Boösaule Montes (Io)', correct: false },
+    ],
+    explanation: 'Olympus Mons on Mars stands at approximately 21.9 km (13.6 mi) tall, making it nearly 2.5 times the height of Mount Everest.',
+  },
+  'conversation': {
+    topic: 'Planning a weekend hike',
+    messages: [
+      { role: 'user', content: 'Can you suggest a good day hike near San Francisco?' },
+      { role: 'ai', content: 'I recommend the Dipsea Trail in Marin County! It\'s about 7 miles one-way from Mill Valley to Stinson Beach, with beautiful ocean views and redwood groves.' },
+      { role: 'user', content: 'How difficult is it?' },
+      { role: 'ai', content: 'It\'s rated moderate to strenuous. The first section has ~700 stairs, but the views from the ridgeline are spectacular. Allow 3-4 hours and bring plenty of water.' },
+    ],
+    input_placeholder: 'Ask a follow-up question...',
+  },
+  'comparison-table': {
+    title: 'Laptop Comparison',
+    items: [
+      { name: 'MacBook Air M3', highlight: true, verdict: 'Best Overall', rating: 4.7, price: '$1,099', pros: ['Fanless design', 'All-day battery', 'Great display'], cons: ['Only 2 ports', 'Base model 8GB RAM'], attributes: { Chip: 'Apple M3', RAM: '8-24 GB', Storage: '256GB-2TB', Weight: '1.24 kg' } },
+      { name: 'ThinkPad X1 Carbon', verdict: 'Best for Business', rating: 4.5, price: '$1,399', pros: ['Amazing keyboard', 'Multiple ports', 'MIL-SPEC durable'], cons: ['Shorter battery', 'Heavier'], attributes: { Chip: 'Intel Ultra 7', RAM: '16-32 GB', Storage: '512GB-2TB', Weight: '1.12 kg' } },
+      { name: 'Dell XPS 13', verdict: 'Most Compact', rating: 4.3, price: '$999', pros: ['Ultra-compact', 'Great price', 'OLED option'], cons: ['Limited ports', 'Webcam angle'], attributes: { Chip: 'Intel Ultra 5', RAM: '16 GB', Storage: '512GB-1TB', Weight: '1.17 kg' } },
+    ],
+  },
+  'thinking-process': {
+    title: 'Analyzing your photo...',
+    steps: [
+      { title: 'Image Recognition', description: 'Identifying objects, text, and scene context in the photo.' },
+      { title: 'Scene Analysis', description: 'Determining the environment: indoor office with natural lighting and multiple monitors.' },
+      { title: 'Detail Extraction', description: 'Reading visible text, identifying brands, and noting spatial relationships.' },
+      { title: 'Context Synthesis', description: 'Combining observations into a coherent understanding of the scene.' },
+    ],
+    conclusion: 'The photo shows a modern workspace with dual monitors, a mechanical keyboard, and natural light from a nearby window.',
+  },
+  'calendar-event': {
+    title: 'Team Standup Meeting',
+    subtitle: 'Daily sync — Engineering team',
+    icon: '📅',
+    fields: [
+      { label: 'Date', value: 'Monday, March 11, 2026' },
+      { label: 'Time', value: '9:30 AM - 10:00 AM PST', highlight: true },
+      { label: 'Location', value: 'Zoom (link in calendar invite)' },
+      { label: 'Organizer', value: 'Sarah Chen' },
+      { label: 'Attendees', value: '8 people' },
+    ],
+    footer: 'Recurring: Every weekday',
+  },
+  'image-analysis': {
+    title: 'Photo Analysis',
+    subtitle: 'Objects and scenes detected',
+    icon: '🔍',
+    fields: [
+      { label: 'Scene', value: 'Outdoor urban street', highlight: true },
+      { label: 'Objects', value: 'Cars, pedestrians, traffic lights, storefronts' },
+      { label: 'Text Detected', value: '"Coffee House" sign, street number 425' },
+      { label: 'Lighting', value: 'Golden hour, warm tones' },
+      { label: 'Confidence', value: '94%' },
+    ],
+  },
+  'hero-image': {
+    title: 'Sunset at Ocean Beach',
+    subtitle: 'San Francisco, CA',
+    icon: '🌅',
+    fields: [
+      { label: 'Taken', value: 'March 10, 2026 at 6:42 PM' },
+      { label: 'Camera', value: 'iPhone 16 Pro' },
+      { label: 'Resolution', value: '4032 × 3024' },
+    ],
+  },
+  'freeform-html': {
+    html: '<div style="font-family: system-ui, sans-serif;">' +
+      '<h2 style="margin: 0 0 12px; font-size: 20px;">Custom HTML Content</h2>' +
+      '<p style="color: #555; line-height: 1.6;">This is a <strong>freeform HTML</strong> card. It renders arbitrary HTML content streamed from the agent — useful for rich formatting that doesn\'t fit a structured template.</p>' +
+      '<ul style="color: #444; padding-left: 20px; line-height: 1.8;">' +
+        '<li>Supports <em>any</em> valid HTML</li>' +
+        '<li>Tables, lists, images, styled text</li>' +
+        '<li>Used as fallback when no template matches</li>' +
+      '</ul>' +
+      '<table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px;">' +
+        '<tr style="background: #f5f5f5;"><th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Feature</th><th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Status</th></tr>' +
+        '<tr><td style="padding: 8px; border: 1px solid #ddd;">Streaming</td><td style="padding: 8px; border: 1px solid #ddd;">✅ Supported</td></tr>' +
+        '<tr><td style="padding: 8px; border: 1px solid #ddd;">Interactivity</td><td style="padding: 8px; border: 1px solid #ddd;">❌ Static only</td></tr>' +
+      '</table>' +
+    '</div>',
+  },
+};
 
 function generateSampleData(tpl) {
   const id = tpl.$id || '';
-  const slots = tpl.slots || {};
+  if (SAMPLE_DATA[id]) return SAMPLE_DATA[id];
   // Fallback: generate from slot types
   const data = {};
+  const slots = tpl.slots || {};
   for (const [name, slot] of Object.entries(slots)) {
-    if (slot.type === 'string') {
-      if (name.includes('title') || name.includes('name')) data[name] = 'Sample Card';
-      else if (name.includes('description') || name.includes('desc')) data[name] = 'A brief description of the content displayed in this card.';
-      else if (name.includes('url') || name.includes('image')) data[name] = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&q=80';
-      else if (name.includes('html')) data[name] = '<p>Hello from <strong>' + id + '</strong> template.</p>';
-      else data[name] = 'Sample ' + name;
-    } else if (slot.type === 'number') data[name] = 42;
+    if (slot.type === 'string') data[name] = 'Sample ' + name;
+    else if (slot.type === 'number') data[name] = 42;
     else if (slot.type === 'boolean') data[name] = true;
-    else if (slot.type === 'array') data[name] = ['Item 1', 'Item 2', 'Item 3'];
+    else if (slot.type === 'array') data[name] = [];
     else data[name] = null;
   }
   return data;

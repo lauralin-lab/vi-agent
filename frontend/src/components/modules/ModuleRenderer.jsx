@@ -53,6 +53,8 @@ const MODULE_MAP = {
   'image-analysis': InfoCardModule,
   'calendar-event': InfoCardModule,
   'hero-image': InfoCardModule,
+  'info-card': InfoCardModule,
+  'place-card': PlaceCardModule,
   'image-gallery': ImageGalleryModule,
 };
 

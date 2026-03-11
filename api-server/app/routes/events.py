@@ -43,8 +43,13 @@ async def _update_session_on_exec_complete(data: dict, vi_user_id: str, redis, e
         async with async_session() as db:
             if evt_type == "exec_result":
                 summary = data.get("summary", "")
+                result_payload = {"summary": summary}
+                # Persist card data from NanoClaw if present
+                cards = data.get("cards")
+                if cards:
+                    result_payload["cards"] = cards
                 await session_center.complete_session(
-                    db, session_id, {"summary": summary},
+                    db, session_id, result_payload,
                     redis=redis, vi_user_id=vi_user_id,
                 )
             elif evt_type == "exec_error":

@@ -1028,6 +1028,46 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         });
     }
 
+    // Reconstruct cards from session result (persisted by NanoClaw → API server)
+    const resultCards = sessionData?.result?.cards;
+    if (resultCards && typeof resultCards === 'object') {
+      for (const [cardId, card] of Object.entries(resultCards)) {
+        if (!card?.template) continue;
+        const templateEntry = resolveTemplate(card.template);
+        if (templateEntry.renderer === 'react' && templateEntry.component) {
+          upsertBlock({
+            id: `nc_${cardId}`,
+            type: 'module',
+            module_type: card.template,
+            data: card.data || {},
+            status: 'done',
+            content: '',
+            source: 'nanoclaw',
+          });
+        } else if (card.data?.html) {
+          upsertBlock({
+            id: `nc_${cardId}`,
+            type: 'html',
+            status: 'done',
+            content: card.data.html,
+            source: 'nanoclaw',
+          });
+        } else if (card.data && Object.keys(card.data).length > 0) {
+          upsertBlock({
+            id: `nc_${cardId}`,
+            type: 'module',
+            module_type: card.template,
+            data: card.data,
+            status: 'done',
+            content: '',
+            source: 'nanoclaw',
+          });
+        }
+      }
+      // If cards were found, skip legacy fallbacks
+      if (Object.keys(resultCards).length > 0) return;
+    }
+
     // Add the final HTML result artifact
     if (sessionData?.result_html) {
       upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: sessionData.result_html });
@@ -1040,10 +1080,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       if (r.type === 'html' && r.content) {
         upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: r.content });
       } else if (typeof r === 'string') {
-        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:white;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${r}</div>` });
+        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:rgba(0,0,0,0.7);font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${r}</div>` });
       } else if (r.content || r.raw || r.summary) {
         const text = r.content || r.raw || r.summary || JSON.stringify(r);
-        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:white;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${text}</div>` });
+        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:rgba(0,0,0,0.7);font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${text}</div>` });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

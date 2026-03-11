@@ -1,6 +1,6 @@
 ---
 description: "Create or improve experience packages. Try: /package-drive help"
-version: "2.0.0"
+version: "2.1.0"
 ---
 
 # /package-drive — Experience Package Workshop
@@ -43,14 +43,25 @@ HOW SKILLS WORK (Claude Code Native Pattern):
   When a user's prompt matches a description, Claude auto-invokes
   the full skill — no keyword matching, no host-side routing.
 
+HOW CARDS WORK (Auto-Discovery):
+  All card templates in packages/_shared/*.json are auto-discovered at
+  container startup. A card catalog is generated at
+  .claude/skills/_card-catalog/SKILL.md listing every template with
+  its fields. The agent sees this catalog and can use ANY template.
+
   Skills that need rich card output include a ```card-data JSON block
   with a "_template" field. The agent-runner extracts this and creates
   the card. Skills without cards output plain markdown.
 
+  The agent ALSO uses cards autonomously (without a skill) when the
+  user's request matches a template — e.g., asking about weather,
+  places, recipes, etc. The card catalog teaches it when and how.
+
 WHERE TO FIND THINGS:
   • Packages live in:      packages/{package-id}/
   • SKILL.md lives in:     packages/{package-id}/SKILL.md
-  • Shared templates:      packages/_shared/
+  • Shared templates:      packages/_shared/ (16 templates)
+  • Card catalog:          auto-generated at .claude/skills/_card-catalog/
   • Reference skill:       packages/nutrition-analyzer/SKILL.md (card output)
   • Reference skill:       packages/scene-describer/SKILL.md (markdown output)
 
@@ -204,13 +215,18 @@ options:
     description: "I want to pick specific card templates from the catalog"
 ```
 
-If user wants to customize, show them available templates:
+If user wants to customize, show them all available templates from the shared catalog:
 
 ```bash
-ls packages/_shared/
+# List all shared template schemas
+for f in packages/_shared/*.json; do
+  id=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$f','utf8')).\$id)")
+  desc=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$f','utf8')).description || '')")
+  echo "  $id — $desc"
+done
 ```
 
-Read a few template JSON files to show what each looks like, and let the user pick.
+Read a few template JSON files to show their field schemas, and let the user pick. All 16 templates are auto-discovered at runtime — the agent sees them all via the card catalog skill.
 
 ### 1.3 Pick a Package ID
 
@@ -568,7 +584,8 @@ options:
 ### 3.3 Fix Based on Feedback
 
 - **Output was wrong** → Edit SKILL.md to be more specific about what the AI should do
-- **Cards looked wrong** → Check the `card-data` JSON example in SKILL.md — field names must match the template's slot schema exactly. Read the template JSON in `packages/_shared/` to verify field names.
+- **Cards looked wrong** → Check the `card-data` JSON example in SKILL.md — field names must match the template's slot schema exactly. Read the template JSON in `packages/_shared/` to verify field names. The agent also has the full card catalog at `.claude/skills/_card-catalog/SKILL.md` — if the field names there don't match, the template JSON needs updating.
+- **Wrong card template used** → The agent picks templates from the card catalog based on content type. If the skill should always use a specific template, make the `## Output` section in SKILL.md explicit: "You MUST use `_template: X`". If the skill doesn't specify, the agent chooses autonomously from the catalog.
 - **Didn't trigger** → Improve the `description` field in SKILL.md frontmatter. Claude uses this description to decide when to invoke the skill. Add more natural keywords the user might say. Check that `user-invocable: false` is set (so Claude auto-invokes). Note: manifest.json `trigger.voice_keywords` is NOT used for routing — only the SKILL.md description matters.
 
 After each fix, tell the user to test again. Loop until satisfied.
@@ -613,13 +630,33 @@ agent-runner extractCardData()
 Frontend renders card
 ```
 
+### How card templates are auto-discovered
+
+```
+packages/_shared/*.json  +  packages/*/templates/*.json
+    ↓ (bind-mounted into container at /workspace/packages/)
+agent-runner setupCardCatalog()
+    ↓ (reads all template JSONs, deduplicates by $id)
+    ↓ (generates .claude/skills/_card-catalog/SKILL.md)
+Claude Code auto-discovery
+    ↓ (sees catalog description in context, reads full catalog on invocation)
+Claude uses ANY template from the catalog when content is structured
+    ↓ (outputs card-data JSON with _template matching a catalog entry)
+agent-runner extractCardData() → Frontend renders card
+```
+
+The card catalog is regenerated every container startup, so adding a new
+template JSON to `packages/_shared/` automatically makes it available.
+
 ### Key design principles
 
 1. **SKILL.md IS the skill** — the frontmatter `description` drives discovery, the content drives behavior
 2. **No host-side routing** — Claude selects skills, not keyword matching
-3. **`_template` in card-data** — skills that need cards include `"_template": "template-name"` in their JSON output; agent-runner reads this to create the card
-4. **manifest.json is metadata** — for the package registry/gallery, NOT for skill routing
-5. **Shared templates** in `packages/_shared/` take priority over bundled templates
+3. **Card catalog is auto-discovered** — all templates in `_shared/` + bundled are compiled into `_card-catalog/SKILL.md` at startup; the agent knows every template and its fields
+4. **`_template` in card-data** — skills that need cards include `"_template": "template-name"` in their JSON output; agent-runner reads this to create the card
+5. **manifest.json is metadata** — for the package registry/gallery, NOT for skill routing
+6. **Shared templates** in `packages/_shared/` take priority over bundled templates
+7. **Agent uses cards autonomously** — even without a specific skill, the agent can choose a card template from the catalog when the content is structured
 
 ---
 
@@ -632,5 +669,7 @@ This skill uses the `/drive` execution engine for implementation work. When crea
 - **Don't stop:** After each user answer, immediately proceed to the next step
 - **AskUserQuestion always:** Never output questions as plain text — always use the AskUserQuestion tool
 - **Check template slots:** When creating card output skills, read the target template JSON in `packages/_shared/` to verify field names match exactly
+- **New templates auto-discovered:** If you create a new template JSON in `packages/_shared/`, it will be auto-discovered at next container startup — no code changes needed
+- **Verify MODULE_MAP:** If adding a brand new template (not using an existing shared one), ensure the frontend `ModuleRenderer.jsx` MODULE_MAP includes the template ID → component mapping
 
 But unlike `/team-drive`, there is NO Mission Contract, NO GitHub Issue, NO branch management. This is a lightweight creative workshop, not a code mission.

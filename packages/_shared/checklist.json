@@ -1,0 +1,24 @@
+{
+  "$id": "checklist",
+  "category": "act",
+  "renderer": "react",
+  "component": "ChecklistModule",
+  "mutable": true,
+  "streamable": false,
+  "description": "Interactive checklist with category grouping, select-all, and copy/share",
+  "slots": {
+    "title": { "type": "string", "default": "Checklist" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "checked": { "type": "boolean", "default": false },
+          "category": { "type": "string" }
+        }
+      }
+    }
+  },
+  "mutable_slots": ["items"]
+}

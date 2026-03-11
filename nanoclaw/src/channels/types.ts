@@ -203,6 +203,7 @@ export interface ExecResultEvent {
   type: 'exec_result';
   taskId: string;
   summary: string;
+  cards?: Record<string, { template: string; data: Record<string, unknown>; status: string }>;
 }
 
 export interface ExecErrorEvent {

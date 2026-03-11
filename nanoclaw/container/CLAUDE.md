@@ -10,22 +10,19 @@ Skills are guidelines — adapt to the user's actual needs. If no skill matches,
 
 ## Card Output Protocol
 
-Some skills require structured JSON output that renders as rich cards in the UI. When a skill instructs you to output a ```card-data block, you MUST include it. The format:
+You render rich UI cards by outputting a ```card-data JSON block. Cards are auto-discovered — see `.claude/skills/_card-catalog/SKILL.md` for the full template list.
 
-```card-data
-{
-  "_template": "template-name",
-  "field1": "value1",
-  "field2": 42
-}
-```
+**Two-step process:**
+1. Check the catalog summary (SKILL.md) to pick the right template
+2. **Read the detail file** before writing: `.claude/skills/_card-catalog/templates/{template-name}.md` — it has exact field schema and an example
 
 Rules:
-- The `_template` field tells the system which card to render
-- Field names must match exactly as specified in the skill instructions
-- Include brief analysis text BEFORE the JSON block
-- The ```card-data block is REQUIRED when a skill says so — never skip it
-- If a skill does NOT mention card-data, output plain markdown text
+- **ALWAYS use a card** for any rich or structured content — there is NO middle ground between pure text and cards
+- Two output modes only: **pure text** (simple short answers) or **card** (everything else)
+- If a structured template fits (recipe, checklist, weather, etc.) — use that template
+- If no structured template fits but the content is rich — use `freeform-html` with well-formatted HTML
+- Read the template detail file BEFORE writing a card — field names must match exactly
+- You may include brief text before the JSON block, but it's not required
 
 ## Tools
 

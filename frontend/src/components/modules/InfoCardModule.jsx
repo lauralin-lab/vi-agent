@@ -36,13 +36,13 @@ export default function InfoCardModule({ data, onAction }) {
                 `}
               >
                 <span
-                  className={`shrink-0 ${field.highlight ? 'text-purple-300/80' : 'text-black/30'}`}
+                  className={`shrink-0 ${field.highlight ? 'text-purple-600/80' : 'text-black/30'}`}
                   style={{ fontSize: 'var(--text-xs)' }}
                 >
                   {field.label}
                 </span>
                 <span
-                  className={`text-right ${field.highlight ? 'text-purple-200 font-medium' : 'text-black/70'}`}
+                  className={`text-right ${field.highlight ? 'text-purple-700 font-medium' : 'text-black/70'}`}
                   style={{ fontSize: 'var(--text-sm)' }}
                 >
                   {field.value}
@@ -56,7 +56,7 @@ export default function InfoCardModule({ data, onAction }) {
         {footer && (
           <>
             <GlassDivider />
-            <p className="text-white/35" style={{ fontSize: 'var(--text-xs)' }}>
+            <p className="text-black/35" style={{ fontSize: 'var(--text-xs)' }}>
               {footer}
             </p>
           </>

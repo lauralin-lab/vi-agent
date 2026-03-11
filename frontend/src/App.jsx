@@ -198,13 +198,22 @@ function App() {
   const SESSION_CACHE_MAX = 10;
   const sessionCacheRef = useRef(new Map());
 
-  // --- Auto-connect LiveKit when authenticated ---
+  // --- Auto-connect LiveKit when authenticated (skip for playground) ---
   useEffect(() => {
+    if (viewState === 'playground') return;
     if (auth.isAuthenticated && livekit.connectionState === 'disconnected') {
       livekit.connect();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.isAuthenticated]);
+  }, [auth.isAuthenticated, viewState]);
+
+  // --- Disconnect LiveKit when entering playground (no camera/mic needed) ---
+  useEffect(() => {
+    if (viewState === 'playground' && livekit.connectionState === 'connected' && livekit.disconnect) {
+      livekit.disconnect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewState]);
 
   // --- Camera enable/disable based on view ---
   // V5: Keep camera enabled during live-session for PiP
@@ -341,11 +350,6 @@ function App() {
     setViewState('memory');
   };
 
-  // --- Playground: full-page desktop layout, no DeviceFrame ---
-  if (viewState === 'playground') {
-    return <PlaygroundView nanoClaw={nanoClaw} />;
-  }
-
   // --- Auth gate: show login page if not authenticated ---
   if (auth.loading) {
     return (
@@ -369,6 +373,11 @@ function App() {
         </DeviceFrame>
       </div>
     );
+  }
+
+  // --- Playground: full-page desktop layout, no DeviceFrame, no LiveKit ---
+  if (viewState === 'playground') {
+    return <PlaygroundView nanoClaw={nanoClaw} />;
   }
 
   return (
