@@ -169,6 +169,12 @@ class Authentication {
   /// 用户 UUID
   String get uuid => currentAuth.self?.uuid ?? App().preferences.uuidInLocalCache;
 
+  /// SSE 事件流（broadcast，允许多个监听者）
+  final StreamController<SseEvent> sseEventStream = StreamController<SseEvent>.broadcast();
+
+  /// SSE 是否已连接
+  bool get isSseConnected => _sseConnected;
+
 
   // /// 尝试刷新自动登录，一般情况下请勿使用
   // void tryAutoLogin([bool refresh = false]) {
@@ -179,6 +185,7 @@ class Authentication {
   /// 退出
   Future<bool> logout() async {
     try {
+      disposeSse();
       App().preferences.setHasLogin(false);
       await FirebaseAuth.instance.signOut();
     } catch (ex) {
@@ -429,6 +436,8 @@ class Authentication {
         userCompleter.complete();
       }
       _lastUserUpdated = DateTime.now();
+      // 用户信息获取成功后启动 SSE
+      _connectSseIfNeeded();
     } on DioException catch (err) {
       // 网络异常重试
       if (err.type == DioExceptionType.connectionTimeout ||
@@ -548,6 +557,70 @@ class Authentication {
     return uid == App().preferences.lastReportedUid ? Future.value() : f;
   }
 
+  // ---------------------------------------------------------------------------
+  // SSE 事件流（参考前端 useRealtimeEvents，在 auth 层管理）
+  // ---------------------------------------------------------------------------
+
+  /// 启动 SSE（用户查询成功后调用）
+  void _connectSseIfNeeded() {
+    final viUserId = uuid;
+    if (viUserId.isEmpty || _sseConnected || _sseSubscription != null) return;
+    _startSse(viUserId);
+  }
+
+  /// 连接 SSE 并监听事件
+  void _startSse(String viUserId) {
+    _sseSubscription?.cancel();
+    _sseReconnectTimer?.cancel();
+
+    _sseSubscription = ApiService.connectSSE(viUserId).listen(
+      (event) {
+        if (!_sseConnected) {
+          _sseConnected = true;
+          _sseReconnectAttempt = 0;
+          logi('[SSE] Connected');
+        }
+        if (event.event == 'heartbeat') return;
+        sseEventStream.add(event);
+      },
+      onError: (err) {
+        loge('[SSE] Error: $err');
+        _sseConnected = false;
+        _sseSubscription = null;
+        _scheduleSseReconnect(viUserId);
+      },
+      onDone: () {
+        logi('[SSE] Connection closed');
+        _sseConnected = false;
+        _sseSubscription = null;
+        _scheduleSseReconnect(viUserId);
+      },
+      cancelOnError: true,
+    );
+  }
+
+  /// 指数退避重连（最大 30 秒）
+  void _scheduleSseReconnect(String viUserId) {
+    _sseReconnectTimer?.cancel();
+    final delay = Duration(
+      milliseconds: (1000 * (1 << _sseReconnectAttempt)).clamp(1000, 30000),
+    );
+    logi('[SSE] Reconnecting in ${delay.inSeconds}s (attempt: $_sseReconnectAttempt)');
+    _sseReconnectTimer = Timer(delay, () {
+      _sseReconnectAttempt++;
+      _startSse(viUserId);
+    });
+  }
+
+  /// 关闭 SSE
+  void disposeSse() {
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+    _sseReconnectTimer?.cancel();
+    _sseReconnectTimer = null;
+    _sseConnected = false;
+  }
+
   ///#endregion 内部方法˚
 
   ///#region 私有属性
@@ -575,6 +648,12 @@ class Authentication {
 
   /// 已经上报成功过的 uid
   String? _reportedUid;
+
+  /// SSE 订阅与重连状态
+  StreamSubscription<SseEvent>? _sseSubscription;
+  Timer? _sseReconnectTimer;
+  int _sseReconnectAttempt = 0;
+  bool _sseConnected = false;
 }
 
 /// 输出错误

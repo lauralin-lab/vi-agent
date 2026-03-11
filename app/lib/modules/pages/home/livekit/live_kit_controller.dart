@@ -16,6 +16,9 @@ import 'live_kit_connection_state.dart';
 import 'live_kit_room_service.dart';
 import 'media_hardware_controller.dart';
 
+/// 模拟用户获取失败的开关（仅 debug 使用）
+bool kSimulateAuthFailure = false;
+
 /// liveKit 控制器定义
 final liveKitControllerProvider = Provider<LiveKitController>(
   (ref) => LiveKitController(ref),
@@ -37,9 +40,6 @@ class LiveKitController {
   /// Agent 回复消息流（broadcast，允许多个监听者）
   final StreamController<String> agentRecorder = StreamController<String>.broadcast();
 
-  /// SSE 事件流（broadcast，允许多个监听者）
-  final StreamController<SseEvent> sseEventStream = StreamController<SseEvent>.broadcast();
-
   /// 当前连接状态（内部同步读取，UI 通过 connectionStatusProvider 异步消费）
   LiveKitConnectionState _state = LiveKitConnectionState.idle;
 
@@ -54,21 +54,12 @@ class LiveKitController {
   /// Room 事件订阅取消函数
   CancelListenFunc? _cancelRoomListen;
 
-  /// SSE 订阅与重连状态
-  StreamSubscription<SseEvent>? _sseSubscription;
-  Timer? _sseReconnectTimer;
-  int _sseReconnectAttempt = 0;
-  bool _sseConnected = false;
-
   /// 子模块
   late final LiveKitRoomService _roomService = LiveKitRoomService();
   late final MediaHardwareController _mediaController = MediaHardwareController(ref, _roomService);
 
   /// 房间是否连接成功
   bool get isConnected => _roomService.isConnected;
-
-  /// SSE 是否连接
-  bool get isSseConnected => _sseConnected;
 
   // ---------------------------------------------------------------------------
   // 生命周期
@@ -87,10 +78,8 @@ class LiveKitController {
   Future<void> dispose() async {
     _cancelRoomListen?.call();
     _cancelRoomListen = null;
-    _disposeSse();
     await _roomService.dispose();
     await agentRecorder.close();
-    await sseEventStream.close();
   }
 
   // ---------------------------------------------------------------------------
@@ -110,6 +99,12 @@ class LiveKitController {
     ref.listen(onAuthChangedProvider, (_, next) {
       next.when(
         data: (authInfo) {
+          // 模拟失败（debug 开关）
+          if (kSimulateAuthFailure) {
+            loge('[LiveKit] Simulated auth failure');
+            _transitionTo(LiveKitConnectionState.failed);
+            return;
+          }
           if (!authInfo.logged) {
             // Firebase 认证失败或用户未登录
             loge('[LiveKit] Auth not logged in, marking failed');
@@ -117,9 +112,8 @@ class LiveKitController {
             return;
           }
           if (authInfo.self != null) {
-            // 认证成功 + 用户信息已加载 → 获取房间 token + 启动 SSE
+            // 认证成功 + 用户信息已加载 → 获取房间 token
             _fetchRoomInfoIfNeeded();
-            _connectSseIfNeeded(authInfo.self!.uuid);
           }
         },
         error: (err, _) {
@@ -249,69 +243,5 @@ class LiveKitController {
   /// 设置麦克风采集状态
   void setMicrophoneEnabled(bool enabled) {
     _roomService.room.localParticipant?.setMicrophoneEnabled(enabled);
-  }
-
-  // ---------------------------------------------------------------------------
-  // SSE 事件流（参考前端 useRealtimeEvents）
-  // ---------------------------------------------------------------------------
-
-  /// 启动 SSE（仅在未连接时触发）
-  void _connectSseIfNeeded(String viUserId) {
-    if (_sseConnected || _sseSubscription != null) return;
-    _startSse(viUserId);
-  }
-
-  /// 连接 SSE 并监听事件
-  void _startSse(String viUserId) {
-    _sseSubscription?.cancel();
-    _sseReconnectTimer?.cancel();
-
-    _sseSubscription = ApiService.connectSSE(viUserId).listen(
-      (event) {
-        if (!_sseConnected) {
-          _sseConnected = true;
-          _sseReconnectAttempt = 0;
-          logi('[SSE] Connected');
-        }
-        // heartbeat 不转发
-        if (event.event == 'heartbeat') return;
-        sseEventStream.add(event);
-      },
-      onError: (err) {
-        loge('[SSE] Error: $err');
-        _sseConnected = false;
-        _sseSubscription = null;
-        _scheduleSseReconnect(viUserId);
-      },
-      onDone: () {
-        logi('[SSE] Connection closed');
-        _sseConnected = false;
-        _sseSubscription = null;
-        _scheduleSseReconnect(viUserId);
-      },
-      cancelOnError: true,
-    );
-  }
-
-  /// 指数退避重连（与前端一致，最大 30 秒）
-  void _scheduleSseReconnect(String viUserId) {
-    _sseReconnectTimer?.cancel();
-    final delay = Duration(
-      milliseconds: (1000 * (1 << _sseReconnectAttempt)).clamp(1000, 30000),
-    );
-    logi('[SSE] Reconnecting in ${delay.inSeconds}s (attempt: $_sseReconnectAttempt)');
-    _sseReconnectTimer = Timer(delay, () {
-      _sseReconnectAttempt++;
-      _startSse(viUserId);
-    });
-  }
-
-  /// 关闭 SSE 连接
-  void _disposeSse() {
-    _sseSubscription?.cancel();
-    _sseSubscription = null;
-    _sseReconnectTimer?.cancel();
-    _sseReconnectTimer = null;
-    _sseConnected = false;
   }
 }

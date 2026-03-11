@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app.dart';
+import 'network/api_service.dart';
 import 'authentication.dart';
 import 'hardware/hard_ware_initializer.dart';
 
@@ -24,6 +25,12 @@ final onInitCameraProvider = AutoDisposeStreamProvider<bool>(
     }
   },
   name: 'onInitCameraProvider',
+);
+
+/// SSE 事件流
+final onSseEventProvider = AutoDisposeStreamProvider<SseEvent>(
+  (ref) => _auth.sseEventStream.stream,
+  name: 'onSseEventProvider',
 );
 
 ////////////////////////////////////////////////////////////////////////////////
