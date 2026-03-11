@@ -78,8 +78,8 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 EOF
 elif [ "$ENV" = "staging" ]; then
   cat >> "${ENV_FILE}.tmp" << EOF
-API_BASE_URL=http://34.68.86.220:8000
-CORS_ORIGINS=http://34.68.86.220,https://34.68.86.220
+API_BASE_URL=https://staging.internal.collov.ai
+CORS_ORIGINS=https://staging.internal.collov.ai
 IMAGE_TAG=${IMAGE_TAG:-latest}
 EOF
 fi

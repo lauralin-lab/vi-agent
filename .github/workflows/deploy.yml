@@ -12,8 +12,8 @@ on:
           - prod
         default: staging
       ref:
-        description: "Git ref to deploy (rc/* branch for staging, V*.*.* tag for prod)"
-        required: true
+        description: "Git ref to deploy (rc/* branch for staging, V*.*.* tag for prod). Defaults to triggering ref."
+        required: false
 
 env:
   DOCKER_ORG: collov
@@ -34,7 +34,7 @@ jobs:
         id: env
         run: |
           ENV="${{ inputs.environment }}"
-          REF="${{ inputs.ref }}"
+          REF="${{ inputs.ref || github.ref_name }}"
 
           # Image tag: use ref directly if it's a named ref (tag/branch),
           # or shorten to 7 chars if it looks like a SHA

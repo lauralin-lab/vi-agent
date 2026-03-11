@@ -107,6 +107,9 @@ notifications:
     review.requested: [slack, feishu]
     review.changes_requested: [slack, feishu]
 
+deploy:
+  staging_workflow: "deploy.yml"
+
 versions:
   current: "V0.1"
 
