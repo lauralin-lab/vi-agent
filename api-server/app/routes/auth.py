@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..deps import get_db, get_firebase_user
 from ..models import User
 from ..services.user_center import generate_vi_user_id
@@ -71,6 +72,47 @@ async def create_or_login_user(
     if not id_token or not package_name:
         raise HTTPException(status_code=401, detail="Missing id-token or package-name")
 
+    # --- Test login bypass ---
+    if settings.TEST_LOGIN_CODE and id_token == settings.TEST_LOGIN_CODE:
+        test_uid = "test-user-auto"
+        result = await db.execute(select(User).where(User.firebase_uid == test_uid))
+        user = result.scalar_one_or_none()
+        is_new_user = user is None
+
+        if is_new_user:
+            user = User(
+                firebase_uid=test_uid,
+                package_name=package_name,
+                sign_in_provider="test",
+                firebase_info={"test_login": True},
+                vi_user_id=generate_vi_user_id(),
+                display_name="Test User",
+                email="test@vi-agent.dev",
+                language=language,
+                app_version=app_version,
+                last_login=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        else:
+            user.last_login = datetime.now(timezone.utc)
+            await db.commit()
+
+        return FirebaseAuthResponse(
+            user_id=str(user.id),
+            vi_user_id=user.vi_user_id,
+            firebase_uid=user.firebase_uid,
+            display_name=user.display_name,
+            email=user.email,
+            photo_url=user.photo_url,
+            sign_in_provider=user.sign_in_provider,
+            language=user.language,
+            is_new_user=is_new_user,
+            invite_required=False,
+        )
+
+    # --- Normal Firebase login ---
     firebase_mgr = getattr(request.app.state, "firebase_manager", None)
     if firebase_mgr is None:
         raise HTTPException(status_code=503, detail="Firebase not initialized")

@@ -16,7 +16,7 @@ const APPLE_ICON = (
   </svg>
 );
 
-export default function LoginPage({ onLoginWithGoogle, error, needsInviteCode }) {
+export default function LoginPage({ onLoginWithGoogle, onTestLogin, error, needsInviteCode }) {
   const [inviteCode, setInviteCode] = useState(
     () => localStorage.getItem('pending_invite_code') || ''
   );
@@ -31,13 +31,26 @@ export default function LoginPage({ onLoginWithGoogle, error, needsInviteCode })
   // Show invite input once config is loaded (required or optional)
   const showInviteInput = needsInviteCode || inviteRequired !== null;
 
+  // Detect test login code (starts with "Test" and length > 10)
+  const isTestCode = inviteCode.startsWith('Test') && inviteCode.length > 10;
+
   const handleInviteChange = (e) => {
-    const code = e.target.value.toUpperCase();
+    const raw = e.target.value;
+    // Don't uppercase if it looks like a test code (starts with "Test")
+    const code = raw.startsWith('Test') ? raw : raw.toUpperCase();
     setInviteCode(code);
     if (code.trim()) {
       localStorage.setItem('pending_invite_code', code.trim());
     } else {
       localStorage.removeItem('pending_invite_code');
+    }
+  };
+
+  const handleLogin = () => {
+    if (isTestCode && onTestLogin) {
+      onTestLogin(inviteCode.trim());
+    } else {
+      onLoginWithGoogle();
     }
   };
 
@@ -91,10 +104,10 @@ export default function LoginPage({ onLoginWithGoogle, error, needsInviteCode })
 
           <button
             className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white font-medium text-[15px] active:scale-[0.98] transition-transform"
-            onClick={onLoginWithGoogle}
+            onClick={handleLogin}
           >
-            {GOOGLE_ICON}
-            Continue with Google
+            {isTestCode ? '🧪' : GOOGLE_ICON}
+            {isTestCode ? 'Test Login' : 'Continue with Google'}
           </button>
         </div>
       </div>
