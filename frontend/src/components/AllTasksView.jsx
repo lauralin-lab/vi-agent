@@ -3,60 +3,26 @@ import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import useSound from '../hooks/useSound';
 import { getShortTitle } from '../utils/text';
+import { api } from '../services/api';
 import { IOS_SPRING } from '../constants';
 
-// ── NanoClaw API (same as PlaygroundView) ──
-
-async function fetchSessionHistory() {
-    const res = await fetch('/nanoclaw/api/dashboard/sessions/history');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.sessions || [];
-}
-
-// ── Group flat task list into sessions (same logic as PlaygroundView) ──
-
-function groupIntoSessions(tasks) {
-    const map = {};
-    for (const t of tasks) {
-        const sid = t.sessionId || 'unknown';
-        if (!map[sid]) map[sid] = { sessionId: sid, tasks: [], latestTs: 0 };
-        map[sid].tasks.push(t);
-        if ((t.ts || 0) > map[sid].latestTs) map[sid].latestTs = t.ts || 0;
-    }
-    return Object.values(map).sort((a, b) => b.latestTs - a.latestTs);
-}
-
-// ── Extract photos from task mediaUrls ──
+// ── Extract photos from session context (same logic as HistoryView) ──
 
 function extractSessionPhotos(session) {
     const photos = [];
-    for (const task of session.tasks) {
-        if (task.mediaUrls?.length) {
-            for (const url of task.mediaUrls) {
-                if (!photos.includes(url)) photos.push(url);
-            }
+    if (session.context?.photos) {
+        if (Array.isArray(session.context.photos)) {
+            photos.push(...session.context.photos);
+        } else if (typeof session.context.photos === 'string') {
+            const urls = session.context.photos.match(/https?:\/\/[^\s]+/g);
+            if (urls) photos.push(...urls);
         }
     }
-    return photos;
-}
-
-// ── Get session display title from first task prompt ──
-
-function getSessionTitle(session) {
-    const firstTask = session.tasks[0];
-    return firstTask?.prompt || '(no prompt)';
-}
-
-// ── Get latest result text from session tasks ──
-
-function getSessionResult(session) {
-    // Look through tasks in reverse order for the last result
-    for (let i = session.tasks.length - 1; i >= 0; i--) {
-        const t = session.tasks[i];
-        if (t.result) return t.result;
+    if (photos.length === 0 && session.prompt) {
+        const urls = session.prompt.match(/https:\/\/storage\.googleapis\.com\/[^\s]+/g);
+        if (urls) photos.push(...urls);
     }
-    return null;
+    return photos;
 }
 
 const formatTimestamp = (ts) => {
@@ -86,15 +52,39 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
     const scrollRef = useRef(null);
     const dateRefs = useRef({});
 
-    // Fetch sessions from NanoClaw session history API
+    // Fetch sessions from VI API server (same source as HistoryView)
     useEffect(() => {
-        fetchSessionHistory()
-            .then(tasks => {
-                const grouped = groupIntoSessions(tasks);
-                setSessions(grouped);
+        const fetchAll = async () => {
+            // Try authenticated endpoint first, fall back to device-based
+            let raw;
+            try {
+                raw = await api.getSessions();
+            } catch {
+                raw = await api.getSessionsByDevice().catch(() => []);
+            }
+            return raw;
+        };
+        fetchAll()
+            .then(raw => {
+                const normalized = (raw || []).map(s => ({
+                    id: s.id,
+                    prompt: s.prompt || s.title || s.intention || '',
+                    status: s.status === 'completed' || s.status === 'ended' ? 'complete'
+                        : s.status === 'dispatched' || s.status === 'created' ? 'pending'
+                            : s.status === 'failed' ? 'error'
+                                : s.status || 'pending',
+                    result: s.result || null,
+                    result_html: s.result_html || null,
+                    result_summary: s.result_summary || null,
+                    timeline: s.timeline || [],
+                    context: s.context || null,
+                    latestTs: new Date(s.started_at || s.dispatched_at || 0).getTime(),
+                }));
+                normalized.sort((a, b) => b.latestTs - a.latestTs);
+                setSessions(normalized);
             })
             .catch(err => {
-                console.error('AllTasksView: failed to fetch session history:', err);
+                console.error('AllTasksView: failed to fetch sessions:', err);
             });
     }, [isAuthenticated]);
 
@@ -121,14 +111,17 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
     const handleSessionClick = useCallback((session) => {
         play('nav.forward');
         const photos = extractSessionPhotos(session);
-        const title = getSessionTitle(session);
-        const result = getSessionResult(session);
         onSelectSession?.({
-            sessionId: session.sessionId,
-            prompt: title,
-            result: result,
-            photos,
-            title: title,
+            sessionId: session.id,
+            prompt: session.prompt || '',
+            title: getShortTitle(session.prompt),
+            fromHome: true,
+            result: session.result || null,
+            result_html: session.result_html || null,
+            timeline: session.timeline || [],
+            status: session.status,
+            photos: photos.map(url => ({ type: 'photo', src: url })),
+            context: session.context || null,
         });
     }, [play, onSelectSession]);
 
@@ -197,10 +190,10 @@ export default function AllTasksView({ onBack, onSelectSession, scrollToDateKey 
                                 {group.sessions.map((session) => {
                                     const photos = extractSessionPhotos(session);
                                     const heroImg = photos[0] || null;
-                                    const title = getSessionTitle(session);
+                                    const title = session.prompt || '(no prompt)';
                                     return (
                                         <div
-                                            key={session.sessionId}
+                                            key={session.id}
                                             onClick={() => handleSessionClick(session)}
                                             className="flex items-center gap-3 p-3 cursor-pointer active:scale-[0.98] transition-all group"
                                             style={{
