@@ -2,13 +2,13 @@ import 'package:livekit_client/livekit_client.dart';
 
 /// 视频编码
 VideoEncoding get cameraEncoding => const VideoEncoding(
-  maxBitrate: 5 * 1000 * 1000,
-  maxFramerate: 30,
+  maxBitrate: 800 * 1000,
+  maxFramerate: 12,
 );
 
 VideoEncoding get screenEncoding => const VideoEncoding(
-  maxBitrate: 3 * 1000 * 1000,
-  maxFramerate: 15,
+  maxBitrate: 1000 * 1000,
+  maxFramerate: 8,
 );
 
 /// 房间配置
@@ -17,12 +17,12 @@ RoomOptions get roomOptions => RoomOptions(
   dynacast: true,
   defaultAudioPublishOptions: const AudioPublishOptions(name: 'mic'),
   defaultCameraCaptureOptions: const CameraCaptureOptions(
-    maxFrameRate: 30,
-    params: VideoParameters(dimensions: VideoDimensionsPresets.h720_169),
+    maxFrameRate: 12,
+    params: VideoParameters(dimensions: VideoDimensionsPresets.h540_169),
   ),
   defaultScreenShareCaptureOptions: const ScreenShareCaptureOptions(
     useiOSBroadcastExtension: true,
-    params: VideoParameters(dimensions: VideoDimensionsPresets.h1080_169),
+    params: VideoParameters(dimensions: VideoDimensionsPresets.h720_169),
   ),
   defaultVideoPublishOptions: VideoPublishOptions(
     simulcast: true,

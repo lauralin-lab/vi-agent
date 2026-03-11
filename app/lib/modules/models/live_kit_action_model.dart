@@ -3,8 +3,7 @@ import 'package:xml/xml.dart';
 class LiveKitActionModel {
   // 标签
   final LiveKitActionTag tag;
-  // 状态
-  final LiveKitActionStatus status;
+
   // 类型
   final LiveKitActionType type;
   // 内容
@@ -12,7 +11,6 @@ class LiveKitActionModel {
 
   LiveKitActionModel({
     required this.tag,
-    required this.status,
     required this.type,
     required this.content,
   });
@@ -23,8 +21,6 @@ class LiveKitActionModel {
 
     final tag = LiveKitActionTagExtension.fromString(element.name.local);
 
-    final statusAttr = element.getAttribute('status') ?? '';
-    final status = LiveKitActionStatusExtension.fromString(statusAttr.toLowerCase());
 
     final typeAttr = element.getAttribute('type') ?? '';
     final type = LiveKitActionTypeExtension.fromString(typeAttr);
@@ -33,7 +29,6 @@ class LiveKitActionModel {
 
     return LiveKitActionModel(
       tag: tag,
-      status: status,
       type: type,
       content: content,
     );
@@ -41,7 +36,7 @@ class LiveKitActionModel {
 
   @override
   String toString() {
-    return 'ActionMessage(tag: ${tag.name}, type: ${type.name}, status: ${status.name}, content: $content)';
+    return 'ActionMessage(tag: ${tag.name}, type: ${type.name}, content: $content)';
   }
 }
 
@@ -64,65 +59,6 @@ extension LiveKitActionTagExtension on LiveKitActionTag {
         return LiveKitActionTag.taskState;
       default:
         return LiveKitActionTag.unknown;
-    }
-  }
-
-  String get name {
-    switch (this) {
-      case LiveKitActionTag.infoBar:
-        return 'info_bar';
-      case LiveKitActionTag.transcript:
-        return 'transcript';
-      case LiveKitActionTag.taskState:
-        return 'task_state';
-      case LiveKitActionTag.unknown:
-        return 'unknown';
-    }
-  }
-}
-
-/// status 枚举
-enum LiveKitActionStatus {
-  unknown,
-  ready,
-  starting,
-  thinking,
-  working,
-  error,
-}
-
-extension LiveKitActionStatusExtension on LiveKitActionStatus {
-  static LiveKitActionStatus fromString(String value) {
-    switch (value) {
-      case 'ready':
-        return LiveKitActionStatus.ready;
-      case 'starting':
-        return LiveKitActionStatus.starting;
-      case 'thinking':
-        return LiveKitActionStatus.thinking;
-      case 'working':
-        return LiveKitActionStatus.working;
-      case 'error':
-        return LiveKitActionStatus.error;
-      default:
-        return LiveKitActionStatus.unknown;
-    }
-  }
-
-  String get name {
-    switch (this) {
-      case LiveKitActionStatus.ready:
-        return 'ready';
-      case LiveKitActionStatus.starting:
-        return 'starting';
-      case LiveKitActionStatus.thinking:
-        return 'thinking';
-      case LiveKitActionStatus.working:
-        return 'working';
-      case LiveKitActionStatus.error:
-        return 'error';
-      case LiveKitActionStatus.unknown:
-        return 'unknown';
     }
   }
 }
@@ -152,23 +88,6 @@ extension LiveKitActionTypeExtension on LiveKitActionType {
         return LiveKitActionType.f2bRpc;
       default:
         return LiveKitActionType.unknown;
-    }
-  }
-
-  String get name {
-    switch (this) {
-      case LiveKitActionType.agent:
-        return 'agent';
-      case LiveKitActionType.user:
-        return 'user';
-      case LiveKitActionType.app:
-        return 'app';
-      case LiveKitActionType.b2fRpc:
-        return 'b2f_rpc';
-      case LiveKitActionType.f2bRpc:
-        return 'f2b_rpc';
-      case LiveKitActionType.unknown:
-        return 'unknown';
     }
   }
 }

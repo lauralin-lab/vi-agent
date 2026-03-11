@@ -11,8 +11,6 @@ extension _UI on _MainPageState {
 
   /// 构建Camera布局
   Widget _buildCameraStack(BuildContext context) {
-    // final showOverlay = showGuidanceOverlay;
-
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -25,18 +23,14 @@ extension _UI on _MainPageState {
             onTap: () => _promptFocusNode.unfocus(),
           ),
         ),
+        // 头部
         Positioned(
           left: 0,
           right: 0,
           top: App().safeTop + 8.dpx,
           child: MainTopToolsWidget(onAction: _onCameraAction),
         ),
-        // 拍照显示的Widget
-        Positioned(
-          right: 12.dpx,
-          top: App().safeTop + 54.dpx,
-          child: const CaptureWidget(),
-        ),
+        // 底部
         Positioned(
           left: 0,
           right: 0,

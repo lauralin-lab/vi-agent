@@ -263,11 +263,9 @@ extension UIContextExt on BuildContext {
     VoidCallback? onTap,
     BoxBorder? border,
     BorderRadiusGeometry? borderRadius,
-    GestureLongPressCallback? onLongPress,
   }) {
     return GestureDetector(
       onTap: onTap,
-      onLongPress: onLongPress,
       child: ClipRRect(
         borderRadius: borderRadius ?? BorderRadius.all(Radius.circular(44.dpx)),
         child: BackdropFilter(

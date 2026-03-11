@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,12 +10,10 @@ import '../../../common/extension/ui_ext.dart';
 import '../../../routing/router.dart';
 import '../../../service/global_provider.dart';
 import '../../../service/hardware/hard_ware_initializer.dart';
-import 'dialog/live_kit_web_view_dialog.dart';
 import 'livekit/live_kit_controller.dart';
 import 'provider/main_provider.dart';
 import 'widget/camera_action_button.dart';
 import 'widget/camera_scan_widget.dart';
-import 'widget/capture_widget.dart';
 import 'widget/main_bottom_tools_widget.dart';
 import 'widget/main_top_tools_widget.dart';
 
@@ -83,11 +80,8 @@ class _MainPageState extends ConsumerState<MainPage> {
       case CameraActionType.preChat:
         _jumpPreChatPage();
         break;
-      case CameraActionType.requestActionCard:
-        liveKitController.requestActionCard();
-        break;
       default:
-        liveKitController.onActionEvent(context, type);
+        liveKitController.onActionEvent(type);
         break;
     }
   }

@@ -68,20 +68,6 @@ base class ApiService {
     return url;
   }
 
-  /// 发送信息给GateWay
-  static Future<void> sendMessageToGateWay(String message) async {
-    Map<String, dynamic> data = {
-      'text': message,
-      'sessionKey': '', //App().auth.sessionKey,
-      'roomName': '', //App().auth.liveKitRoomName,
-      'participantId': 'ui-user',
-      'agentId': 'main',
-      'accountId': 'default',
-    };
-
-    await dio.post('/collov/session/dispatch_message', data: data);
-  }
-
   ///#endregion
   //////////////////////////////////////////////////////////////////////////////
   ///#region 用户相关
