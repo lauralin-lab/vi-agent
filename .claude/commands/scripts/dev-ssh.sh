@@ -17,6 +17,28 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CONFIG_FILE="$REPO_ROOT/.dev.local"
 
+# ── SSH connection multiplexing ───────────────────────────────────────────────
+# Reuse a single TCP connection for all ssh_cmd calls (ControlMaster).
+# This avoids repeated TCP+auth handshakes and reduces chance of connection
+# refusal from too many concurrent sessions.
+# Use /tmp (not $TMPDIR) to keep socket path under macOS 104-char limit.
+# %C = hash of %l%h%p%r — short and unique.
+SSH_CONTROL_DIR="/tmp/dev-ssh-$$"
+SSH_CONTROL_PATH="$SSH_CONTROL_DIR/%C"
+
+_ssh_mux_setup() {
+  mkdir -p "$SSH_CONTROL_DIR"
+}
+
+_ssh_mux_cleanup() {
+  # Gracefully close the master connection, then remove the control dir
+  ssh -o ControlPath="$SSH_CONTROL_PATH" -O exit "${SERVER_USER}@${SERVER_IP}" 2>/dev/null || true
+  rm -rf "$SSH_CONTROL_DIR" 2>/dev/null || true
+}
+
+_ssh_mux_setup
+trap _ssh_mux_cleanup EXIT
+
 # ── Load config ──────────────────────────────────────────────────────────────
 load_config() {
   if [ ! -f "$CONFIG_FILE" ]; then
@@ -55,7 +77,14 @@ calc_ports() {
 
 # ── SSH helper ──────────────────────────────────────────────────────────────
 ssh_cmd() {
-  ssh -A -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+  ssh -A -i "$SSH_KEY" \
+    -o StrictHostKeyChecking=no \
+    -o ConnectTimeout=10 \
+    -o ControlMaster=auto \
+    -o ControlPath="$SSH_CONTROL_PATH" \
+    -o ControlPersist=300 \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=4 \
     "${SERVER_USER}@${SERVER_IP}" "$@"
 }
 
@@ -177,86 +206,102 @@ cmd_deploy() {
     return 1
   }
 
-  # Step 3: Build each service
+  # Step 3: Build all services in a single SSH session
+  # (Previously opened 2 SSH calls per service — now 1 call total)
+  echo "STEP=build"
+
+  # Generate the build script to run on server
+  local BUILD_SCRIPT="set -e; cd '$WORK_DIR/src'"
   for svc in "${services[@]}"; do
-    echo "STEP=build:$svc"
-
-    # Determine image tag from current compose
-    local IMAGE_TAG
-    IMAGE_TAG=$(ssh_cmd "grep -oP 'collov/vi-agent-${svc}:\K[^ ]+' '$WORK_DIR/docker-compose.yml' 2>/dev/null || echo 'local-build'")
-    IMAGE_TAG="${IMAGE_TAG:-local-build}"
-
+    # Each service: resolve image tag from compose, then build
     case "$svc" in
       api-server)
-        ssh_cmd "
-          cd '$WORK_DIR/src'
-          rm -rf api-server/shared_skills/document-scanner api-server/shared_skills/recipe-analyzer api-server/shared_skills/style-advisor 2>/dev/null
-          cp -r nanoclaw/data/shared/skills/* api-server/shared_skills/ 2>/dev/null || true
-          cd api-server
-          docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-api-server:$IMAGE_TAG .
-        " 2>&1
+        BUILD_SCRIPT="$BUILD_SCRIPT
+echo 'STEP=build:api-server'
+TAG=\$(grep -oP 'collov/vi-agent-api-server:\K[^ ]+' '$WORK_DIR/docker-compose.yml' 2>/dev/null || echo 'local-build')
+cd '$WORK_DIR/src'
+rm -rf api-server/shared_skills/document-scanner api-server/shared_skills/recipe-analyzer api-server/shared_skills/style-advisor 2>/dev/null || true
+cp -r nanoclaw/data/shared/skills/* api-server/shared_skills/ 2>/dev/null || true
+cd api-server
+docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-api-server:\$TAG .
+echo 'BUILT=api-server'"
         ;;
       frontend)
-        ssh_cmd "
-          cd '$WORK_DIR/src/frontend'
-          set -a; source '$WORK_DIR/.env' 2>/dev/null; set +a
-          docker build $DOCKER_BUILD_EXTRA \
-            --build-arg VITE_API_URL= \
-            --build-arg VITE_FIREBASE_API_KEY=\${VITE_FIREBASE_API_KEY:-} \
-            --build-arg VITE_FIREBASE_AUTH_DOMAIN=\${VITE_FIREBASE_AUTH_DOMAIN:-} \
-            --build-arg VITE_FIREBASE_PROJECT_ID=\${VITE_FIREBASE_PROJECT_ID:-} \
-            --build-arg VITE_FIREBASE_STORAGE_BUCKET=\${VITE_FIREBASE_STORAGE_BUCKET:-} \
-            --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID=\${VITE_FIREBASE_MESSAGING_SENDER_ID:-} \
-            --build-arg VITE_FIREBASE_APP_ID=\${VITE_FIREBASE_APP_ID:-} \
-            --build-arg VITE_FIREBASE_PACKAGE_NAME=\${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web} \
-            -t collov/vi-agent-frontend:$IMAGE_TAG .
-        " 2>&1
+        BUILD_SCRIPT="$BUILD_SCRIPT
+echo 'STEP=build:frontend'
+TAG=\$(grep -oP 'collov/vi-agent-frontend:\K[^ ]+' '$WORK_DIR/docker-compose.yml' 2>/dev/null || echo 'local-build')
+cd '$WORK_DIR/src/frontend'
+set -a; source '$WORK_DIR/.env' 2>/dev/null || true; set +a
+docker build $DOCKER_BUILD_EXTRA \
+  --build-arg VITE_API_URL= \
+  --build-arg VITE_FIREBASE_API_KEY=\${VITE_FIREBASE_API_KEY:-} \
+  --build-arg VITE_FIREBASE_AUTH_DOMAIN=\${VITE_FIREBASE_AUTH_DOMAIN:-} \
+  --build-arg VITE_FIREBASE_PROJECT_ID=\${VITE_FIREBASE_PROJECT_ID:-} \
+  --build-arg VITE_FIREBASE_STORAGE_BUCKET=\${VITE_FIREBASE_STORAGE_BUCKET:-} \
+  --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID=\${VITE_FIREBASE_MESSAGING_SENDER_ID:-} \
+  --build-arg VITE_FIREBASE_APP_ID=\${VITE_FIREBASE_APP_ID:-} \
+  --build-arg VITE_FIREBASE_PACKAGE_NAME=\${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web} \
+  -t collov/vi-agent-frontend:\$TAG .
+echo 'BUILT=frontend'"
         ;;
       nanoclaw)
-        ssh_cmd "
-          cd '$WORK_DIR/src/nanoclaw'
-          docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-nanoclaw:$IMAGE_TAG .
-        " 2>&1
+        BUILD_SCRIPT="$BUILD_SCRIPT
+echo 'STEP=build:nanoclaw'
+TAG=\$(grep -oP 'collov/vi-agent-nanoclaw:\K[^ ]+' '$WORK_DIR/docker-compose.yml' 2>/dev/null || echo 'local-build')
+cd '$WORK_DIR/src/nanoclaw'
+docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-nanoclaw:\$TAG .
+echo 'BUILT=nanoclaw'"
         ;;
       vi-realtime)
-        ssh_cmd "
-          cd '$WORK_DIR/src/realtime'
-          docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-realtime:$IMAGE_TAG .
-        " 2>&1
+        BUILD_SCRIPT="$BUILD_SCRIPT
+echo 'STEP=build:vi-realtime'
+TAG=\$(grep -oP 'collov/vi-agent-realtime:\K[^ ]+' '$WORK_DIR/docker-compose.yml' 2>/dev/null || echo 'local-build')
+cd '$WORK_DIR/src/realtime'
+docker build $DOCKER_BUILD_EXTRA -t collov/vi-agent-realtime:\$TAG .
+echo 'BUILT=vi-realtime'"
         ;;
       *)
         echo "SKIP=$svc (unknown service)"
         ;;
     esac
-
-    if [ $? -ne 0 ]; then
-      echo "ERROR=build_failed:$svc"
-      return 1
-    fi
-    echo "BUILT=$svc"
   done
 
-  # Step 4: Recreate containers
+  ssh_cmd "$BUILD_SCRIPT" 2>&1 || {
+    echo "ERROR=build_failed"
+    return 1
+  }
+
+  # Step 4: Pre-flight check + Restart + health check in a single SSH session
   echo "STEP=restart"
-  ssh_cmd "cd '$WORK_DIR' && docker compose up -d --build --force-recreate ${services[*]}" 2>&1
+  ssh_cmd "
+    cd '$WORK_DIR'
 
-  # Step 5: Health check
-  echo "STEP=health"
-  local healthy=false
-  for i in $(seq 1 20); do
-    if ssh_cmd "curl -sf 'http://localhost:$API_PORT/health' > /dev/null 2>&1"; then
-      healthy=true
-      break
+    # Pre-flight: docker-compose.yml must exist (generated by /dev GitHub Actions)
+    if [ ! -f docker-compose.yml ]; then
+      echo 'ERROR=no_compose'
+      echo 'docker-compose.yml not found in $WORK_DIR.'
+      echo 'Run /dev to deploy once via GitHub Actions first — it generates the instance compose file.'
+      exit 1
     fi
-    sleep 3
-  done
 
-  if $healthy; then
-    echo "HEALTH=ok"
-  else
-    echo "HEALTH=timeout"
-    ssh_cmd "cd '$WORK_DIR' && docker compose logs --tail=20 api-server" 2>&1 || true
-  fi
+    # Pre-flight: .env must be readable (fix group permission if needed)
+    if [ -f .env ] && [ ! -r .env ]; then
+      echo 'FIXING .env permission (adding group read)'
+      chmod g+r .env 2>/dev/null || sudo chmod g+r .env
+    fi
+
+    docker compose up -d --build --force-recreate ${services[*]}
+    echo 'STEP=health'
+    for i in \$(seq 1 20); do
+      if curl -sf 'http://localhost:$API_PORT/health' > /dev/null 2>&1; then
+        echo 'HEALTH=ok'
+        exit 0
+      fi
+      sleep 3
+    done
+    echo 'HEALTH=timeout'
+    docker compose logs --tail=20 api-server 2>&1 || true
+  " 2>&1
 
   # Output
   echo ""
