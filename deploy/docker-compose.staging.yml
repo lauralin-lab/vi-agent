@@ -146,6 +146,50 @@ services:
     networks:
       - vi-network
 
+  admin-server:
+    image: collov/vi-agent-admin-server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://vi_agent:${POSTGRES_PASSWORD}@postgres:5432/vi_agent
+      - CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-http://localhost:3001}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
+    volumes:
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vi-network
+
+  admin-web:
+    image: collov/vi-agent-admin-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      admin-server:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vi-network
+
   vi-realtime:
     image: collov/vi-agent-realtime:${IMAGE_TAG:-latest}
     restart: unless-stopped

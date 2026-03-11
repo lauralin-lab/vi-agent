@@ -17,7 +17,7 @@ on:
 
 env:
   DOCKER_ORG: collov
-  SERVICES: api-server frontend nanoclaw realtime
+  SERVICES: api-server frontend nanoclaw realtime admin-server admin-web
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [api-server, frontend, nanoclaw, realtime]
+        service: [api-server, frontend, nanoclaw, realtime, admin-server, admin-web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,13 +92,14 @@ jobs:
           build-args: |
             ${{ matrix.service == 'frontend' && 'VITE_API_URL=' || '' }}
             ${{ matrix.service == 'frontend' && 'VITE_LIVEKIT_URL=' || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_API_KEY={0}', secrets.VITE_FIREBASE_API_KEY) || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_AUTH_DOMAIN={0}', secrets.VITE_FIREBASE_AUTH_DOMAIN) || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_PROJECT_ID={0}', secrets.VITE_FIREBASE_PROJECT_ID) || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_STORAGE_BUCKET={0}', secrets.VITE_FIREBASE_STORAGE_BUCKET) || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_MESSAGING_SENDER_ID={0}', secrets.VITE_FIREBASE_MESSAGING_SENDER_ID) || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_APP_ID={0}', secrets.VITE_FIREBASE_APP_ID) || '' }}
-            ${{ matrix.service == 'frontend' && format('VITE_FIREBASE_PACKAGE_NAME={0}', secrets.VITE_FIREBASE_PACKAGE_NAME) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_API_KEY={0}', secrets.VITE_FIREBASE_API_KEY) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_AUTH_DOMAIN={0}', secrets.VITE_FIREBASE_AUTH_DOMAIN) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_PROJECT_ID={0}', secrets.VITE_FIREBASE_PROJECT_ID) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_STORAGE_BUCKET={0}', secrets.VITE_FIREBASE_STORAGE_BUCKET) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_MESSAGING_SENDER_ID={0}', secrets.VITE_FIREBASE_MESSAGING_SENDER_ID) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_APP_ID={0}', secrets.VITE_FIREBASE_APP_ID) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_PACKAGE_NAME={0}', secrets.VITE_FIREBASE_PACKAGE_NAME) || '' }}
+            ${{ matrix.service == 'admin-web' && 'VITE_ADMIN_API_URL=' || '' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
@@ -130,10 +131,14 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
             APP_DIR="/opt/vi-agent"
@@ -142,6 +147,9 @@ jobs:
 
             echo "=== Deploying vi-agent (${ENV}) ==="
             echo "Image tag: ${{ needs.prepare.outputs.image_tag }}"
+
+            # Authenticate Docker Hub for private image pulls
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
 
             # Pull secrets from Secret Manager → generate .env
             export ENV="${ENV}"
