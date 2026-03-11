@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
@@ -12,6 +13,16 @@ import '../../configs/constans.dart';
 import '../../modules/models/room_info.dart';
 import '../../modules/models/upload_file_model.dart';
 import '../../modules/models/user_profile.dart';
+
+/// SSE 事件模型
+class SseEvent {
+  final String event;
+  final String data;
+  const SseEvent({required this.event, required this.data});
+
+  @override
+  String toString() => 'SseEvent(event: $event, data: $data)';
+}
 
 base class ApiService {
   const ApiService._();
@@ -107,6 +118,57 @@ base class ApiService {
     final resp = await appDio.get('/auth/me', cancelToken: cancelToken);
     final map = resp.data as Map<String, dynamic>;
     return UserProfile.fromJson(map);
+  }
+
+  ///#endregion
+  //////////////////////////////////////////////////////////////////////////////
+  ///#region SSE 事件流
+
+  /// 连接 SSE 事件流
+  ///
+  /// 对应前端 `useRealtimeEvents` hook: `GET /api/users/events?vi_user_id={uuid}`
+  /// 返回解析后的 [SseEvent] 流，调用方负责重连和生命周期管理。
+  static Stream<SseEvent> connectSSE(String viUserId) async* {
+    final response = await appDio.get<ResponseBody>(
+      '/users/events',
+      queryParameters: {'vi_user_id': viUserId},
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: {'Accept': 'text/event-stream', 'Cache-Control': 'no-cache'},
+        // SSE 是长连接，不设超时
+        receiveTimeout: Duration.zero,
+      ),
+    );
+
+    final stream = response.data!.stream;
+    String buffer = '';
+    String currentEvent = 'message';
+    String currentData = '';
+
+    await for (final chunk in stream) {
+      buffer += utf8.decode(chunk);
+
+      // 按行拆分，SSE 以 \n\n 分隔事件
+      while (buffer.contains('\n')) {
+        final lineEnd = buffer.indexOf('\n');
+        final line = buffer.substring(0, lineEnd).trimRight();
+        buffer = buffer.substring(lineEnd + 1);
+
+        if (line.isEmpty) {
+          // 空行 = 事件结束，发射
+          if (currentData.isNotEmpty) {
+            yield SseEvent(event: currentEvent, data: currentData);
+          }
+          currentEvent = 'message';
+          currentData = '';
+        } else if (line.startsWith('event:')) {
+          currentEvent = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          currentData = line.substring(5).trim();
+        }
+        // 忽略 id:, retry:, 注释 (:) 等
+      }
+    }
   }
 
   ///#endregion
