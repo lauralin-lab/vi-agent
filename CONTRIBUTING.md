@@ -142,13 +142,13 @@ ruff check .
 ruff format .
 ```
 
-### TypeScript（gateway）
+### TypeScript（nanoclaw）
 
 - TypeScript strict mode
 - ESLint + Prettier（待 I008 配置后生效）
 
 ```bash
-cd gateway/plugin
+cd nanoclaw
 npm run lint
 npm run lint:fix
 ```
@@ -171,7 +171,7 @@ npx eslint src/
 - 不硬编码密钥、URL、路径到代码中（用环境变量）
 - Commit message 格式：`type(scope): description`
   - type: feat, fix, refactor, test, docs, chore, ci
-  - scope: api-server, frontend, realtime, gateway, global
+  - scope: api-server, frontend, realtime, nanoclaw, global
 
 ---
 
@@ -184,7 +184,7 @@ npx eslint src/
 | api-server | pytest + pytest-asyncio | `cd api-server && .venv/bin/python -m pytest tests/ -v` |
 | realtime | pytest + pytest-asyncio | `cd realtime && uv run python -m pytest tests/ -v` |
 | frontend | （待搭建 I001） | — |
-| gateway | （待搭建 I002） | — |
+| nanoclaw | （待搭建 I002） | — |
 
 ### 测试原则
 

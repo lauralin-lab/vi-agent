@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import DOMPurify from 'dompurify';
 import ModuleRenderer, { extractModuleTitle } from './modules/ModuleRenderer';
 import { StreamingContext } from './modules/StreamingContext';
 import { api } from '../services/api';
@@ -115,7 +116,7 @@ function CardRenderer({ card }) {
     return (
       <div
         style={{ padding: 16, fontSize: 14, lineHeight: 1.6, color: '#111' }}
-        dangerouslySetInnerHTML={{ __html: card.data.html }}
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(card.data.html) }}
       />
     );
   }

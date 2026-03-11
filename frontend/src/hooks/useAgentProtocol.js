@@ -63,35 +63,6 @@ function detectIntentFromText(text) {
 }
 
 /**
- * Parse XML-style tags from agent data channel messages.
- */
-function parseAgentXml(raw) {
-  const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
-
-  const transcriptMatch = text.match(/<transcript\s+type="([^"]+)">([\s\S]*?)<\/transcript>/);
-  if (transcriptMatch) {
-    return { kind: 'transcript', type: transcriptMatch[1], content: transcriptMatch[2] };
-  }
-
-  const resultMatch = text.match(/<show_result\s+type="([^"]+)">([\s\S]*?)<\/show_result>/);
-  if (resultMatch) {
-    return { kind: 'result', type: resultMatch[1], content: resultMatch[2] };
-  }
-
-  const infoBarMatch = text.match(/<info_bar\s+status="([^"]+)">([\s\S]*?)<\/info_bar>/);
-  if (infoBarMatch) {
-    return { kind: 'info_bar', status: infoBarMatch[1], message: infoBarMatch[2] };
-  }
-
-  const actionMatch = text.match(/<action_suggestion\s+action="([^"]+)"\s+icon="([^"]+)"(?:\s+label="([^"]*)")?>([\s\S]*?)<\/action_suggestion>/);
-  if (actionMatch) {
-    return { kind: 'action_suggestion', action: actionMatch[1], icon: actionMatch[2], label: actionMatch[3] || actionMatch[4] };
-  }
-
-  return null;
-}
-
-/**
  * Agent protocol: RPC methods, data channel message handling, protocol state,
  * photo capture, messaging, navigation/camera callbacks.
  * Accepts shared refs from the composition hook.
@@ -415,36 +386,6 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
         return;
       }
 
-      // Handle XML-based agent messages (legacy topics)
-      const agentTopics = [
-        'agent_transcript', 'agent_result', 'agent_info_bar',
-        'agent_action', 'agent_summary', 'agent_intention',
-      ];
-      if (!agentTopics.includes(topic)) return;
-
-      const parsed = parseAgentXml(payload);
-      if (!parsed) return;
-
-      if (parsed.kind === 'transcript') {
-        const cleanContent = parsed.type === 'agent' ? filterToolCallSyntax(parsed.content) : parsed.content;
-        if (!cleanContent) return;
-
-        const entry = { type: parsed.type, content: cleanContent, ts: Date.now() };
-        setTranscripts(prev => [...prev, entry].slice(-TRANSCRIPT_BUFFER_LIMIT));
-        if (parsed.type === 'agent') {
-          setLastAgentText(cleanContent);
-          const intent = detectIntentFromText(cleanContent);
-          if (intent) setLastDetectedIntent(intent);
-        }
-      } else if (parsed.kind === 'result') {
-        const entry = { type: parsed.type, content: parsed.content, ts: Date.now() };
-        setResults(prev => [...prev, entry].slice(-RESULT_BUFFER_LIMIT));
-        setLastResult(entry);
-      } else if (parsed.kind === 'info_bar') {
-        setInfoBar({ status: parsed.status, message: parsed.message });
-      } else if (parsed.kind === 'action_suggestion') {
-        setActionSuggestion({ action: parsed.action, icon: parsed.icon, label: parsed.label });
-      }
     });
   }, []);
 

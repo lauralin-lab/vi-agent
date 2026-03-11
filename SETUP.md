@@ -1,6 +1,6 @@
 # VI Agent Core — Setup & Configuration Guide
 
-This guide walks you through configuring and running the full VI stack: API server, vi-realtime agent, vi-gateway executor, and the interaction demo frontend.
+This guide walks you through configuring and running the full VI stack: API server, vi-realtime agent, nanoclaw executor, and the interaction demo frontend.
 
 ## Architecture Overview
 
@@ -9,7 +9,7 @@ Frontend (React)  ←→  API Server (FastAPI)  ←→  PostgreSQL
       ↕                      ↕
   LiveKit Cloud            Redis
       ↕                      ↕
-vi-realtime (Gemini Live)  ←→  vi-gateway (Claude Agent via LiveKit RPC)
+vi-realtime (Gemini Live)  ←→  nanoclaw (Claude Agent via LiveKit RPC)
 ```
 
 ## Prerequisites
@@ -52,7 +52,7 @@ vi-realtime (Gemini Live)  ←→  vi-gateway (Claude Agent via LiveKit RPC)
 1. Go to [console.anthropic.com](https://console.anthropic.com)
 2. Navigate to Settings → API Keys
 3. Click "Create Key" and copy it
-4. This powers the Claude agent inside vi-gateway containers
+4. This powers the Claude agent inside nanoclaw containers
 
 ---
 
@@ -120,7 +120,7 @@ cd agent-core
 ./dev.sh
 ```
 
-This starts: PostgreSQL, Redis, API server (:8000), vi-realtime, vi-gateway, and frontend (:5173).
+This starts: PostgreSQL, Redis, API server (:8000), vi-realtime, and frontend (:5173).
 
 ### Manual Start (service by service)
 
@@ -141,8 +141,8 @@ cd agent-core/realtime
 uv sync
 uv run python src/agent.py dev
 
-# 4. vi-gateway (new terminal)
-cd agent-core/gateway/plugin
+# 4. nanoclaw (new terminal)
+cd agent-core/nanoclaw
 npm install
 npm run dev
 
@@ -220,7 +220,7 @@ Tests mock all LiveKit dependencies — **no external services needed**.
 | Component | Test File | Tests | Type |
 |-----------|-----------|-------|------|
 | API Server | `test_token_service.py` | 9 | Unit — JWT token create/decode |
-| API Server | `test_user_center.py` | 10 | Unit — password hash, vi-gateway_id |
+| API Server | `test_user_center.py` | 10 | Unit — password hash, user_id |
 | API Server | `test_smoke.py` | 1 | Smoke — health endpoint |
 | API Server | `test_auth.py` | 12 | Route — signup, login, /me |
 | API Server | `test_livekit.py` | 3 | Route — LiveKit token endpoint |
@@ -258,7 +258,7 @@ Tests mock all LiveKit dependencies — **no external services needed**.
 | `GOOGLE_API_KEY` | (none) | Gemini API key for voice/video |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis for task dispatch |
 
-### vi-gateway
+### nanoclaw
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -267,7 +267,6 @@ Tests mock all LiveKit dependencies — **no external services needed**.
 | `LIVEKIT_API_SECRET` | (none) | LiveKit API secret |
 | `ANTHROPIC_API_KEY` | (none) | Claude API key for agent |
 | `GOOGLE_API_KEY` | (none) | Gemini API key |
-| `GATEWAY_HTTP_PORT` | `18789` | HTTP port for gateway |
 
 ### Frontend
 
@@ -296,10 +295,10 @@ Tests mock all LiveKit dependencies — **no external services needed**.
 - Check `VITE_API_URL` points to the running API server
 - In dev mode, the Vite proxy at `/api` forwards to `localhost:8000`
 
-**vi-gateway not processing tasks**
-- Check that vi-gateway is healthy and connected to LiveKit
+**nanoclaw not processing tasks**
+- Check that nanoclaw is healthy and connected to LiveKit
 - Verify `ANTHROPIC_API_KEY` and `GOOGLE_API_KEY` are set
-- Check gateway logs: `docker compose logs -f vi-gateway`
+- Check nanoclaw logs: `docker compose logs -f nanoclaw`
 
 ---
 

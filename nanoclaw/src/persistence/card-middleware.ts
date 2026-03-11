@@ -15,9 +15,6 @@ import { recordCardEvent, recordSessionMedia } from './card-store.js';
 //     const intercepted = cardMiddleware(sessionId, event);
 //     await originalPublish(intercepted);
 //
-//   Or use the convenience wrapper:
-//     const wrappedPublish = wrapPublisher(sessionId, originalPublish);
-//     await wrappedPublish(event);
 // ---------------------------------------------------------------------------
 
 /** Card operation type guards */
@@ -51,25 +48,6 @@ export function cardMiddleware(sessionId: string, event: StreamEvent): StreamEve
   }
 
   return event;
-}
-
-/**
- * Create a wrapped publisher that automatically records card events.
- *
- * @param sessionId - The session to record events for
- * @param publisher - The original publish function (publishStreamEvent)
- * @returns A wrapped function with the same signature
- */
-export function wrapPublisher(
-  sessionId: string,
-  publisher: (event: StreamEvent) => Promise<void>,
-): (event: StreamEvent) => Promise<void> {
-  return async (event: StreamEvent): Promise<void> => {
-    // Record to card store (synchronous, in-memory)
-    cardMiddleware(sessionId, event);
-    // Forward to original publisher
-    await publisher(event);
-  };
 }
 
 // ---------------------------------------------------------------------------

@@ -17,8 +17,8 @@ import type {
 //   packages/*/templates/*.json   — bundled per-package templates
 //
 // At startup, loadTemplateRegistry() scans both paths and builds an indexed
-// registry. At runtime, getTemplate() returns full definitions and
-// getAllTemplates() returns the registry for system prompt injection.
+// registry. At runtime, getAllTemplates() returns template definitions for
+// system prompt injection.
 // ---------------------------------------------------------------------------
 
 /** Full template definitions, keyed by $id */
@@ -95,48 +95,10 @@ export async function loadTemplateRegistry(
 }
 
 /**
- * Get a template definition by ID.
- * Falls back to freeform-html if the template is not found.
- */
-export function getTemplate(templateId: string): TemplateDefinition {
-  const def = templateDefs.get(templateId);
-  if (def) return def;
-
-  console.warn(
-    `[template-registry] template "${templateId}" not found, falling back to freeform-html`,
-  );
-  return FREEFORM_HTML_TEMPLATE;
-}
-
-/**
  * Get all loaded template definitions.
  */
 export function getAllTemplates(): TemplateDefinition[] {
   return Array.from(templateDefs.values());
-}
-
-/**
- * Get the compiled registry (lightweight entries, suitable for system prompts).
- * Must call loadTemplateRegistry() first.
- */
-export function getRegistry(): TemplateRegistry {
-  if (!registry) {
-    // Return a minimal registry with just the fallback
-    return {
-      version: '1.0.0',
-      templates: {
-        [FREEFORM_HTML_TEMPLATE.$id]: defToEntry(FREEFORM_HTML_TEMPLATE),
-      },
-    };
-  }
-  return registry;
-}
-
-/**
- * Check if a template exists in the registry.
- */
-export function hasTemplate(templateId: string): boolean {
-  return templateDefs.has(templateId);
 }
 
 // ---------------------------------------------------------------------------

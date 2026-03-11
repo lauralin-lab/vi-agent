@@ -97,12 +97,10 @@ async def _cache_resumption_token(vi_user_id: str, token: str):
 
 BASE_PROMPT_PATH = Path(__file__).parent.parent / "base.md"
 try:
-    AGENT_INSTRUCTIONS_TEMPLATE = BASE_PROMPT_PATH.read_text(encoding="utf-8")
-    AGENT_INSTRUCTIONS = AGENT_INSTRUCTIONS_TEMPLATE.replace("{{AGENT_NAME}}", AGENT_NAME)
+    AGENT_INSTRUCTIONS = BASE_PROMPT_PATH.read_text(encoding="utf-8").replace("{{AGENT_NAME}}", AGENT_NAME)
     AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS
 except Exception as e:
     logger.error(f"Failed to load base.md: {e}")
-    AGENT_INSTRUCTIONS_TEMPLATE = f"""You are {{{{AGENT_NAME}}}}, a warm and friendly voice assistant."""
     AGENT_INSTRUCTIONS = f"""You are {AGENT_NAME}, a warm and friendly voice assistant."""
     AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS
 
@@ -213,6 +211,8 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
 
     # Internal API token for authenticating calls to api-server
     _INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "vi-internal-dev-token")
+    if os.getenv("ENVIRONMENT") == "production" and _INTERNAL_API_TOKEN == "vi-internal-dev-token":
+        raise RuntimeError("INTERNAL_API_TOKEN must be set in production — refusing to start with default dev token")
 
     def __init__(self, room_name: str, room: rtc.Room) -> None:
         super().__init__(instructions=AGENT_INSTRUCTIONS)
@@ -621,51 +621,6 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
 
     # Internal methods (_publish_user_event, _push_to_frontend, _start_context_subscription,
     # _format_intention_hints, _start_keyframe_sampler) are provided by ContextMixin.
-
-
-def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
-    """Register RPC methods for agent to receive from frontend."""
-
-    async def handle_f2b_send_message(request: rtc.RpcInvocationData):
-        """Receive message from frontend user and process with LLM."""
-        data = json.loads(request.payload) if request.payload else {}
-
-        if data.get("action") == "page_context":
-            page = data.get("page", "camera")
-            assistant._current_page = page
-            assistant._page_metadata = data.get("metadata", {})
-            if hasattr(assistant, '_update_page_context'):
-                await assistant._update_page_context(page)
-            await assistant._publish_user_event("page_navigate", {"page": page})
-            logger.info(f"[page_context] User is now on: {page}")
-            return json.dumps({"ok": True})
-
-        text = data.get("text", "")
-        images = data.get("images", [])
-        log_info(f"[rpc_f2b_send_message] Received message from user: {text[:100]}", "user")
-
-        # Record timeline + publish event for all messages
-        if text:
-            assistant.record_timeline_entry("user", text)
-            assistant._track_task(asyncio.create_task(assistant.ensure_conversation_session()))
-            await assistant._publish_user_event("text_message", {"text": text[:500]})
-
-        # Task dispatch goes through REST API → Redis → NanoClaw.
-        # All messages here are voice/chat — process with LLM for voice response.
-        try:
-            if assistant._agent_session:
-                log_info("[rpc_f2b_send_message] Processing message with generate_reply", "agent")
-                assistant._agent_session.generate_reply(user_input=text)
-                log_info("[rpc_f2b_send_message] Message queued for processing", "agent")
-                return json.dumps({"ok": True, "status": "processing"})
-            logger.warning("[rpc_f2b_send_message] Agent session not ready")
-            return json.dumps({"ok": False, "error": "Agent session not ready"})
-        except Exception as e:
-            logger.error(f"[rpc_f2b_send_message] Failed to process message: {e}")
-            return json.dumps({"ok": False, "error": str(e)})
-
-    room.local_participant.register_rpc_method("rpcF2BSendMessage", handle_f2b_send_message)
-    log_info("[rpc] Agent RPC methods registered (direct RPC)", "agent")
 
 
 server = AgentServer(num_idle_processes=1)

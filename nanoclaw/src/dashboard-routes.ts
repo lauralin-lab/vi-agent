@@ -6,7 +6,7 @@ import Redis from 'ioredis';
 import { getRedis, getSubscriber } from './redis-client.js';
 import { getAllManifests } from './skills/skill-loader.js';
 import { getAllTemplates } from './packages/template-registry.js';
-import { getStoreStats, getSessionCardState } from './persistence/card-store.js';
+import { getStoreStats } from './persistence/card-store.js';
 import { listPackages, getAllPackages, getPackage } from './packages/package-loader.js';
 import { getActiveUserIds } from './channels/active-users.js';
 import { channels, type ExecRequest } from './channels/types.js';
@@ -826,11 +826,24 @@ export function createDashboardRouter(): Router {
     }
   });
 
+  const ALLOWED_ENV_VARS = new Set([
+    'ANTHROPIC_API_KEY',
+    'GOOGLE_API_KEY',
+    'OPENAI_API_KEY',
+    'LIVEKIT_URL',
+    'LIVEKIT_API_KEY',
+    'LIVEKIT_API_SECRET',
+  ]);
+
   router.put('/api/dashboard/apis/keys', (req: Request, res: Response) => {
     try {
       const { envVar, value } = req.body as { envVar: string; value: string };
       if (!envVar || !value) {
         res.status(400).json({ error: 'envVar and value are required' });
+        return;
+      }
+      if (!ALLOWED_ENV_VARS.has(envVar)) {
+        res.status(400).json({ error: 'Environment variable not in allowlist' });
         return;
       }
       process.env[envVar] = value;

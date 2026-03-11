@@ -887,78 +887,6 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     }
   }, [nanoClaw?.tasks, upsertBlock]);
 
-  // Legacy: last result → html block (fallback when NanoClaw is not active)
-  useEffect(() => {
-    if (!livekit.lastResult) return;
-    if (activeSourceRef.current === 'nanoclaw') return;
-    const currentBlocks = blocksRef.current;
-    const hasNcBlock = currentBlocks.some(b => b.id.startsWith('nc_'));
-    if (hasNcBlock) return;
-
-    upsertBlock({
-      id: 'result_main',
-      type: 'html',
-      status: 'done',
-      content: typeof livekit.lastResult.content === 'string'
-        ? livekit.lastResult.content
-        : `<div style="color:white;font-family:var(--font-primary);padding:8px;">${JSON.stringify(livekit.lastResult)}</div>`,
-    });
-  }, [livekit.lastResult, upsertBlock]);
-
-  // Legacy: session plan → bubble blocks
-  useEffect(() => {
-    if (livekit.sessionPlan && livekit.sessionPlan.length > 0) {
-      livekit.sessionPlan.forEach((step, i) => {
-        upsertBlock({
-          id: `plan_${step.id || i}`,
-          type: 'bubble',
-          status: 'done',
-          content: `${step.emoji || '\u{1F4CB}'} ${step.text}`,
-          collapsible: true,
-        });
-      });
-    }
-  }, [livekit.sessionPlan, upsertBlock]);
-
-  // Legacy: session rich text → html block
-  useEffect(() => {
-    if (!livekit.sessionRichText) return;
-    if (activeSourceRef.current) return;
-    const currentBlocks = blocksRef.current;
-    const hasNcBlock = currentBlocks.some(b => b.id.startsWith('nc_'));
-    if (hasNcBlock) return;
-
-    upsertBlock({
-      id: 'rich_text_summary',
-      type: 'html',
-      status: 'done',
-      content: `<div style="color:#000;font-family:var(--font-primary);padding:12px;">${livekit.sessionRichText}</div>`,
-    });
-  }, [livekit.sessionRichText, upsertBlock]);
-
-  // Legacy: agent text → bubble (deduplicate by content)
-  const lastAgentBubbleRef = useRef('');
-  const recentBubblesRef = useRef(new Set());
-  useEffect(() => {
-    if (livekit.lastAgentText && livekit.lastAgentText !== lastAgentBubbleRef.current) {
-      if (recentBubblesRef.current.has(livekit.lastAgentText)) return;
-      lastAgentBubbleRef.current = livekit.lastAgentText;
-      recentBubblesRef.current.add(livekit.lastAgentText);
-      if (recentBubblesRef.current.size > 50) {
-        const first = recentBubblesRef.current.values().next().value;
-        recentBubblesRef.current.delete(first);
-      }
-      upsertBlock({
-        id: `bubble_${Date.now()}`,
-        type: 'bubble',
-        status: 'done',
-        content: livekit.lastAgentText,
-        role: 'agent',
-        collapsible: true,
-      });
-    }
-  }, [livekit.lastAgentText, upsertBlock]);
-
   // User speech transcripts → bubble blocks (deduplicate by content)
   const prevTranscriptCountRef = useRef(0);
   const recentUserBubblesRef = useRef(new Set());
@@ -977,8 +905,6 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       if (!entry.content) continue;
       if (isNoiseTranscript(entry.content)) continue; // Skip STT noise artifacts
       if (recentUserBubblesRef.current.has(entry.content)) continue;
-      // Also skip if the same text was already typed by user (handleSendMessage)
-      if (recentBubblesRef.current.has(entry.content)) continue;
 
       recentUserBubblesRef.current.add(entry.content);
       if (recentUserBubblesRef.current.size > 50) {

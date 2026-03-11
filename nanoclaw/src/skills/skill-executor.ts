@@ -5,7 +5,7 @@ import { normalize, resolve } from 'node:path';
 import { config } from '../config.js';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { readUserFile, writeUserFile, listUserDir } from '../fs/user-fs.js';
-import { writeMemory, readMemory, writeCategoryFile, readAllCategories, listCategories } from '../tools/memory-update.js';
+import { writeMemory, readMemory, writeCategoryFile, readAllCategories } from '../tools/memory-update.js';
 import { oauthCall } from '../tools/oauth-call.js';
 import type { ExecRequest, CardOp } from '../channels/types.js';
 import type { LoadedSkill } from './types.js';
@@ -460,14 +460,39 @@ async function executeTool(
       }
       case 'bash': {
         const command = input.command as string;
-        const dangerous = ['rm -rf /', 'mkfs', 'dd if=', ':(){', 'fork bomb'];
+        const dangerous = [
+          'rm -rf /', 'mkfs', 'dd if=', ':(){', 'fork bomb',
+          'chmod -R 777', 'chown', 'passwd', 'useradd', 'userdel',
+          'curl|sh', 'wget|sh', 'curl|bash', 'wget|bash',
+          '/etc/shadow', '/etc/passwd',
+          'nc -l', 'ncat', 'socat',
+          'iptables', 'ufw',
+          'mount', 'umount',
+          'shutdown', 'reboot', 'halt', 'poweroff',
+        ];
         if (dangerous.some((d) => command.includes(d))) {
           return 'Error: command rejected for safety';
+        }
+        // Validate command doesn't reference paths outside workspace
+        const workspaceDir = resolve(config.userDataDir);
+        if (/(?:^|\s)\/(?!workspace|tmp|dev\/null)/.test(command)) {
+          return JSON.stringify({ output: 'Error: absolute paths outside workspace are not allowed' });
         }
         return await new Promise<string>((res) => {
           exec(
             command,
-            { cwd: config.userDataDir, timeout: 30_000, maxBuffer: 1024 * 1024 },
+            {
+              cwd: config.userDataDir,
+              timeout: 30_000,
+              maxBuffer: 1024 * 1024,
+              env: {
+                ...process.env,
+                HOME: workspaceDir,
+                INTERNAL_API_TOKEN: undefined,
+                AWS_SECRET_ACCESS_KEY: undefined,
+                DATABASE_URL: undefined,
+              },
+            },
             (err, stdout, stderr) => {
               const exitCode = err?.code ?? 0;
               res(
@@ -499,9 +524,13 @@ async function executeTool(
       case 'search': {
         const pattern = input.pattern as string;
         const searchPath = (input.path as string) || '.';
+        const resolvedPath = resolve(config.userDataDir, searchPath);
+        if (!resolvedPath.startsWith(resolve(config.userDataDir))) {
+          return JSON.stringify({ output: 'Error: search path must be within workspace' });
+        }
         return await new Promise<string>((res) => {
           exec(
-            `grep -rn --include='*' ${JSON.stringify(pattern)} ${JSON.stringify(searchPath)}`,
+            `grep -rn --include='*' ${JSON.stringify(pattern)} ${JSON.stringify(resolvedPath)}`,
             { cwd: config.userDataDir, timeout: 15_000, maxBuffer: 1024 * 1024 },
             (err, stdout) => {
               if (!stdout) {

@@ -59,3 +59,7 @@ export const config = {
   hostProjectDir: process.env.HOST_PROJECT_DIR || '',
   hostWorkspaceDir: process.env.HOST_WORKSPACE_DIR || '',
 } as const;
+
+if (process.env.ENVIRONMENT === 'production' && config.internalApiToken === 'vi-internal-dev-token') {
+  throw new Error('INTERNAL_API_TOKEN must be set in production');
+}

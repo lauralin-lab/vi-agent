@@ -25,13 +25,16 @@ from ..services.session_center import session_center
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_INTERNAL_TOKEN = "vi-internal-dev-token"
 INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")
 if not INTERNAL_API_TOKEN:
-    INTERNAL_API_TOKEN = "vi-internal-dev-token"
+    INTERNAL_API_TOKEN = _DEFAULT_INTERNAL_TOKEN
     logger.critical(
         "INTERNAL_API_TOKEN not set — falling back to insecure default. "
         "Set INTERNAL_API_TOKEN in environment for production!"
     )
+if os.getenv("ENVIRONMENT") == "production" and INTERNAL_API_TOKEN == _DEFAULT_INTERNAL_TOKEN:
+    raise RuntimeError("INTERNAL_API_TOKEN must be set in production")
 
 
 async def verify_internal_token(

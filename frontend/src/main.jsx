@@ -15,7 +15,9 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 
 // Mobile debug console — tap the green button to open
-new VConsole()
+if (import.meta.env.DEV) {
+  new VConsole();
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
