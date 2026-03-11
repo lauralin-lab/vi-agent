@@ -1,6 +1,6 @@
 ---
 description: "Execute mission from Contract. Try: /team-drive help"
-version: "3.8.0"
+version: "3.8.1"
 ---
 
 # /team-drive — Execute Mission
@@ -622,15 +622,15 @@ Parallel:   teammate completes → reports to Lead (RETURN)
             → wave complete → Lead launches next wave
 ```
 
-Teammates NEVER directly modify the Contract file or call `sync-checkbox`. They report completion via `SendMessage` to "team-lead", including:
+Teammates NEVER directly modify the Contract file or call `sync-all-checkboxes`. They report completion via `SendMessage` to "team-lead", including:
 - Which sub-task they completed
 - Files modified
 - Verification result (tests pass/fail)
 
 The Lead then:
 1. Reviews the teammate's work (read modified files, verify quality)
-2. Toggles the sub-task checkbox in Contract
-3. Syncs to GitHub Issue
+2. Toggles the sub-task checkbox in Contract (`tw-contract.sh toggle-task`)
+3. After wave complete → batch-syncs to GitHub Issue (`tw-contract.sh sync-all-checkboxes`)
 4. Broadcasts wave progress
 
 ---
@@ -716,10 +716,12 @@ Use appropriate commit type: `feat`, `fix`, `refactor`, `test`, `docs`. **Do NOT
 bash ~/.claude/commands/scripts/tw-contract.sh toggle-task "$CONTRACT_PATH" {N}
 ```
 
-**Step 3: Sync checkbox to GitHub Issue**
+**Step 3: Sync all checkboxes to GitHub Issue**
 ```bash
-bash ~/.claude/commands/scripts/tw-contract.sh sync-checkbox $ISSUE_NUMBER "$SUBTASK_TEXT"
+bash ~/.claude/commands/scripts/tw-contract.sh sync-all-checkboxes "$CONTRACT_PATH" $ISSUE_NUMBER
 ```
+
+This batch-syncs ALL checked items (Sub-tasks + Success Criteria) from Contract to Issue in one API call. Uses fuzzy matching — tolerates timestamp suffixes, whitespace differences, and minor rewording. Reports unmatched items to stderr.
 
 Non-fatal: if sync fails, warn but continue.
 
@@ -795,11 +797,17 @@ Separate unchecked tasks into two categories:
 
 For unchecked **code tasks**:
   1. For each unchecked task, verify whether the work was actually done (check git log, grep code)
-  2. If work is done → toggle the checkbox NOW (`tw-contract.sh toggle-task` + `sync-checkbox`)
+  2. If work is done → toggle the checkbox NOW (`tw-contract.sh toggle-task`)
   3. If work is NOT done → execute the sub-task before proceeding
   4. **Do NOT proceed to acceptance criteria until all CODE task checkboxes are `[x]`**
 
 Unchecked **manual tasks** are expected — they pass through to the Manual Ops Handoff in the Completion Summary.
+
+After all Contract checkboxes are correct, batch-sync to GitHub Issue:
+```bash
+bash ~/.claude/commands/scripts/tw-contract.sh sync-all-checkboxes "$CONTRACT_PATH" $ISSUE_NUMBER
+```
+This catches any missed per-task syncs and also syncs Success Criteria checkboxes.
 
 This gate exists because LLMs sometimes complete code work but skip the checkbox toggle step. Re-reading the Contract from disk catches this.
 

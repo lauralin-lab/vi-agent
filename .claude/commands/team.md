@@ -1,6 +1,6 @@
 ---
 description: "Team dashboard + init. First time? Try: /team help"
-version: "3.8.0"
+version: "3.8.1"
 ---
 
 # /team — Init + Dashboard (Teamwork v3)
@@ -56,9 +56,9 @@ Read `skill_version` from config for the header:
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=""
 if [ -n "$TEAMWORK_DIR" ]; then
-  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.0" 2>/dev/null)
+  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.1" 2>/dev/null)
 else
-  SKILL_VERSION="3.8.0"
+  SKILL_VERSION="3.8.1"
 fi
 ```
 
@@ -134,9 +134,9 @@ Read `skill_version` from config for the header:
 ```bash
 TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || TEAMWORK_DIR=""
 if [ -n "$TEAMWORK_DIR" ]; then
-  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.0" 2>/dev/null)
+  SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.1" 2>/dev/null)
 else
-  SKILL_VERSION="3.8.0"
+  SKILL_VERSION="3.8.1"
 fi
 ```
 
@@ -917,8 +917,8 @@ Preserve all existing content. Only update `skill_version` and append missing to
 
 ```bash
 # Update skill_version line without touching anything else
-sed -i '' "s/^skill_version:.*/skill_version: 3.8.0/" $TEAMWORK_DIR/config.yml
-# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.8.0/" $TEAMWORK_DIR/config.yml
+sed -i '' "s/^skill_version:.*/skill_version: 3.8.1/" $TEAMWORK_DIR/config.yml
+# Linux fallback: sed -i "s/^skill_version:.*/skill_version: 3.8.1/" $TEAMWORK_DIR/config.yml
 
 # Update schema_version if present
 if grep -q "^schema_version:" $TEAMWORK_DIR/config.yml; then
@@ -1034,352 +1034,9 @@ if grep -q "^worktree:" $TEAMWORK_DIR/config.yml 2>/dev/null; then
 fi
 ```
 
-**Step 5 — Ask worktree preference (if not yet configured):**
+**Step 5 — Per-user local setup:**
 
-Worktree is a per-user local setting. In merge mode, Steps 2-3 are skipped, so we must ask here.
-
-```bash
-WORKTREE_CONFIGURED=$(git config --local teamwork.worktree 2>/dev/null)
-if [ -z "$WORKTREE_CONFIGURED" ]; then
-  # User has never configured worktree preference — ask now
-```
-
-Use `AskUserQuestion`:
-```
-question: "Development isolation strategy? (stored locally, per-user)"
-options:
-  - label: "Branch only (Recommended)"
-    description: "Simple branching — one working copy, switch between branches"
-  - label: "Git worktree"
-    description: "Parallel development — each mission gets its own working directory"
-```
-
-If "Git worktree" selected:
-```bash
-  git config --local teamwork.worktree true
-  echo "Worktree mode enabled (git config --local)"
-fi
-```
-
-If "Branch only" selected:
-```bash
-  git config --local teamwork.worktree false
-  echo "Branch-only mode (default)"
-fi
-```
-
-**Step 5b — Terminal tab title + color (one-time, per-user):**
-
-Two parts: (A) prevent Claude Code from overriding tab title, (B) install shell hook for branch name + tab color.
-
-**Part A — Claude Code title override:**
-
-```bash
-# Check if CLAUDE_CODE_DISABLE_TERMINAL_TITLE is already set
-grep -q 'CLAUDE_CODE_DISABLE_TERMINAL_TITLE' ~/.claude/settings.json 2>/dev/null && echo "CONFIGURED" || echo "NOT_CONFIGURED"
-```
-
-If `NOT_CONFIGURED`, add to `~/.claude/settings.json` → `env`:
-
-```bash
-# Read current settings, add env var
-python3 -c "
-import json, os
-p = os.path.expanduser('~/.claude/settings.json')
-os.makedirs(os.path.dirname(p), exist_ok=True)
-try:
-    d = json.load(open(p)) if os.path.exists(p) else {}
-except (json.JSONDecodeError, ValueError):
-    d = {}
-if not isinstance(d.get('env'), dict):
-    d['env'] = {}
-d['env']['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] = '1'
-json.dump(d, open(p, 'w'), indent=2)
-print('✅ Claude Code terminal title override disabled.')
-"
-```
-
-Without this, Claude Code continuously overwrites the tab title via OSC 0, making the shell hook ineffective.
-
-**Part B — Shell hook:**
-
-Check if the user's shell already has a teamwork tab-title hook configured:
-
-```bash
-if [ "$(basename "$SHELL")" = "fish" ]; then
-  SHELL_RC="$HOME/.config/fish/config.fish"
-else
-  SHELL_RC="$HOME/.$(basename "$SHELL")rc"  # ~/.zshrc, ~/.bashrc, etc.
-fi
-grep -q 'teamwork-tab' "$SHELL_RC" 2>/dev/null && echo "CONFIGURED" || echo "NOT_CONFIGURED"
-```
-
-If `NOT_CONFIGURED`, use `AskUserQuestion`:
-
-```
-question: "多窗口开发时，终端标签页可以自动显示当前 branch 名 + 按分支类型自动着色（如 main=红色, mission/*=绿色）。这样切换窗口时一眼就知道每个窗口在做什么任务。是否配置？"
-options:
-  - label: "配置（推荐）"
-    description: "自动在 shell 配置中添加 hook，每次进入目录时更新标签页标题和颜色"
-  - label: "跳过"
-    description: "以后可以手动配置"
-```
-
-If user selects "配置":
-
-1. Detect `$SHELL` (zsh, bash, fish, etc.)
-2. Read the user's shell rc file (`$SHELL_RC`)
-3. Based on shell type, append the appropriate hook:
-
-**zsh** (`~/.zshrc`):
-```bash
-cat >> "$SHELL_RC" << 'HOOK'
-
-# teamwork-tab: show branch name + auto-color iTerm2 tab
-_teamwork_tab() {
-  local b=$(git branch --show-current 2>/dev/null)
-  [[ -z "$b" ]] && return
-  printf '\e]1;%s\a' "$b"
-  local r=80 g=80 b_=80
-  case "$b" in
-    main|master)        r=180 g=60  b_=60  ;;
-    pre-launch|develop) r=60  g=100 b_=180 ;;
-    rc/*|release/*)     r=200 g=140 b_=30  ;;
-    mission/*)
-      local num=${b#mission/}; num=${num%%-*}
-      case $(( num % 8 )) in
-        0) r=46  g=160 b_=120 ;; 1) r=180 g=120 b_=46  ;;
-        2) r=140 g=70  b_=180 ;; 3) r=60  g=170 b_=70  ;;
-        4) r=180 g=80  b_=120 ;; 5) r=70  g=140 b_=180 ;;
-        6) r=180 g=140 b_=60  ;; 7) r=100 g=180 b_=160 ;;
-      esac ;;
-  esac
-  printf '\e]6;1;bg;red;brightness;%d\a' "$r"
-  printf '\e]6;1;bg;green;brightness;%d\a' "$g"
-  printf '\e]6;1;bg;blue;brightness;%d\a' "$b_"
-}
-precmd_functions+=(_teamwork_tab)
-HOOK
-```
-
-**bash** (`~/.bashrc`):
-```bash
-cat >> "$SHELL_RC" << 'HOOK'
-
-# teamwork-tab: show branch name + auto-color iTerm2 tab
-_teamwork_tab() {
-  local b=$(git branch --show-current 2>/dev/null)
-  [[ -z "$b" ]] && return
-  printf '\e]1;%s\a' "$b"
-  local r=80 g=80 b_=80
-  case "$b" in
-    main|master)        r=180 g=60  b_=60  ;;
-    pre-launch|develop) r=60  g=100 b_=180 ;;
-    rc/*|release/*)     r=200 g=140 b_=30  ;;
-    mission/*)
-      local num=${b#mission/}; num=${num%%-*}
-      case $(( num % 8 )) in
-        0) r=46  g=160 b_=120 ;; 1) r=180 g=120 b_=46  ;;
-        2) r=140 g=70  b_=180 ;; 3) r=60  g=170 b_=70  ;;
-        4) r=180 g=80  b_=120 ;; 5) r=70  g=140 b_=180 ;;
-        6) r=180 g=140 b_=60  ;; 7) r=100 g=180 b_=160 ;;
-      esac ;;
-  esac
-  printf '\e]6;1;bg;red;brightness;%d\a' "$r"
-  printf '\e]6;1;bg;green;brightness;%d\a' "$g"
-  printf '\e]6;1;bg;blue;brightness;%d\a' "$b_"
-}
-PROMPT_COMMAND="_teamwork_tab; $PROMPT_COMMAND"
-HOOK
-```
-
-**fish** (`~/.config/fish/config.fish`):
-```bash
-SHELL_RC="$HOME/.config/fish/config.fish"
-cat >> "$SHELL_RC" << 'HOOK'
-
-# teamwork-tab: show branch name in terminal tab
-function fish_title; set -l b (git branch --show-current 2>/dev/null); and echo $b; or echo (prompt_pwd); end
-HOOK
-```
-
-4. Check for conflicts: if the rc file already defines `_teamwork_tab` (any shell), warn the user and show the snippet for manual integration instead of auto-appending.
-
-5. Output:
-
-```
-Tab 标题+颜色已配置。新开终端标签页即可看到 branch 名和分支类型颜色。
-颜色映射：🟥 main · 🟦 pre-launch · 🟧 rc/* · 🟩 mission/* · ⬜ other
-```
-
-If `CONFIGURED` → skip silently.
-
-**Note:** Tab colors use iTerm2 proprietary escape sequences (`\e]6;1;bg;...`). On non-iTerm2 terminals, the color sequences are silently ignored — the tab title still works.
-
-**Step 5c — Desktop notifications (macOS, one-time, per-user):**
-
-Claude Code can send macOS desktop notifications when it needs your attention (permission prompts, questions, task complete). Clicking the notification activates your terminal app.
-
-```bash
-# Check if notify.sh hook already exists
-ls ~/.claude/notify.sh 2>/dev/null && echo "CONFIGURED" || echo "NOT_CONFIGURED"
-```
-
-If `CONFIGURED` → skip silently.
-
-If `NOT_CONFIGURED`, use `AskUserQuestion`:
-
-```
-question: "Claude Code 可以在需要你操作时弹出 macOS 桌面通知（如权限确认、提问、任务完成），这样你可以切到别的窗口干活，不用盯着终端。是否配置？"
-options:
-  - label: "配置（推荐）"
-    description: "安装通知 hook — 点击通知直接跳回终端窗口"
-  - label: "跳过"
-    description: "以后可以手动配置"
-```
-
-If user selects "配置":
-
-**Part A — Check terminal-notifier (optional fallback, improves non-iTerm2 experience):**
-
-The notify hook uses iTerm2 bell as primary notification method — clicking jumps to the exact tab. For non-iTerm2 terminals, `terminal-notifier` is the best fallback (clicking activates the terminal window). Without either, falls back to `osascript` (clicking opens Script Editor).
-
-```bash
-command -v terminal-notifier &>/dev/null && echo "INSTALLED" || echo "NOT_INSTALLED"
-```
-
-If `NOT_INSTALLED`, output:
-
-```
-💡 推荐安装 `terminal-notifier`（点击通知直接跳回 iTerm2，而非打开脚本编辑器）：
-   `brew install terminal-notifier`
-   跳过也可以 — 通知功能正常，只是点击行为不同。
-```
-
-Do NOT block on this — proceed regardless. The notify.sh script handles both cases automatically.
-
-**Part B — Write `~/.claude/notify.sh`:**
-
-```bash
-cat > ~/.claude/notify.sh << 'NOTIFEOF'
-#!/bin/bash
-# Claude Code notification — macOS banner + optional sound
-# Skips subagent notifications.
-
-INPUT=$(cat)
-
-extract() {
-  echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$1',''))" 2>/dev/null
-}
-
-HOOK_EVENT=$(extract hook_event_name)
-MESSAGE=$(extract message)
-NOTIF_TYPE=$(extract notification_type)
-CWD=$(extract cwd)
-
-# ── Skip subagent events ──
-IS_SUBAGENT=$(extract is_subagent)
-SESSION_TYPE=$(extract session_type)
-SUBAGENT_ID=$(extract subagent_id)
-
-if [ "$IS_SUBAGENT" = "True" ] || [ "$IS_SUBAGENT" = "true" ]; then exit 0; fi
-if [ "$SESSION_TYPE" = "subagent" ] || [ "$SESSION_TYPE" = "task" ]; then exit 0; fi
-if [ -n "$SUBAGENT_ID" ] && [ "$SUBAGENT_ID" != "None" ] && [ "$SUBAGENT_ID" != "" ]; then exit 0; fi
-
-# ── Project name ──
-PROJECT=$(basename "$CWD" 2>/dev/null)
-
-# ── Extract event-specific fields ──
-LAST_MSG=$(extract last_assistant_message)
-TEAMMATE_NAME=$(extract teammate_name)
-
-short() { echo "$1" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | head -c 100; }
-
-SUMMARY=""
-case "$HOOK_EVENT" in
-  Notification)
-    case "$NOTIF_TYPE" in
-      permission_prompt) SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Permission required" ;;
-      elicitation_dialog) SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Question for you" ;;
-      idle_prompt) SUMMARY="Waiting for input" ;;
-      auth_success) SUMMARY="Authentication successful" ;;
-      *) SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Needs attention" ;;
-    esac ;;
-  Stop)
-    SUMMARY=$(short "$LAST_MSG"); [ -z "$SUMMARY" ] && SUMMARY="Task complete" ;;
-  TeammateIdle)
-    if [ -n "$TEAMMATE_NAME" ] && [ "$TEAMMATE_NAME" != "None" ]; then
-      SUMMARY="Teammate ${TEAMMATE_NAME} is idle"
-    else SUMMARY="Teammate idle"; fi ;;
-  *) SUMMARY="Needs attention" ;;
-esac
-
-# ── macOS notification ──
-# Primary: iTerm2 bell → notification with session name, click jumps to exact tab
-# Fallback: terminal-notifier → click activates iTerm2 window (can't target tab)
-# Fallback 2: osascript → click opens Script Editor (worst UX)
-SESSION_TTY=$(ps -p $PPID -o tty= 2>/dev/null | tr -d ' ')
-if [ -n "$SESSION_TTY" ] && [ -w "/dev/$SESSION_TTY" ]; then
-  printf '\a' > /dev/$SESSION_TTY
-elif command -v terminal-notifier &>/dev/null; then
-  terminal-notifier -title "$PROJECT" -message "$SUMMARY" -activate com.googlecode.iterm2
-else
-  ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
-  ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
-  osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
-fi
-
-exit 0
-NOTIFEOF
-chmod +x ~/.claude/notify.sh
-```
-
-**Part C — Register hooks in `~/.claude/settings.json`:**
-
-```bash
-python3 -c "
-import json, os
-p = os.path.expanduser('~/.claude/settings.json')
-os.makedirs(os.path.dirname(p), exist_ok=True)
-try:
-    d = json.load(open(p)) if os.path.exists(p) else {}
-except (json.JSONDecodeError, ValueError):
-    d = {}
-if not isinstance(d.get('hooks'), dict):
-    d['hooks'] = {}
-hook_entry = [{'matcher': '', 'hooks': [{'type': 'command', 'command': '~/.claude/notify.sh'}]}]
-changed = False
-for event in ['Notification', 'Stop', 'TeammateIdle']:
-    if event not in d['hooks']:
-        d['hooks'][event] = hook_entry
-        changed = True
-    else:
-        # Check if notify.sh is already registered
-        has_notify = any(
-            h.get('command', '').endswith('notify.sh')
-            for rule in d['hooks'][event]
-            for h in rule.get('hooks', [])
-        )
-        if not has_notify:
-            d['hooks'][event].extend(hook_entry)
-            changed = True
-if changed:
-    json.dump(d, open(p, 'w'), indent=2)
-    print('registered')
-else:
-    print('already_registered')
-"
-```
-
-**Part D — Output:**
-
-```
-✅ 桌面通知已配置
-   Hook: `~/.claude/notify.sh`
-   Events: Notification, Stop, TeammateIdle
-   iTerm2: 点击通知 → 跳到对应 tab
-   其他终端: {If terminal-notifier:} 点击 → 激活终端窗口 {else:} 建议 `brew install terminal-notifier`
-```
+Worktree, tab title, and notifications are now in **Step 4h** (shared by both merge mode and fresh install). Merge mode proceeds directly to Step 6.
 
 **Step 6 — Handle missing sections with safe defaults:**
 
@@ -1404,7 +1061,7 @@ fi
 Read `SKILL_VERSION` from the config file AFTER the sed update in Step 1 (to get the updated value):
 
 ```bash
-SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.0" 2>/dev/null)
+SKILL_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh skill_version "3.8.1" 2>/dev/null)
 WORKTREE_STATUS=$(git config --local teamwork.worktree 2>/dev/null || echo "not set")
 ```
 
@@ -1418,7 +1075,7 @@ WORKTREE_STATUS=$(git config --local teamwork.worktree 2>/dev/null || echo "not 
    Tip: /team config to view full config │ /team to see dashboard
 ```
 
-After showing the merge summary, proceed to **Step 6: Dashboard** (show the dashboard as confirmation that init succeeded). This gives the user immediate visual feedback.
+After showing the merge summary, proceed to **Step 4h: Per-user local setup** (worktree, tab title, notifications), then **Step 6: Dashboard**.
 
 Do NOT overwrite `team`/`members`, `github`, `versions`, `roles`, `notifications`, or any unrecognized section.
 
@@ -1430,7 +1087,7 @@ Write full config based on detected project info + user answers:
 
 ```yaml
 schema_version: 3
-skill_version: 3.8.0
+skill_version: 3.8.1
 
 roles:
   - id: leader
@@ -1882,6 +1539,404 @@ Append if not already present:
 .teamspace/active/
 ```
 
+### 4h: Per-user local setup (runs for BOTH fresh install and merge mode)
+
+Per-user settings are local (not committed to git). This step runs for EVERY user — first-time setup or returning. It ALWAYS shows a status dashboard, then offers to configure anything not yet enabled.
+
+**Detect current state of ALL per-user settings:**
+
+```bash
+# 1. Worktree mode
+WORKTREE_ENABLED=$(git config --local teamwork.worktree 2>/dev/null || echo "")
+WORKTREE_ROOT=$(git config --local teamwork.worktree-root 2>/dev/null || echo "")
+
+# 2. Tab title + color
+if [ "$(basename "$SHELL")" = "fish" ]; then
+  SHELL_RC="$HOME/.config/fish/config.fish"
+else
+  SHELL_RC="$HOME/.$(basename "$SHELL")rc"
+fi
+TAB_CONFIGURED=$(grep -q 'teamwork-tab' "$SHELL_RC" 2>/dev/null && echo "true" || echo "false")
+TITLE_DISABLED=$(grep -q 'CLAUDE_CODE_DISABLE_TERMINAL_TITLE' ~/.claude/settings.json 2>/dev/null && echo "true" || echo "false")
+
+# 3. Desktop notifications
+NOTIFY_CONFIGURED=$([ -f ~/.claude/notify.sh ] && echo "true" || echo "false")
+```
+
+**ALWAYS display the status dashboard** (even if everything is configured):
+
+⚙️ **LOCAL SETUP** — @{GH_USER} ────────────────────────────
+────────────────────────────────────────────
+
+**Worktree isolation**
+  Status:   {✅ enabled / ⚪ disabled / ⚪ not configured}
+  Root:     {`{WORKTREE_ROOT}` if set / 💡 `(default: sibling directory)` if enabled but root unset / — if disabled}
+  多任务并行开发，每个 mission 独立工作目录
+
+**Tab title + branch color**
+  Tab hook: {✅ installed / ❌ not installed}
+  Claude title override: {✅ disabled / ⚠️ active (will override tab title)}
+  终端标签页显示 branch 名 + 按类型着色 🟥🟦🟧🟩
+
+**Desktop notifications**
+  Hook:     {✅ installed / ❌ not installed}
+  Method:   {If hook installed: `iTerm2 bell` (primary) + fallback auto-detect / —}
+  Claude 需要你操作时弹出桌面通知，点击跳回对应 tab
+
+────────────────────────────────────────────
+
+**"Configured" definition for each feature:**
+- Worktree: `WORKTREE_ENABLED` is `true` or `false` (explicit choice made)
+- Worktree root: `WORKTREE_ROOT` is set (only relevant when `WORKTREE_ENABLED=true`)
+- Tab title: `TAB_CONFIGURED=true` AND `TITLE_DISABLED=true`
+- Notifications: `NOTIFY_CONFIGURED=true`
+
+**If ALL are configured** → show:
+
+All features configured. `/team config` to modify settings.
+
+→ Proceed to next step (no AskUserQuestion needed).
+
+**If ANY are NOT configured** → use `AskUserQuestion` to offer setup:
+
+Build the options list dynamically from unconfigured items:
+
+```
+question: "以下功能推荐开启，选择要配置的项目："
+options:
+  {Only include unconfigured items:}
+  - label: "全部开启（推荐）"
+    description: "一键配置所有未开启的功能"
+  - label: "Worktree 隔离"    # only if WORKTREE_ENABLED is empty (never configured)
+    description: "每个 mission 独立目录，多任务不冲突"
+  - label: "Worktree 根目录"  # only if WORKTREE_ENABLED=true but WORKTREE_ROOT empty
+    description: "设置 worktree 创建位置（当前：默认同级目录）"
+  - label: "Tab 标题+颜色"    # only if tab not configured
+    description: "终端标签页自动显示 branch 名 + 类型着色"
+  - label: "桌面通知"          # only if notify not configured
+    description: "Claude 需要操作时弹出 macOS 通知"
+  - label: "跳过"
+    description: "以后用 /team config 配置"
+```
+
+**If user selects "全部开启"** → execute ALL unconfigured items below in sequence.
+**If user selects a specific item** → execute only that item.
+**If user selects "跳过"** → proceed to next step.
+
+---
+
+**Setup: Worktree isolation**
+
+Use `AskUserQuestion`:
+```
+question: "Worktree 根目录设置 — worktree 工作目录创建在哪里？"
+options:
+  - label: ".claude/worktrees/"
+    description: "与 Claude Code 原生 worktree 一致，项目内管理（推荐）"
+  - label: "项目同级目录"
+    description: "传统模式：../{repo}-wt-{slug}"
+  - label: "自定义路径"
+    description: "指定一个根目录，worktree 在其下创建"
+```
+
+If "自定义路径" → use `AskUserQuestion`:
+```
+question: "输入 worktree 根目录的绝对路径（worktree 会在此目录下创建子目录）"
+```
+
+Save the user's choice:
+```bash
+git config --local teamwork.worktree true
+
+# Save worktree root path
+# "claude" → .claude/worktrees/ (relative to repo root, same as Claude Code native)
+# "sibling" → (empty — uses default ../repo-wt-slug)
+# custom → the user-provided absolute path
+git config --local teamwork.worktree-root "{chosen_path}"
+
+# Create the root directory if it doesn't exist
+mkdir -p "{chosen_path}"
+
+# Ensure .claude/worktrees/ is in .gitignore (for "claude" option)
+if ! grep -q '.claude/worktrees/' .gitignore 2>/dev/null; then
+  echo '.claude/worktrees/' >> .gitignore
+fi
+```
+
+**Worktree root values:**
+- `.claude/worktrees/` → stored as relative path to repo root (matches Claude Code native behavior)
+- Empty / unset → sibling mode (backward compat: `../{repo}-wt-{slug}`)
+- Custom absolute path → stored as-is
+
+---
+
+**Setup: Tab title + color**
+
+Two parts: (A) disable Claude Code title override, (B) install shell hook.
+
+**Part A — Claude Code title override** (if `TITLE_DISABLED` is false):
+
+```bash
+python3 -c "
+import json, os
+p = os.path.expanduser('~/.claude/settings.json')
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except (json.JSONDecodeError, ValueError):
+    d = {}
+if not isinstance(d.get('env'), dict):
+    d['env'] = {}
+d['env']['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] = '1'
+json.dump(d, open(p, 'w'), indent=2)
+print('✅ Claude Code terminal title override disabled.')
+"
+```
+
+**Part B — Shell hook** (if `TAB_CONFIGURED` is false):
+
+Detect `$SHELL` and append the appropriate hook to the shell rc file:
+
+**zsh** (`~/.zshrc`):
+```bash
+cat >> "$SHELL_RC" << 'HOOK'
+
+# teamwork-tab: show branch name + auto-color iTerm2 tab
+_teamwork_tab() {
+  local b=$(git branch --show-current 2>/dev/null)
+  [[ -z "$b" ]] && return
+  printf '\e]1;%s\a' "$b"
+  local r=80 g=80 b_=80
+  case "$b" in
+    main|master)        r=180 g=60  b_=60  ;;
+    pre-launch|develop) r=60  g=100 b_=180 ;;
+    rc/*|release/*)     r=200 g=140 b_=30  ;;
+    mission/*)
+      local num=${b#mission/}; num=${num%%-*}
+      case $(( num % 8 )) in
+        0) r=46  g=160 b_=120 ;; 1) r=180 g=120 b_=46  ;;
+        2) r=140 g=70  b_=180 ;; 3) r=60  g=170 b_=70  ;;
+        4) r=180 g=80  b_=120 ;; 5) r=70  g=140 b_=180 ;;
+        6) r=180 g=140 b_=60  ;; 7) r=100 g=180 b_=160 ;;
+      esac ;;
+  esac
+  printf '\e]6;1;bg;red;brightness;%d\a' "$r"
+  printf '\e]6;1;bg;green;brightness;%d\a' "$g"
+  printf '\e]6;1;bg;blue;brightness;%d\a' "$b_"
+}
+precmd_functions+=(_teamwork_tab)
+HOOK
+```
+
+**bash** (`~/.bashrc`):
+```bash
+cat >> "$SHELL_RC" << 'HOOK'
+
+# teamwork-tab: show branch name + auto-color iTerm2 tab
+_teamwork_tab() {
+  local b=$(git branch --show-current 2>/dev/null)
+  [[ -z "$b" ]] && return
+  printf '\e]1;%s\a' "$b"
+  local r=80 g=80 b_=80
+  case "$b" in
+    main|master)        r=180 g=60  b_=60  ;;
+    pre-launch|develop) r=60  g=100 b_=180 ;;
+    rc/*|release/*)     r=200 g=140 b_=30  ;;
+    mission/*)
+      local num=${b#mission/}; num=${num%%-*}
+      case $(( num % 8 )) in
+        0) r=46  g=160 b_=120 ;; 1) r=180 g=120 b_=46  ;;
+        2) r=140 g=70  b_=180 ;; 3) r=60  g=170 b_=70  ;;
+        4) r=180 g=80  b_=120 ;; 5) r=70  g=140 b_=180 ;;
+        6) r=180 g=140 b_=60  ;; 7) r=100 g=180 b_=160 ;;
+      esac ;;
+  esac
+  printf '\e]6;1;bg;red;brightness;%d\a' "$r"
+  printf '\e]6;1;bg;green;brightness;%d\a' "$g"
+  printf '\e]6;1;bg;blue;brightness;%d\a' "$b_"
+}
+PROMPT_COMMAND="_teamwork_tab; $PROMPT_COMMAND"
+HOOK
+```
+
+**fish** (`~/.config/fish/config.fish`):
+```bash
+SHELL_RC="$HOME/.config/fish/config.fish"
+cat >> "$SHELL_RC" << 'HOOK'
+
+# teamwork-tab: show branch name in terminal tab
+function fish_title; set -l b (git branch --show-current 2>/dev/null); and echo $b; or echo (prompt_pwd); end
+HOOK
+```
+
+Check for conflicts first: if `_teamwork_tab` already exists in the rc file, warn and show the snippet for manual integration.
+
+Output:
+```
+Tab 标题+颜色已配置。新开终端标签页即可看到 branch 名和分支类型颜色。
+颜色映射：🟥 main · 🟦 pre-launch · 🟧 rc/* · 🟩 mission/* · ⬜ other
+```
+
+**Note:** Tab colors use iTerm2 proprietary escape sequences (`\e]6;1;bg;...`). On non-iTerm2 terminals, the color sequences are silently ignored — the tab title still works.
+
+---
+
+**Setup: Desktop notifications**
+
+**Part A — Check iTerm2 notification prerequisite:**
+
+iTerm2 users: `printf '\a'` (bell) triggers iTerm2 native notification. Click jumps to exact tab. Zero dependencies.
+Non-iTerm2 users: falls back to `terminal-notifier` (if installed) or `osascript`.
+
+No install needed for iTerm2 — just ensure iTerm2 Preferences → Profiles → Terminal → Notifications is enabled.
+
+**Part B — Write `~/.claude/notify.sh`:**
+
+```bash
+cat > ~/.claude/notify.sh << 'NOTIFEOF'
+#!/bin/bash
+# Claude Code notification — iTerm2 bell (primary) + bundled TTS sounds
+# Primary: iTerm2 bell → native notification, click jumps to exact tab (zero deps)
+# Fallback: terminal-notifier / osascript for non-iTerm2 terminals
+# Skips subagent notifications.
+
+INPUT=$(cat)
+
+extract() {
+  echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$1',''))" 2>/dev/null
+}
+
+HOOK_EVENT=$(extract hook_event_name)
+MESSAGE=$(extract message)
+NOTIF_TYPE=$(extract notification_type)
+CWD=$(extract cwd)
+
+# ── Skip subagent events ──
+IS_SUBAGENT=$(extract is_subagent)
+SESSION_TYPE=$(extract session_type)
+SUBAGENT_ID=$(extract subagent_id)
+
+if [ "$IS_SUBAGENT" = "True" ] || [ "$IS_SUBAGENT" = "true" ]; then exit 0; fi
+if [ "$SESSION_TYPE" = "subagent" ] || [ "$SESSION_TYPE" = "task" ]; then exit 0; fi
+if [ -n "$SUBAGENT_ID" ] && [ "$SUBAGENT_ID" != "None" ] && [ "$SUBAGENT_ID" != "" ]; then exit 0; fi
+
+# ── Project name ──
+PROJECT=$(basename "$CWD" 2>/dev/null)
+
+# ── Extract event-specific fields ──
+LAST_MSG=$(extract last_assistant_message)
+TEAMMATE_NAME=$(extract teammate_name)
+
+short() { echo "$1" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | head -c 100; }
+
+# ── Sound file directory ──
+SOUNDS_DIR="$HOME/.claude/sounds"
+
+# ── Build summary + sound file (fixed per type) ──
+SUMMARY=""
+SOUND_FILE=""
+NEEDS_VOICE=false
+
+case "$HOOK_EVENT" in
+  Notification)
+    case "$NOTIF_TYPE" in
+      permission_prompt)
+        SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Permission required"
+        SOUND_FILE="$SOUNDS_DIR/permission-required.mp3"; NEEDS_VOICE=true ;;
+      elicitation_dialog)
+        SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Question for you"
+        SOUND_FILE="$SOUNDS_DIR/waiting-for-input.mp3"; NEEDS_VOICE=true ;;
+      idle_prompt)
+        SUMMARY="Waiting for input"
+        SOUND_FILE="$SOUNDS_DIR/waiting-for-input.mp3"; NEEDS_VOICE=true ;;
+      auth_success) SUMMARY="Authentication successful" ;;
+      *)
+        SUMMARY=$(short "$MESSAGE"); [ -z "$SUMMARY" ] && SUMMARY="Needs attention"
+        SOUND_FILE="$SOUNDS_DIR/needs-attention.mp3"; NEEDS_VOICE=true ;;
+    esac ;;
+  Stop)
+    SUMMARY=$(short "$LAST_MSG"); [ -z "$SUMMARY" ] && SUMMARY="Task complete"
+    SOUND_FILE="$SOUNDS_DIR/task-complete.mp3"; NEEDS_VOICE=true ;;
+  TeammateIdle)
+    if [ -n "$TEAMMATE_NAME" ] && [ "$TEAMMATE_NAME" != "None" ]; then
+      SUMMARY="Teammate ${TEAMMATE_NAME} is idle"
+    else SUMMARY="Teammate idle"; fi
+    SOUND_FILE="$SOUNDS_DIR/teammate-idle.mp3" ;;
+  *)
+    SUMMARY="Needs attention"
+    SOUND_FILE="$SOUNDS_DIR/needs-attention.mp3"; NEEDS_VOICE=true ;;
+esac
+
+# ── Notification dispatch ──
+# Primary: iTerm2 bell → native notification, click jumps to exact tab
+# Fallback 1: terminal-notifier → click activates terminal window
+# Fallback 2: osascript → click opens Script Editor (worst UX)
+SESSION_TTY=$(ps -p $PPID -o tty= 2>/dev/null | tr -d ' ')
+if [ -n "$SESSION_TTY" ] && [ -w "/dev/$SESSION_TTY" ]; then
+  printf '\a' > /dev/$SESSION_TTY
+elif command -v terminal-notifier &>/dev/null; then
+  terminal-notifier -title "$PROJECT" -message "$SUMMARY" -activate com.googlecode.iterm2
+else
+  ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
+  ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
+  osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
+fi
+
+# ── Play bundled sound — only for events requiring user intervention ──
+if [ "$NEEDS_VOICE" = "true" ] && [ -f "$SOUND_FILE" ]; then
+  afplay "$SOUND_FILE" &
+fi
+
+exit 0
+NOTIFEOF
+chmod +x ~/.claude/notify.sh
+```
+
+**Part C — Register hooks in `~/.claude/settings.json`:**
+
+```bash
+python3 -c "
+import json, os
+p = os.path.expanduser('~/.claude/settings.json')
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except (json.JSONDecodeError, ValueError):
+    d = {}
+if not isinstance(d.get('hooks'), dict):
+    d['hooks'] = {}
+hook_entry = [{'matcher': '', 'hooks': [{'type': 'command', 'command': '~/.claude/notify.sh'}]}]
+changed = False
+for event in ['Notification', 'Stop', 'TeammateIdle']:
+    if event not in d['hooks']:
+        d['hooks'][event] = hook_entry
+        changed = True
+    else:
+        has_notify = any(
+            h.get('command', '').endswith('notify.sh')
+            for rule in d['hooks'][event]
+            for h in rule.get('hooks', [])
+        )
+        if not has_notify:
+            d['hooks'][event].extend(hook_entry)
+            changed = True
+if changed:
+    json.dump(d, open(p, 'w'), indent=2)
+    print('registered')
+else:
+    print('already_registered')
+"
+```
+
+Output:
+```
+✅ 桌面通知已配置
+   Hook: `~/.claude/notify.sh`
+   Events: Notification, Stop, TeammateIdle
+   iTerm2: bell → 原生通知，点击跳到对应 tab（零依赖）
+   其他终端: 自动降级 terminal-notifier / osascript
+```
+
 ---
 
 ## Step 5: Configure GitHub
@@ -2074,6 +2129,8 @@ Output: "Teamwork initialized! Next: create Issues using the Mission template, t
 
 💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}"
 
+After commit+push, proceed to **Step 4h: Per-user local setup** (worktree, tab title, notifications), then **Step 6: Dashboard**.
+
 ---
 
 ## Step 6: Dashboard
@@ -2174,7 +2231,7 @@ if [ "$WORKTREE_ENABLED" = "true" ]; then
   git worktree list --porcelain
 
   # Current location: which worktree are we in?
-  pwd  # compare against worktree paths to mark ★
+  pwd  # compare against worktree paths to mark ⭐
 
   # Cross-reference: for each worktree branch, check if it matches
   # any active Contract's branch field in $TEAMWORK_DIR/active/MISSION-*.md
@@ -2203,14 +2260,14 @@ If Call 8 found `WORKTREE_ENABLED=true`, you MUST include the `📂 WORKTREES` s
 ```bash
 git config --local teamwork.worktree 2>/dev/null  # "true" = show section
 git worktree list  # get all worktrees
-pwd  # determine current location (★ marker)
+pwd  # determine current location (⭐ marker)
 ```
 
 If worktree mode is enabled, render this section right after the milestone progress bar:
 
 📂 **Worktrees** *(worktree mode)*
-      {short path}  ← *{branch}*  → **#{issue}** {title │ (no mission)}
-    ★ {short path}  ← *{branch}*  → **#{issue}** {title │ (no mission)}
+    · {short path}  ← *{branch}*  → **#{issue}** {title │ (no mission)}
+    ⭐ {short path}  ← *{branch}*  → **#{issue}** {title │ (no mission)}
 
 Use `~` to shorten home directory in paths. If current branch ≠ any Contract branch, add to alert block: ⚠️ **Context mismatch** — `cd {correct path}`
 
@@ -2231,13 +2288,15 @@ Output the ENTIRE dashboard as plain markdown text:
 Teamwork v{SKILL_VERSION} · **{VERSION}**  `{progress_bar}`  {pct}%  {done}/{total}
 
 {If WORKTREE_ENABLED — ALWAYS show, even if only main repo worktree exists:}
-📂 **Worktrees** *(worktree mode)*
-  ★ {branch_color} `{worktree_path}` ← *{branch}* → **#{issue}** {title}
+📂 **Worktrees** *(worktree mode)* 🟥 main · 🟦 develop · 🟧 rc · 🟩 mission · ⬜ other
+  ⭐ {branch_color} `{worktree_path}` ← *{branch}* → **#{issue}** {title}
   · {branch_color} `{worktree_path}` ← *{branch}* → **#{issue}** {title}
   {or: → *(no mission)* if on main repo. Show ALL from `git worktree list`}
 {^ worktree_path = actual path from `git worktree list` output, e.g. ~/Project/myapp or ~/Project/myapp-wt-42-auth}
 {^ branch_color = 🟥 main/master · 🟦 pre-launch/develop · 🟧 rc/* · 🟩 mission/* · ⬜ other}
 {^ paths in backticks = purple-blue. branches in italic = dim}
+{^ color legend is on the header line — compact, not a separate footer line}
+{^ current worktree = ⭐ (yellow star, high visibility). other worktrees = · (dim dot)}
 
 👥 **TEAM** ({member_count} members)
   {username} ({role})
@@ -2352,13 +2411,15 @@ Output the ENTIRE dashboard as plain markdown text (no code blocks anywhere):
 Teamwork v{SKILL_VERSION} · **{VERSION}**  `{progress_bar}`  {pct}%  {done}/{total}
 
 {If WORKTREE_ENABLED — ALWAYS show, even if only main repo worktree exists:}
-📂 **Worktrees** *(worktree mode)*
-  ★ {branch_color} `{worktree_path}` ← *{branch}* → **#{issue}** {title}
+📂 **Worktrees** *(worktree mode)* 🟥 main · 🟦 develop · 🟧 rc · 🟩 mission · ⬜ other
+  ⭐ {branch_color} `{worktree_path}` ← *{branch}* → **#{issue}** {title}
   · {branch_color} `{worktree_path}` ← *{branch}* → **#{issue}** {title}
   {or: → *(no mission)* if on main repo. Show ALL from `git worktree list`}
 {^ worktree_path = actual path from `git worktree list` output}
 {^ branch_color = 🟥 main/master · 🟦 pre-launch/develop · 🟧 rc/* · 🟩 mission/* · ⬜ other}
 {^ paths in backticks = purple-blue. branches in italic = dim}
+{^ color legend is on the header line — compact, not a separate footer line}
+{^ current worktree = ⭐ (yellow star, high visibility). other worktrees = · (dim dot)}
 
 🎯 **My Missions**
   🟢 **#{N}** {title} {priority_dot} {Pn} → *wip*
@@ -3307,11 +3368,16 @@ Execute the ship flow without interactive confirmations.
 
 1. **Verify branch**: confirm on mission branch
 2. **Verify sub-tasks**: all **code** checkboxes checked (`🔧 MANUAL` tasks allowed unchecked)
-3. **Clean working tree**: if uncommitted changes exist, commit them:
+3. **Sync checkboxes to GitHub Issue** (defense-in-depth):
+   ```bash
+   bash ~/.claude/commands/scripts/tw-contract.sh sync-all-checkboxes "$CONTRACT_PATH" $ISSUE_NUMBER
+   ```
+   Non-fatal: if sync fails, warn but continue.
+4. **Clean working tree**: if uncommitted changes exist, commit them:
    ```bash
    bash ~/.claude/commands/scripts/tw-git.sh commit "chore: pre-ship cleanup | Mission: #${ISSUE_NUMBER}"
    ```
-4. **Run tests** (if configured):
+5. **Run tests** (if configured):
    ```bash
    TEST_CMD=$(bash ~/.claude/commands/scripts/tw-config.sh project.test_command "" 2>/dev/null)
    if [ -n "$TEST_CMD" ]; then

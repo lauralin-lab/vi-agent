@@ -120,5 +120,5 @@ Scripts in `scripts/`:
 
 ## Version
 
-- Skill version: 3.8.0
+- Skill version: 3.8.1
 - Config schema: 3

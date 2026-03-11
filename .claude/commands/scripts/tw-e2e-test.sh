@@ -289,12 +289,12 @@ else
   fail "toggle-task 99 should have failed"
 fi
 
-# sync-checkbox
-SYNC_OUT=$(run_script tw-contract.sh sync-checkbox "$TEST_ISSUE" "Create test file" 2>&1) || true
-if echo "$SYNC_OUT" | grep -qi "sync"; then
-  pass "sync-checkbox → synced"
+# sync-all-checkboxes (batch sync from Contract to Issue)
+SYNC_OUT=$(run_script tw-contract.sh sync-all-checkboxes "$TW_DIR/active/MISSION-${TEST_ISSUE}.md" "$TEST_ISSUE" 2>&1) || true
+if echo "$SYNC_OUT" | grep -qi "sync\|already checked\|nothing to sync"; then
+  pass "sync-all-checkboxes → synced"
 else
-  skip "sync-checkbox → $SYNC_OUT (may fail if issue body format differs)"
+  skip "sync-all-checkboxes → $SYNC_OUT (may fail if issue body format differs)"
 fi
 
 # ─── Phase 5: Ship flow ──────────────────────────────────

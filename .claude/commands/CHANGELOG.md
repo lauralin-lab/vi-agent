@@ -2,6 +2,33 @@
 
 All notable changes to the Teamwork skill set.
 
+## [3.8.1] — 2026-03-11
+
+### Fixed — Batch checkbox sync replaces fragile per-item sync
+
+- **`sync-all-checkboxes`**: new `tw-contract.sh` subcommand — reads Contract, extracts ALL checked items (Sub-tasks + Success Criteria), fuzzy-matches against Issue body, updates in ONE API call
+  - Fixes race condition (was: N reads + N writes, later writes could overwrite earlier)
+  - Fixes silent failure (was: all errors `exit 0`, LLM thought sync succeeded)
+  - Fixes exact-match fragility (was: `str.replace` needed char-for-char match; now: strips timestamps, normalizes whitespace/dashes, prefix/containment matching)
+  - Fixes missing Success Criteria sync (was: only Sub-tasks synced, Success Criteria had no mechanism)
+- **`sync-checkbox`**: deprecated (kept as backward-compatible alias with deprecation warning)
+- **`/team-drive`**: Step 3 now calls `sync-all-checkboxes` (batch) instead of `sync-checkbox` (per-item)
+- **Checkbox Gate**: adds `sync-all-checkboxes` call after recovery toggles — catches any missed syncs before completion
+- **Parallel mode**: Lead syncs once per wave completion instead of per-task
+
+### Fixed — Per-user setup (tab title, notifications) missing from fresh install
+
+- **`/team init`**: Extracted per-user local setup (worktree preference, terminal tab title+color, desktop notifications) from MERGE MODE into new **Step 4h** — now runs for BOTH fresh install and merge mode
+- **Root cause**: Tab title and notification prompts were only in the merge mode path; first user setting up the project (fresh install) was never prompted
+- **`/team-ship`**: Added `sync-all-checkboxes` defense-in-depth call in pre-flight (Step 2b) — catches missed syncs from team-drive
+
+### Added — Per-user config status dashboard + worktree path configuration
+
+- **`/team init` Step 4h**: Always displays per-user config status dashboard (worktree, tab title, notifications) — even if all configured. Dynamically offers to enable unconfigured features via AskUserQuestion with "全部开启" one-click option
+- **Worktree root path**: New `git config --local teamwork.worktree-root` setting. Three options: `.claude/worktrees/` (matches Claude Code native behavior), sibling directory (backward compat), or custom path
+- **`/team-claim`**: Worktree creation now reads `teamwork.worktree-root` — creates worktrees under user's chosen root instead of hardcoded sibling path
+- **Init ↔ Config separation**: Init shows status + guides setup; Config handles viewing/editing existing settings
+
 ## [3.8.0] — 2026-03-10
 
 ### Added — Desktop notification setup in /team init

@@ -1,6 +1,6 @@
 ---
 description: "Claim Issue → Contract → Branch. Try: /team-claim help"
-version: "3.8.0"
+version: "3.8.1"
 ---
 
 # /team-claim — Claim Issue → Contract → Branch
@@ -269,8 +269,21 @@ git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
 BRANCH_PATTERN=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.branch_pattern "mission/{issue}-{slug}-{user}" 2>/dev/null)
 BRANCH=$(echo "$BRANCH_PATTERN" | sed "s/{issue}/$ISSUE_NUMBER/g; s/{slug}/$SLUG/g; s/{user}/$GH_USER/g")
 
-# Create worktree as sibling of main repo (not sibling of current worktree)
-WORKTREE_PATH="${MAIN_REPO}/../${REPO_NAME}-wt-${SLUG}"
+# Determine worktree root path from per-user config
+WORKTREE_ROOT=$(git config --local teamwork.worktree-root 2>/dev/null || echo "")
+
+if [ -n "$WORKTREE_ROOT" ]; then
+  # Resolve relative paths (e.g. ".claude/worktrees/") against main repo root
+  if [[ "$WORKTREE_ROOT" != /* ]]; then
+    WORKTREE_ROOT="${MAIN_REPO}/${WORKTREE_ROOT}"
+  fi
+  mkdir -p "$WORKTREE_ROOT"
+  WORKTREE_PATH="${WORKTREE_ROOT}/${SLUG}"
+else
+  # Default: sibling of main repo (backward compat)
+  WORKTREE_PATH="${MAIN_REPO}/../${REPO_NAME}-wt-${SLUG}"
+fi
+
 git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BASE_BRANCH" 2>/dev/null || {
   # Branch may already exist — try without -b
   git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || {
@@ -294,7 +307,7 @@ Key differences from non-worktree flow:
 1. **No `ensure-base`** — avoids disrupting current worktree
 2. **`git fetch` instead of `git pull`** — updates remote ref without touching working tree
 3. **`git worktree add -b BRANCH PATH origin/BASE`** — creates branch from latest remote base directly
-4. **Path uses `MAIN_REPO` parent** — worktrees are always siblings of main repo, never nested
+4. **Path from `teamwork.worktree-root`** — user configures root via `/team init`. If set, worktrees go under `{root}/{slug}`. If unset, falls back to sibling: `../{repo}-wt-{slug}`
 
 ---
 
@@ -333,18 +346,21 @@ Contract:  `$TEAMWORK_DIR/active/MISSION-{issue}.md`
 **CONTEXT FILES**
   {list of relevant files}
 
-────────────────────────────────────────────
 {If worktree:}
-**NEXT STEP** (worktree mode):
-  Open a NEW terminal tab and run:
-    `cd {worktree_path} && claude`
+⚠️ **DO NOT run `/team-drive` in this terminal**
+────────────────────────────────────────────
+当前终端在主仓库。Worktree 模式下，所有操作必须在 worktree 目录中执行。
+在这里运行 `/team-drive` 会操作错误的代码。
+
+**打开新终端 tab，执行：**
+  `cd {worktree_path} && claude`
   Then: `/team-drive` to execute │ `/team-ship` when done
+────────────────────────────────────────────
 
-*💡 Tip: {random tip — read ~/.claude/commands/scripts/tw-tips.txt, pick one non-comment line at random}*
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
-  ⚠ Do NOT run `/team-drive` in this terminal — it will
-  operate on the wrong working directory.
 {If not worktree:}
+────────────────────────────────────────────
 `/team-drive` to execute │ `/team-ship` when done
 
 💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}

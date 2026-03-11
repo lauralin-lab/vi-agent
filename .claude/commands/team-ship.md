@@ -1,6 +1,6 @@
 ---
 description: "Ship mission → PR. Try: /team-ship help"
-version: "3.8.0"
+version: "3.8.1"
 ---
 
 # /team-ship — Deliver Mission
@@ -153,19 +153,26 @@ git worktree list --porcelain | grep -B2 "branch refs/heads/${CONTRACT_BRANCH}" 
 ```
 
 If a worktree path is found:
+
 **⚠️ WORKTREE MISMATCH**
+────────────────────────────────────────────
 Worktree mode is enabled but you're in the main repo.
 Your mission worktree: `{worktree_path}`
 
 Switch to it:  `cd {worktree_path}`
 Then re-run:   `/team-ship`
+────────────────────────────────────────────
 → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 If no worktree exists for this branch:
-⚠️ Worktree mode is enabled but no worktree exists for branch *{branch}*.
+
+**⚠️ NO WORKTREE FOUND**
+────────────────────────────────────────────
+Worktree mode is enabled but no worktree exists for branch *{branch}*.
 Run `/team-claim` **#{issue}** to recreate with worktree isolation.
 Or disable worktree mode: `git config --local teamwork.worktree false`
+────────────────────────────────────────────
 → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
@@ -229,6 +236,12 @@ Separate unchecked tasks into **code tasks** (no `🔧 MANUAL` or `(MANUAL)` tag
   → **STOP**
   💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 - If only **manual** sub-tasks are unchecked → proceed (these are human-action tasks, not blockers for the PR). Note them for inclusion in PR description.
+
+**Sync checkboxes to GitHub Issue** (defense-in-depth — catches missed syncs from team-drive):
+```bash
+bash ~/.claude/commands/scripts/tw-contract.sh sync-all-checkboxes "$CONTRACT_PATH" $ISSUE_NUMBER
+```
+Non-fatal: if sync fails, warn but continue with shipping.
 
 ### 2c: Clean working tree
 
