@@ -12,17 +12,11 @@ enum ServerEnv {
   /// 环境变量
   final int value;
 
-  /// Compile-time environment overrides (--dart-define)
-  static const String _prodHost =
-      String.fromEnvironment('PROD_API_HOST', defaultValue: 'http://localhost:3601/api');
-  static const String _testHost =
-      String.fromEnvironment('TEST_API_HOST', defaultValue: 'http://localhost:3601/api');
-
   /// 当前选择环境的 Base URL
   String get host {
     return switch (this) {
-      ServerEnv.production => _prodHost,
-      ServerEnv.test => _testHost,
+      ServerEnv.production => 'http://34.172.9.61:3601/api',
+      ServerEnv.test => 'http://34.172.9.61:3601/api',
     };
   }
 

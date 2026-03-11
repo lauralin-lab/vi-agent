@@ -10,6 +10,7 @@ import '../../../common/extension/ui_ext.dart';
 import '../../../routing/router.dart';
 import '../../../service/global_provider.dart';
 import '../../../service/hardware/hard_ware_initializer.dart';
+import '../../../service/network/api_service.dart';
 import 'livekit/live_kit_controller.dart';
 import 'provider/main_provider.dart';
 import 'widget/camera_action_button.dart';
@@ -73,9 +74,10 @@ class _MainPageState extends ConsumerState<MainPage> {
 
     switch (type) {
       case CameraActionType.back:
-        _jumpSessionPage();
+        _jumpUserCenter();
         break;
       case CameraActionType.send:
+        xxxxxx();
         break;
       case CameraActionType.preChat:
         _jumpPreChatPage();
@@ -84,6 +86,17 @@ class _MainPageState extends ConsumerState<MainPage> {
         liveKitController.onActionEvent(type);
         break;
     }
+  }
+
+  Future<void> xxxxxx ()async{
+    final aa = ref.read(captureImageProvider);
+    final xxx = await ApiService.uploadFiles(aa);
+    print('object');
+  }
+
+  /// 跳转user center
+  Future<void> _jumpUserCenter() async{
+
   }
 
   /// 跳转到Session列表

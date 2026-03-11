@@ -169,6 +169,8 @@ class Authentication {
   /// 用户 UUID
   String get uuid => currentAuth.self?.uuid ?? App().preferences.uuidInLocalCache;
 
+  /// SSE 事件广播流（供 onSseEventProvider 消费）
+  final StreamController<SseEvent> sseEventStream = StreamController<SseEvent>.broadcast();
 
   // /// 尝试刷新自动登录，一般情况下请勿使用
   // void tryAutoLogin([bool refresh = false]) {
@@ -178,6 +180,7 @@ class Authentication {
 
   /// 退出
   Future<bool> logout() async {
+    _disconnectSSE();
     try {
       App().preferences.setHasLogin(false);
       await FirebaseAuth.instance.signOut();
@@ -272,7 +275,6 @@ class Authentication {
       _initTime = DateTime.now();
       _currentAuth = _userToAuthInfo(user, null);
       _updateUserState();
-      // _getUserVps();
     });
 
     _authStream = Stream.multi((c) {
@@ -418,6 +420,7 @@ class Authentication {
     final info = currentAuth;
     if (!info.logged) {
       _currentUserUuid = "";
+      _disconnectSSE();
       return;
     }
     try {
@@ -429,6 +432,9 @@ class Authentication {
         userCompleter.complete();
       }
       _lastUserUpdated = DateTime.now();
+
+      // 认证 + 用户信息就绪 → 连接 SSE
+      _connectSSE();
     } on DioException catch (err) {
       // 网络异常重试
       if (err.type == DioExceptionType.connectionTimeout ||
@@ -496,9 +502,10 @@ class Authentication {
 
     if (!willUpdate) return;
 
-    /// 网络发生变化
-    // 强登录模式：不再自动补匿名登录
-    // if (!logged) _AutoLogin.login(true);
+    /// 网络恢复 → 重新连接 SSE
+    if (logged && uuid.isNotEmpty && _sseSubscription == null) {
+      _connectSSE();
+    }
   }
 
   /// 尝试更新用户信息
@@ -548,7 +555,74 @@ class Authentication {
     return uid == App().preferences.lastReportedUid ? Future.value() : f;
   }
 
-  ///#endregion 内部方法˚
+  ///#endregion 内部方法
+
+  ///#region SSE 生命周期管理
+
+  /// 连接 SSE 事件流
+  ///
+  /// 对应前端 `useRealtimeEvents` hook，在认证完成且拿到 uuid 后自动调用。
+  /// 支持指数退避自动重连（1s → 2s → 4s ... 最大 30s）。
+  void _connectSSE() {
+    final uid = uuid;
+    if (uid.isEmpty) return;
+
+    // 已连接同一 uid，跳过
+    if (_sseUserId == uid && _sseSubscription != null) return;
+
+    _disconnectSSE();
+    _sseUserId = uid;
+    _sseReconnectAttempt = 0;
+
+    logi('[SSE] connecting for uid=$uid');
+
+    _sseSubscription = ApiService.connectSSE(uid).listen(
+      (event) {
+        _sseReconnectAttempt = 0; // 收到数据 → 重置退避
+        sseEventStream.add(event);
+      },
+      onError: (error) {
+        loge('[SSE] stream error: $error');
+        _scheduleSSEReconnect();
+      },
+      onDone: () {
+        logi('[SSE] stream closed');
+        _scheduleSSEReconnect();
+      },
+    );
+  }
+
+  /// 断开 SSE
+  void _disconnectSSE() {
+    _sseReconnectTimer?.cancel();
+    _sseReconnectTimer = null;
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+    _sseUserId = null;
+  }
+
+  /// 指数退避重连
+  void _scheduleSSEReconnect() {
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+
+    if (!logged || uuid.isEmpty) return;
+
+    final delay = Duration(
+      milliseconds: (1000 * (1 << _sseReconnectAttempt)).clamp(1000, 30000),
+    );
+    _sseReconnectAttempt++;
+
+    logi('[SSE] reconnecting in ${delay.inSeconds}s (attempt $_sseReconnectAttempt)');
+    _sseReconnectTimer?.cancel();
+    _sseReconnectTimer = Timer(delay, () {
+      if (logged && uuid.isNotEmpty) {
+        _connectSSE();
+      }
+    });
+  }
+
+  ///#endregion SSE
 
   ///#region 私有属性
 
@@ -575,6 +649,12 @@ class Authentication {
 
   /// 已经上报成功过的 uid
   String? _reportedUid;
+
+  /// SSE 连接状态
+  StreamSubscription<SseEvent>? _sseSubscription;
+  Timer? _sseReconnectTimer;
+  String? _sseUserId;
+  int _sseReconnectAttempt = 0;
 }
 
 /// 输出错误
