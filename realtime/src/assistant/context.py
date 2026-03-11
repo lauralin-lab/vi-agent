@@ -140,15 +140,25 @@ class ContextMixin:
             logger.error(f"[redis][livekit] Context subscription error: {e}")
 
     def _format_intention_hints(self, intentions: list) -> str:
-        """Format predicted intentions as hints for the LLM."""
+        """Format predicted intentions as hints for the LLM, including EP hashtags."""
         if not intentions:
             return ""
+        from assistant.experience_packages import get_package
         hints = ["## Predicted User Intentions"]
         for intent in intentions[:5]:
             title = intent.get("title", "")
             desc = intent.get("description", "")
             confidence = intent.get("confidence", 0)
-            hints.append(f"- {title} ({confidence:.0%}): {desc}")
+            skill_slug = intent.get("skill_slug", "")
+            # Match to Experience Package if possible
+            ep = get_package(skill_slug) if skill_slug else None
+            if ep:
+                hints.append(
+                    f"- `{ep.hashtag}` {title} ({confidence:.0%}): {desc} "
+                    f"[skill: {ep.skill.name}, card: {ep.card.template}]"
+                )
+            else:
+                hints.append(f"- {title} ({confidence:.0%}): {desc}")
         return "\n".join(hints)
 
     # ─── Keyframe sampling ─────────────────────────────────────────

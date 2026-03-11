@@ -172,6 +172,25 @@ cmd_deploy() {
   echo "SERVICES=${services[*]}"
   echo "SERVER=$SERVER_USER@$SERVER_IP"
 
+  # Step 0.5: Auto-bump version in realtime/src/version.py
+  local VERSION_FILE="$REPO_ROOT/realtime/src/version.py"
+  if [ -f "$VERSION_FILE" ]; then
+    local OLD_VER
+    OLD_VER=$(grep -oP 'VERSION = "\K[^"]+' "$VERSION_FILE" || echo "")
+    if [ -n "$OLD_VER" ]; then
+      # Increment the last numeric segment (e.g. 0.1.0-dev.1 → 0.1.0-dev.2)
+      local NEW_VER
+      NEW_VER=$(echo "$OLD_VER" | sed -E 's/([0-9]+)$/echo $((\1+1))/e' 2>/dev/null || echo "")
+      if [ -n "$NEW_VER" ] && [ "$NEW_VER" != "$OLD_VER" ]; then
+        sed -i '' "s/VERSION = \"$OLD_VER\"/VERSION = \"$NEW_VER\"/" "$VERSION_FILE" 2>/dev/null || \
+          sed -i "s/VERSION = \"$OLD_VER\"/VERSION = \"$NEW_VER\"/" "$VERSION_FILE"
+        git add "$VERSION_FILE"
+        git commit -m "chore(realtime): bump version to $NEW_VER" --no-verify 2>/dev/null || true
+        echo "VERSION_BUMP=$OLD_VER→$NEW_VER"
+      fi
+    fi
+  fi
+
   # Step 1: Push current branch
   echo "STEP=push"
   git push origin "$BRANCH" 2>&1 || {

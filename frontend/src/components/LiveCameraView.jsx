@@ -117,11 +117,13 @@ export default function LiveCameraView({
   });
 
   // Connection icon — derived from computed status for top bar
+  // When room is connected but agent hasn't joined yet, show "connecting" not "offline"
   const connectionIcon = (() => {
     const state = livekit.connectionState;
     if (state === 'disconnected' || state === 'error') return 'offline';
     if (state === 'reconnecting') return 'weak';
-    if (agentComputedStatus === 'offline') return 'offline';
+    if (state === 'connecting') return 'connecting';
+    if (state === 'connected' && !livekit.agentIdentity) return 'connecting';
     if (agentComputedStatus === 'weak_connection') return 'weak';
     if (agentComputedStatus === 'connecting') return 'connecting';
     return 'connected';
@@ -550,8 +552,14 @@ export default function LiveCameraView({
     // (prevents race condition where LiveSessionView reads stale session ID)
     if (sessionIdRef) sessionIdRef.current = null;
 
-    // User-edited intention takes priority, then agent intention, then card text
-    const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
+    // User-edited intention takes priority, then agent intention, then action button hashtag, then card text
+    // Default to #ask (general analysis) when no specific intention is set
+    const actionHashtag = livekit.actionSuggestion?.hashtag;
+    const actionLabel = livekit.actionSuggestion?.label;
+    const defaultPrompt = actionHashtag
+      ? `${actionHashtag} ${actionLabel || 'Analyze this photo'}`
+      : '#ask Analyze this photo';
+    const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? defaultPrompt : lastCardTextRef.current);
 
     // Capture refs before navigation unmounts this component
     const dispatch = livekit.sendDispatch;
@@ -594,7 +602,7 @@ export default function LiveCameraView({
     }
 
     // V5: Dispatch exec request via REST → Redis → NanoClaw.
-    const prompt = finalIntention || 'Analyze this photo';
+    const prompt = finalIntention || '#ask Analyze this photo';
     try {
       const resp = await api.dispatchExec({
         prompt,
@@ -1147,15 +1155,19 @@ export default function LiveCameraView({
             }
           </motion.button>
 
-          {/* Shutter Button — always captures photo */}
+          {/* Action Button — captures photo + shows current action label */}
           {(() => {
             const agentAction = livekit.actionSuggestion?.action;
+            const actionLabel = livekit.actionSuggestion?.label;
+            const actionHashtag = livekit.actionSuggestion?.hashtag;
             const glowAction = (agentAction && agentAction !== 'dispatch' && agentAction !== 'ready' && agentAction !== 'done') ? agentAction : null;
             const glow = ACTION_GLOW[glowAction] || null;
             const glowShadow = glow ? glow.shadow : undefined;
+            // Display label: prefer explicit label, then hashtag without #, then action name
+            const displayLabel = actionLabel || (actionHashtag ? actionHashtag.replace('#', '') : null) || glowAction;
 
             return (
-              <div className="relative">
+              <div className="relative flex flex-col items-center">
                 <button
                   onClick={handleShutterClick}
                   onPointerDown={handleShutterDown}
@@ -1180,6 +1192,18 @@ export default function LiveCameraView({
                     />
                   )}
                 </button>
+                {displayLabel && !isRecording && (
+                  <span
+                    className="mt-1.5 text-center font-medium capitalize tracking-wide select-none"
+                    style={{
+                      fontSize: '10px',
+                      color: 'rgba(255,255,255,0.75)',
+                      textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    {displayLabel}
+                  </span>
+                )}
               </div>
             );
           })()}

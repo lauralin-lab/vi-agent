@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from datetime import timedelta
 
@@ -43,7 +44,10 @@ async def get_livekit_token(
     user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
-    room_name = f"vi-room-{user.vi_user_id}"
+    # Dynamic room name with timestamp — each session gets a fresh room
+    # so LiveKit dispatches a new agent instance reliably
+    ts = int(time.time())
+    room_name = f"vi-room-{user.vi_user_id}-{ts}"
 
     # Identity must start with "user-" for VI agent to recognize it
     user_identity = f"user-{user.id}"
@@ -108,7 +112,8 @@ async def get_anonymous_livekit_token(
         await db.commit()
         await db.refresh(user)
 
-    room_name = f"vi-room-{vi_user_id}"
+    ts = int(time.time())
+    room_name = f"vi-room-{vi_user_id}-{ts}"
 
     # Identity must start with "user-" for VI agent to recognize it
     user_identity = f"user-{user.id}"

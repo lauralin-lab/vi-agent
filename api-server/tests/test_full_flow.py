@@ -51,12 +51,12 @@ class TestFullMainFlow:
         # Step 3: LiveKit token
         lk_resp = await client.post("/api/livekit/token", headers=headers)
         assert lk_resp.status_code == 200
-        expected_room = f"vi-room-{vi_user_id}"
-        assert lk_resp.json()["room_name"] == expected_room
+        room_name = lk_resp.json()["room_name"]
+        assert room_name.startswith(f"vi-room-{vi_user_id}-")
 
         # Step 4: Create sessions via DB
         session1 = Session(
-            user_id=user_id, room_name=expected_room,
+            user_id=user_id, room_name=room_name,
             prompt="Find ramen nearby", status="completed",
             started_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
@@ -88,7 +88,7 @@ class TestFullMainFlow:
         assert me.status_code == 200
 
         lk = await client.post("/api/livekit/token", headers=headers)
-        assert lk.json()["room_name"] == f"vi-room-{vi_user_id}"
+        assert lk.json()["room_name"].startswith(f"vi-room-{vi_user_id}-")
 
         sessions = await client.get("/api/users/sessions", headers=headers)
         assert len(sessions.json()["sessions"]) == 0

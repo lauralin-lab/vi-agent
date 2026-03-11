@@ -41,7 +41,7 @@ class TestFullFlowFakeCase:
         # Step 4: LiveKit token
         lk = await client.post("/api/livekit/token", headers=headers)
         assert lk.status_code == 200
-        assert lk.json()["room_name"] == f"vi-room-{vi_user_id}"
+        assert lk.json()["room_name"].startswith(f"vi-room-{vi_user_id}-")
         assert len(lk.json()["token"].split(".")) == 3
 
         # Step 5: Empty sessions
@@ -64,7 +64,7 @@ class TestFullFlowFakeCase:
         assert me_b.json()["user_id"] != user_id
 
         lk_b = await client.post("/api/livekit/token", headers=headers_b)
-        assert lk_b.json()["room_name"] != f"vi-room-{vi_user_id}"
+        assert not lk_b.json()["room_name"].startswith(f"vi-room-{vi_user_id}-")
 
         # Step 8: Health
         assert (await client.get("/health")).json()["status"] == "ok"
