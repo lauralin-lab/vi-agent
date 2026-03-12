@@ -1,44 +1,55 @@
 import { getRedis, getSubscriber } from '../redis-client.js';
 import { channels, type MediaEvent, type ExecRequest } from './types.js';
-import { config } from '../config.js';
+import { trackUser } from './active-users.js';
 import { randomUUID } from 'node:crypto';
 
 /**
- * Subscribe to vi:media:{uid} for auto-analysis of uploaded media.
+ * Subscribe to vi:media:* for auto-analysis of uploaded media.
  * When a user uploads a photo/video, API Server publishes to this channel.
  *
  * V4 flow: media events are debounced (3s window) so multiple photos
  * taken in quick succession are batched into a single exec task.
  * NanoClaw dispatches to itself via vi:exec for full analysis.
+ *
+ * Uses PSUBSCRIBE so it works with any userId (Firebase dynamic users).
  */
 
-/** Pending media URLs collected during the debounce window */
-let pendingMedia: MediaEvent[] = [];
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+/** Pending media per user, keyed by userId */
+const pendingMediaMap = new Map<string, { media: MediaEvent[]; timer: ReturnType<typeof setTimeout> | null }>();
 const DEBOUNCE_MS = 3000;
 
 export async function startMediaConsumer(): Promise<void> {
   const sub = getSubscriber();
-  const channel = channels.media(config.userId);
 
-  sub.on('message', async (ch: string, message: string) => {
-    if (ch !== channel) return;
+  sub.on('pmessage', async (_pattern: string, ch: string, message: string) => {
+    // Guard: only process vi:media:* channels (shared subscriber fires for all patterns)
+    if (!ch.startsWith('vi:media:')) return;
+
+    const userId = ch.slice('vi:media:'.length);
+    trackUser(userId);
 
     try {
       const event: MediaEvent = JSON.parse(message);
       console.log(
-        `[redis][nanoclaw] Media received: ${event.mediaType}: ${event.mediaUrl?.substring(0, 80)}`,
+        `[redis][nanoclaw] Media received: user=${userId}, ${event.mediaType}: ${event.mediaUrl?.substring(0, 80)}`,
       );
 
-      pendingMedia.push(event);
+      // Get or create pending state for this user
+      let pending = pendingMediaMap.get(userId);
+      if (!pending) {
+        pending = { media: [], timer: null };
+        pendingMediaMap.set(userId, pending);
+      }
+
+      pending.media.push(event);
 
       // Reset debounce timer — wait for more photos
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const batch = [...pendingMedia];
-        pendingMedia = [];
-        debounceTimer = null;
-        dispatchMediaBatch(batch).catch((err) => {
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.timer = setTimeout(() => {
+        const batch = [...pending!.media];
+        pending!.media = [];
+        pending!.timer = null;
+        dispatchMediaBatch(batch, userId).catch((err) => {
           console.error('[redis][nanoclaw] media batch dispatch failed:', err);
         });
       }, DEBOUNCE_MS);
@@ -47,16 +58,15 @@ export async function startMediaConsumer(): Promise<void> {
     }
   });
 
-  await sub.subscribe(channel);
-  console.log(`[redis][nanoclaw] subscribed to ${channel}`);
+  const pattern = channels.media('*');
+  await sub.psubscribe(pattern);
+  console.log(`[redis][nanoclaw] subscribed to ${pattern} (pattern subscribe)`);
 }
 
 /**
- * Dispatch a batched media analysis as a full exec task via vi:exec.
- * This goes through the normal exec-handler queue, so NanoClaw uses
- * its full skill executor (Claude with tools) to analyze and suggest actions.
+ * Dispatch a batched media analysis as a full exec task via vi:exec:{userId}.
  */
-async function dispatchMediaBatch(batch: MediaEvent[]): Promise<void> {
+async function dispatchMediaBatch(batch: MediaEvent[], userId: string): Promise<void> {
   if (batch.length === 0) return;
 
   const imageUrls = batch
@@ -107,15 +117,16 @@ async function dispatchMediaBatch(batch: MediaEvent[]): Promise<void> {
     },
     priority: 'fast',
     mediaUrls: allMediaUrls,
+    userId,
     ts: Date.now(),
   };
 
   try {
     const redis = getRedis();
-    const execChannel = channels.exec(config.userId);
+    const execChannel = channels.exec(userId);
     await redis.publish(execChannel, JSON.stringify(execRequest));
     console.log(
-      `[redis][nanoclaw] Media auto-dispatch: ${mediaCount} file(s) → vi:exec as ${taskId}`,
+      `[redis][nanoclaw] Media auto-dispatch: ${mediaCount} file(s) -> vi:exec:${userId} as ${taskId}`,
     );
   } catch (err) {
     console.error('[redis][nanoclaw] Failed to dispatch media batch:', err);

@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Loader2, AlertCircle, Mic, MicOff, Eye, ChevronDown, ChevronRight } from 'lucide-react';
+import { Camera, Loader2, AlertCircle, Mic, MicOff, Eye, LayoutGrid, CalendarDays, Search } from 'lucide-react';
 import useSound from '../hooks/useSound';
-import { useImagePreloader } from '../hooks/useImagePreloader';
+import { useImagePreloader, getCachedUrl } from '../hooks/useImagePreloader';
 import { api } from '../services/api';
 import { getShortTitle } from '../utils/text';
 import PromotionBlock from './PromotionBlock';
 import { IOS_SPRING } from '../constants';
 
 
-const POLL_INTERVAL = 10000;
-const POLL_INTERVAL_SSE_ACTIVE = 30000;
 
 function extractPhotos(session) {
     const photos = [];
@@ -136,7 +134,7 @@ function ActiveSessionCard({ session, onClick, onDismiss, formatDate }) {
 
 // ─── Main component ─────────────────────────────────────────────────────────
 export default function HistoryView({
-    onBack, onOpenCamera, onSelectSession, onProfileTap, onClearSessionCache,
+    onBack, onOpenCamera, onSelectSession, onProfileTap, onClearSessionCache, onOpenAllTasks,
     isAuthenticated, user, isHome, livekit, onNotification,
     sseEvents = [], sseConnected = false,
 }) {
@@ -145,7 +143,6 @@ export default function HistoryView({
     const [loading, setLoading] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null);
 
-    const pollRef = useRef(null);
     const mountedRef = useRef(true);
     const longPressTimerRef = useRef(null);
     const longPressStartRef = useRef(null);
@@ -210,8 +207,8 @@ export default function HistoryView({
                 const normalized = (sessions || []).map(s => ({
                     id: s.id,
                     prompt: s.prompt || s.title || s.intention || '',
-                    status: s.status === 'completed' ? 'complete'
-                        : s.status === 'dispatched' ? 'pending'
+                    status: s.status === 'completed' || s.status === 'ended' ? 'complete'
+                        : s.status === 'dispatched' || s.status === 'created' ? 'pending'
                             : s.status === 'failed' ? 'error'
                                 : s.status || 'pending',
                     result: s.result || null,
@@ -237,17 +234,14 @@ export default function HistoryView({
         }
     }, [isAuthenticated]);
 
-    // Initial fetch + adaptive polling
+    // Initial fetch only (no polling — SSE handles live updates)
     useEffect(() => {
         mountedRef.current = true;
         fetchSessions(true);
-        const interval = sseConnected ? POLL_INTERVAL_SSE_ACTIVE : POLL_INTERVAL;
-        pollRef.current = setInterval(() => fetchSessions(false), interval);
         return () => {
             mountedRef.current = false;
-            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         };
-    }, [fetchSessions, sseConnected]);
+    }, [fetchSessions]);
 
     // Re-fetch when LiveKit sessionId becomes available
     const prevSessionIdRef = useRef(null);
@@ -297,7 +291,46 @@ export default function HistoryView({
         if (!latest || latest._ts <= lastSseEventRef.current) return;
         lastSseEventRef.current = latest._ts;
 
-        if (latest.type === 'session_update') {
+        if (latest.type === 'exec_start') {
+            // New exec started — add session entry with photos for immediate display
+            const { taskId, prompt, mediaUrls } = latest;
+            if (!taskId) return;
+            setLiveSessions(prev => {
+                if (prev.some(t => t.id === taskId)) return prev;
+                const context = {};
+                if (mediaUrls && mediaUrls.length > 0) context.photos = mediaUrls;
+                return [{ id: taskId, prompt: prompt || '', status: 'pending', created_at: new Date().toISOString(), context }, ...prev];
+            });
+            // Also fetch from DB to get the persisted session with proper ID
+            fetchSessions(false);
+        } else if (latest.type === 'exec_result') {
+            // Execution completed — update matching session to complete
+            const { taskId, summary } = latest;
+            setLiveSessions(prev => {
+                const updated = prev.map(t => {
+                    if (t.id === taskId) return { ...t, status: 'complete', result: { summary } };
+                    return t;
+                });
+                return updated;
+            });
+            onNotification?.({ type: 'session_complete', sessionId: taskId });
+            // Re-fetch to get DB-persisted data
+            fetchSessions(false);
+        } else if (latest.type === 'exec_error') {
+            // Execution failed — update matching session to error
+            const { taskId } = latest;
+            setLiveSessions(prev => prev.map(t =>
+                t.id === taskId ? { ...t, status: 'error' } : t
+            ));
+            onNotification?.({ type: 'session_failed', sessionId: taskId });
+            fetchSessions(false);
+        } else if (latest.type === 'exec_progress') {
+            // Update progress on matching session
+            const { taskId, message } = latest;
+            setLiveSessions(prev => prev.map(t =>
+                t.id === taskId ? { ...t, status: 'progress', context: { ...t.context, progress_message: message } } : t
+            ));
+        } else if (latest.type === 'session_update') {
             const { session_id, status, progress_message, result_summary } = latest;
             if (!session_id) return;
             setLiveSessions(prev => {
@@ -357,44 +390,112 @@ export default function HistoryView({
         });
     };
 
-    // ── Timeline grouping ──
-    const GROUP_ORDER = ['Today', 'Yesterday', 'This Week', 'Earlier'];
-    const getTimelineGroup = (dateStr) => {
-        if (!dateStr) return 'Earlier';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return 'Earlier';
-
-        const now = new Date();
-        const startOfToday = new Date(now);
-        startOfToday.setHours(0, 0, 0, 0);
-        const startOfYesterday = new Date(startOfToday);
-        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-        const startOfWeek = new Date(startOfToday);
-        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-
-        if (d >= startOfToday) return 'Today';
-        if (d >= startOfYesterday) return 'Yesterday';
-        if (d >= startOfWeek) return 'This Week';
-        return 'Earlier';
-    };
-
-    const [expandedGroups, setExpandedGroups] = useState({ 'Today': true, 'Yesterday': true });
-    const toggleGroup = (groupName) => {
-        setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
-    };
-
-    const groupedSessions = useMemo(() => {
-        const groups = {};
-        liveSessions.forEach(session => {
-            const group = getTimelineGroup(session.created_at);
-            if (!groups[group]) groups[group] = [];
-            groups[group].push(session);
-        });
-        return groups;
-    }, [liveSessions]);
-
+    // ── Derived session lists (must be before any useEffect that references them) ──
     const activeSessions = liveSessions.filter(t => t.status === 'pending' || t.status === 'progress');
     const completedSessions = liveSessions.filter(t => t.status === 'complete' || t.status === 'error');
+
+    // ── View mode state ──
+    const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'gallery'
+    const calendarScrollRef = useRef(null);
+    const myTasksHeaderRef = useRef(null);
+
+    // ── Active sessions carousel ──
+    const carouselRef = useRef(null);
+    const [activeCarouselIndex, setActiveCarouselIndex] = useState(0);
+
+    // Track carousel scroll position for pagination dots
+    const handleCarouselScroll = useCallback(() => {
+        const el = carouselRef.current;
+        if (!el || !el.children.length) return;
+        const cardWidth = el.children[0]?.offsetWidth || 1;
+        const idx = Math.round(el.scrollLeft / cardWidth);
+        setActiveCarouselIndex(idx);
+    }, []);
+
+    // Snap carousel to valid position when active sessions count changes
+    const prevActiveCountRef = useRef(0);
+    useEffect(() => {
+        const count = activeSessions.length;
+        if (prevActiveCountRef.current !== count && carouselRef.current) {
+            prevActiveCountRef.current = count;
+            // Clamp index and snap smoothly
+            const newIdx = Math.min(activeCarouselIndex, Math.max(0, count - 1));
+            setActiveCarouselIndex(newIdx);
+            requestAnimationFrame(() => {
+                if (carouselRef.current && carouselRef.current.children[0]) {
+                    const cardWidth = carouselRef.current.children[0].offsetWidth;
+                    carouselRef.current.scrollTo({ left: newIdx * cardWidth, behavior: 'smooth' });
+                }
+            });
+        }
+    }, [activeSessions.length, activeCarouselIndex]);
+
+    // ── Calendar helpers ──
+    const getCalendarDateKey = (dateStr) => {
+        if (!dateStr) return 'unknown';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'unknown';
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const formatTimestamp = (dateStr) => {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '';
+        return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+
+    // Map: dateKey -> sessions[] for calendar cell lookup
+    const sessionsByDateKey = useMemo(() => {
+        const map = {};
+        completedSessions.forEach(session => {
+            const key = getCalendarDateKey(session.created_at);
+            if (!map[key]) map[key] = [];
+            map[key].push(session);
+        });
+        return map;
+    }, [completedSessions]);
+
+    // Build calendar month grids (oldest first so newest is at scroll bottom)
+    const allCalendarMonths = useMemo(() => {
+        const monthSet = new Set();
+        const now = new Date();
+        monthSet.add(`${now.getFullYear()}-${now.getMonth()}`);
+        completedSessions.forEach(session => {
+            const d = new Date(session.created_at);
+            if (!isNaN(d.getTime())) {
+                monthSet.add(`${d.getFullYear()}-${d.getMonth()}`);
+            }
+        });
+        const sorted = Array.from(monthSet).sort((a, b) => {
+            const [ya, ma] = a.split('-').map(Number);
+            const [yb, mb] = b.split('-').map(Number);
+            return ya !== yb ? ya - yb : ma - mb;
+        });
+        return sorted.map(key => {
+            const [year, month] = key.split('-').map(Number);
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const rows = [];
+            let week = new Array(firstDay).fill(null);
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                week.push({ day: d, dateKey });
+                if (week.length === 7) { rows.push(week); week = []; }
+            }
+            if (week.length > 0) {
+                while (week.length < 7) week.push(null);
+                rows.push(week);
+            }
+            const label = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            return { year, month, label, rows };
+        });
+    }, [completedSessions]);
+
+    const todayKey = useMemo(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }, []);
 
     // ── Render ──────────────────────────────────────────────────────────────
     return (
@@ -408,19 +509,61 @@ export default function HistoryView({
             className="w-full h-full relative z-40 overflow-hidden"
             style={{ background: '#F2F2F7' }}
         >
-            {/* ═══ Scrollable content ═══ */}
-            <div className="w-full h-full overflow-y-auto pb-32" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {/* ═══ Fixed layout — flex column ═══ */}
+            <div className="w-full h-full flex flex-col">
 
-                {/* ═══ Promotion Block ═══ */}
-                <PromotionBlock
-                    onOpenCamera={onOpenCamera}
-                    onOpenProfile={() => { play('nav.forward'); onProfileTap?.(); }}
-                    user={user}
-                    isAuthenticated={isAuthenticated}
-                />
+                {/* ═══ Promotion Block — fixed at top ═══ */}
+                <div style={{ flexShrink: 0 }}>
+                    <PromotionBlock
+                        onOpenCamera={onOpenCamera}
+                        onOpenProfile={() => { play('nav.forward'); onProfileTap?.(); }}
+                        user={user}
+                        isAuthenticated={isAuthenticated}
+                    />
+                </div>
 
-                {/* ═══ Main content ═══ */}
-                <div className="px-3 space-y-4">
+                {/* ═══ MY TASKS header — fixed below promo ═══ */}
+                {!loading && completedSessions.length > 0 && (
+                    <div ref={myTasksHeaderRef} className="flex items-center justify-between px-4 pt-2 pb-2" style={{ flexShrink: 0 }}>
+                        <span className="font-medium" style={{ fontSize: 14, color: '#000', letterSpacing: '-0.01em' }}>
+                            MY TASKS
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => {
+                                    play('nav.forward');
+                                    setViewMode(v => v === 'calendar' ? 'gallery' : 'calendar');
+                                    // Reset scroll to top on view switch
+                                    requestAnimationFrame(() => {
+                                        if (calendarScrollRef.current) {
+                                            calendarScrollRef.current.scrollTop = 0;
+                                        }
+                                    });
+                                }}
+                                className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform"
+                                title={viewMode === 'calendar' ? 'Gallery view' : 'Calendar view'}
+                            >
+                                {viewMode === 'calendar'
+                                    ? <LayoutGrid size={16} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.4)' }} />
+                                    : <CalendarDays size={16} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.4)' }} />
+                                }
+                            </button>
+                            <button
+                                onClick={() => { play('nav.forward'); onOpenAllTasks?.(); }}
+                                className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform"
+                            >
+                                <Search size={16} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.4)' }} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* ═══ Scrollable content area ═══ */}
+                <div
+                    ref={calendarScrollRef}
+                    className="px-3"
+                    style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 120 }}
+                >
 
                     {/* Loading */}
                     {loading && (
@@ -431,172 +574,231 @@ export default function HistoryView({
 
                     {!loading && liveSessions.length > 0 && (
                         <>
-                            {/* Active sessions — still show prominently */}
+                            {/* ═══ Active sessions — horizontal carousel ═══ */}
                             <AnimatePresence>
                                 {activeSessions.length > 0 && (
-                                    <div className="space-y-3 mb-4">
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ duration: 0.3 }}
+                                        className="mb-5"
+                                    >
+                                        {/* Label */}
                                         <span
-                                            className="font-semibold tracking-wide uppercase px-1 block"
+                                            className="font-semibold tracking-wide uppercase px-1 block mb-3"
                                             style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', letterSpacing: '0.06em' }}
                                         >
                                             Active · {activeSessions.length}
                                         </span>
-                                        {activeSessions.map(session => (
+
+                                        {/* Carousel container */}
+                                        <div
+                                            ref={carouselRef}
+                                            onScroll={handleCarouselScroll}
+                                            className="flex gap-3 no-scrollbar"
+                                            style={{
+                                                overflowX: 'auto',
+                                                scrollSnapType: 'x mandatory',
+                                                WebkitOverflowScrolling: 'touch',
+                                            }}
+                                        >
+                                            {activeSessions.map(session => (
+                                                <div
+                                                    key={session.id}
+                                                    style={{
+                                                        flex: '0 0 100%',
+                                                        scrollSnapAlign: 'start',
+                                                        minWidth: 0,
+                                                    }}
+                                                    onPointerDown={e => handlePointerDown(session, e)}
+                                                    onPointerMove={handlePointerMove}
+                                                    onPointerUp={handlePointerUp}
+                                                    onPointerLeave={handlePointerUp}
+                                                >
+                                                    <ActiveSessionCard
+                                                        session={session}
+                                                        onClick={() => handleSessionClick(session)}
+                                                        onDismiss={s => {
+                                                            play('media.delete');
+                                                            setLiveSessions(prev => prev.filter(item => item.id !== s.id));
+                                                            onClearSessionCache?.(s.id);
+                                                            api.deleteSession(s.id).catch(err => console.error('Delete failed:', err));
+                                                        }}
+                                                        formatDate={formatDate}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Pagination dots */}
+                                        {activeSessions.length > 1 && (
+                                            <div className="flex items-center justify-center gap-1.5 mt-3">
+                                                {activeSessions.map((s, i) => (
+                                                    <div
+                                                        key={s.id}
+                                                        style={{
+                                                            width: i === activeCarouselIndex ? 16 : 6,
+                                                            height: 6,
+                                                            borderRadius: 3,
+                                                            background: i === activeCarouselIndex ? '#000' : 'rgba(0,0,0,0.12)',
+                                                            transition: 'all 0.25s ease',
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* ═══ Calendar / Gallery content — no AnimatePresence, no jump ═══ */}
+                            {completedSessions.length > 0 && viewMode === 'calendar' && (
+                                <div
+                                    style={{
+                                        borderRadius: 20,
+                                        background: '#F7F7F9',
+                                        border: '1px solid rgba(0,0,0,0.04)',
+                                        padding: '16px 12px 20px',
+                                    }}
+                                >
+                                    {/* Day labels */}
+                                    <div className="grid grid-cols-7 pb-3">
+                                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                                            <div key={d} className="flex items-center justify-center">
+                                                <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)', fontWeight: 500 }}>{d}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {/* Month grids */}
+                                    {allCalendarMonths.map((monthData, mi) => (
+                                        <div key={`${monthData.year}-${monthData.month}`} className={mi > 0 ? 'mt-8' : ''}>
+                                            {allCalendarMonths.length > 1 && (
+                                                <div className="text-center mb-2">
+                                                    <span className="font-medium" style={{ fontSize: 12, color: 'rgba(0,0,0,0.35)' }}>
+                                                        {monthData.label}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {monthData.rows.map((week, wi) => (
+                                                <div key={wi} className="grid grid-cols-7 gap-[12px] mb-[12px]">
+                                                    {week.map((cell, ci) => {
+                                                        if (!cell) return <div key={`empty-${ci}`} />;
+                                                        const sessions = sessionsByDateKey[cell.dateKey] || [];
+                                                        const hasHistory = sessions.length > 0;
+                                                        // Find hero image: first photo from newest session that has photos
+                                                        let heroImg = null;
+                                                        if (hasHistory) {
+                                                            for (const s of sessions) {
+                                                                const p = extractPhotos(s);
+                                                                if (p.length > 0) { heroImg = p[0]; break; }
+                                                            }
+                                                        }
+                                                        const isToday = cell.dateKey === todayKey;
+                                                        const isPast = cell.dateKey < todayKey;
+                                                        return (
+                                                            <motion.button
+                                                                key={cell.dateKey}
+                                                                whileTap={{ scale: 0.9 }}
+                                                                onClick={() => hasHistory ? (() => { play('nav.forward'); onOpenAllTasks?.(cell.dateKey); })() : null}
+                                                                className="relative overflow-hidden flex items-center justify-center"
+                                                                style={{
+                                                                    aspectRatio: '1',
+                                                                    borderRadius: 10,
+                                                                    background: isToday ? '#000' : (isPast && !hasHistory) ? '#EEEEF0' : 'transparent',
+                                                                    cursor: hasHistory ? 'pointer' : 'default',
+                                                                }}
+                                                            >
+                                                                {heroImg && (
+                                                                    <img src={getCachedUrl(heroImg) || heroImg} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ borderRadius: 10 }} />
+                                                                )}
+                                                                {heroImg && (
+                                                                    <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 10 }} />
+                                                                )}
+                                                                {hasHistory && !heroImg && (
+                                                                    <div className="absolute inset-0" style={{ background: '#E5E5EA', borderRadius: 10 }} />
+                                                                )}
+                                                                <span
+                                                                    className="relative z-10 font-semibold"
+                                                                    style={{
+                                                                        fontSize: 13,
+                                                                        color: isToday || heroImg ? '#fff'
+                                                                            : isPast ? 'rgba(0,0,0,0.35)'
+                                                                                : 'rgba(0,0,0,0.8)',
+                                                                    }}
+                                                                >
+                                                                    {cell.day}
+                                                                </span>
+                                                            </motion.button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {completedSessions.length > 0 && viewMode === 'gallery' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                    {completedSessions.map((session) => {
+                                        const photos = extractPhotos(session);
+                                        const heroImg = photos[0] || null;
+                                        return (
                                             <div
                                                 key={session.id}
+                                                onClick={() => handleSessionClick(session)}
                                                 onPointerDown={e => handlePointerDown(session, e)}
                                                 onPointerMove={handlePointerMove}
                                                 onPointerUp={handlePointerUp}
                                                 onPointerLeave={handlePointerUp}
-                                            >
-                                                <ActiveSessionCard
-                                                    session={session}
-                                                    onClick={() => handleSessionClick(session)}
-                                                    onDismiss={s => {
-                                                        play('media.delete');
-                                                        setLiveSessions(prev => prev.filter(item => item.id !== s.id));
-                                                        onClearSessionCache?.(s.id);
-                                                        api.deleteSession(s.id).catch(err => console.error('Delete failed:', err));
-                                                    }}
-                                                    formatDate={formatDate}
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </AnimatePresence>
-
-                            {/* Date-grouped completed sessions */}
-                            {completedSessions.length > 0 && (
-                                <div className="space-y-3">
-                                    <span
-                                        className="font-semibold tracking-wide uppercase px-1 block"
-                                        style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', letterSpacing: '0.06em' }}
-                                    >
-                                        History · {completedSessions.length}
-                                    </span>
-
-                                    {GROUP_ORDER.map(groupName => {
-                                        const items = groupedSessions[groupName];
-                                        if (!items || items.length === 0) return null;
-                                        // Only show completed sessions in timeline groups
-                                        const completedItems = items.filter(s => s.status === 'complete' || s.status === 'error');
-                                        if (completedItems.length === 0) return null;
-
-                                        const isExpanded = !!expandedGroups[groupName];
-
-                                        return (
-                                            <motion.div
-                                                key={groupName}
-                                                initial={{ opacity: 0, y: 12 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-                                                className="overflow-hidden"
+                                                className="cursor-pointer active:scale-[0.97] transition-transform"
                                                 style={{
-                                                    borderRadius: 20,
+                                                    borderRadius: 16,
                                                     background: '#fff',
-                                                    border: '1px solid rgba(0,0,0,0.04)',
+                                                    overflow: 'hidden',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04)',
                                                 }}
                                             >
-                                                {/* Group header */}
-                                                <button
-                                                    onClick={() => toggleGroup(groupName)}
-                                                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/[0.01] active:bg-black/[0.02] transition-colors"
-                                                >
-                                                    <div className="flex items-center gap-2.5">
-                                                        <span className="font-semibold tracking-wide" style={{ fontSize: 13, color: 'rgba(0,0,0,0.6)' }}>
-                                                            {groupName}
-                                                        </span>
-                                                        <span
-                                                            className="font-medium px-1.5 py-0.5"
-                                                            style={{ fontSize: 10, color: 'rgba(0,0,0,0.2)', background: 'rgba(0,0,0,0.03)', borderRadius: 8 }}
-                                                        >
-                                                            {completedItems.length}
-                                                        </span>
-                                                    </div>
-                                                    <motion.div
-                                                        animate={{ rotate: isExpanded ? 0 : -90 }}
-                                                        transition={{ duration: 0.2 }}
+                                                {heroImg && (
+                                                    <img
+                                                        src={getCachedUrl(heroImg) || heroImg}
+                                                        alt=""
+                                                        style={{
+                                                            width: '100%',
+                                                            display: 'block',
+                                                            objectFit: 'cover',
+                                                            maxHeight: 180,
+                                                            minHeight: 90,
+                                                        }}
+                                                    />
+                                                )}
+                                                <div style={{ padding: '10px 12px 12px' }}>
+                                                    <p
+                                                        className="line-clamp-2"
+                                                        style={{
+                                                            fontSize: 13,
+                                                            fontWeight: 500,
+                                                            color: '#000',
+                                                            lineHeight: 1.35,
+                                                            letterSpacing: '-0.01em',
+                                                            margin: 0,
+                                                        }}
                                                     >
-                                                        <ChevronDown size={14} strokeWidth={2} style={{ color: 'rgba(0,0,0,0.2)' }} />
-                                                    </motion.div>
-                                                </button>
-
-                                                {/* Group items */}
-                                                <AnimatePresence initial={false}>
-                                                    {isExpanded && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="px-1 pb-1.5">
-                                                                {completedItems.map((session, index) => {
-                                                                    const photos = extractPhotos(session);
-                                                                    const heroImg = photos[0] || null;
-                                                                    return (
-                                                                        <motion.div
-                                                                            key={session.id}
-                                                                            initial={{ opacity: 0, x: -8 }}
-                                                                            animate={{ opacity: 1, x: 0 }}
-                                                                            transition={{
-                                                                                delay: index * 0.04,
-                                                                                duration: 0.3,
-                                                                                ease: [0.23, 1, 0.32, 1]
-                                                                            }}
-                                                                            onClick={() => handleSessionClick(session)}
-                                                                            onPointerDown={e => handlePointerDown(session, e)}
-                                                                            onPointerMove={handlePointerMove}
-                                                                            onPointerUp={handlePointerUp}
-                                                                            onPointerLeave={handlePointerUp}
-                                                                            className="flex items-center gap-3.5 px-3 py-2.5 mx-1 cursor-pointer active:scale-[0.98] transition-all duration-200 group"
-                                                                            style={{ borderRadius: 16 }}
-                                                                        >
-                                                                            {/* Thumbnail */}
-                                                                            <div
-                                                                                className="w-12 h-12 overflow-hidden flex-shrink-0 relative"
-                                                                                style={{ borderRadius: 14, background: 'rgba(0,0,0,0.03)' }}
-                                                                            >
-                                                                                {heroImg ? (
-                                                                                    <img
-                                                                                        src={heroImg}
-                                                                                        alt={getShortTitle(session.prompt)}
-                                                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                                                                    />
-                                                                                ) : (
-                                                                                    <div className="w-full h-full flex items-center justify-center">
-                                                                                        <Eye size={18} strokeWidth={1.2} style={{ color: 'rgba(0,0,0,0.12)' }} />
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-
-                                                                            {/* Text content */}
-                                                                            <div className="flex-1 min-w-0">
-                                                                                <p className="font-medium truncate leading-tight" style={{ fontSize: 13, color: 'rgba(0,0,0,0.75)' }}>
-                                                                                    {getShortTitle(session.prompt)}
-                                                                                </p>
-                                                                                <div className="flex items-center gap-2 mt-1">
-                                                                                    {session.status === 'error' && (
-                                                                                        <AlertCircle size={9} style={{ color: 'rgba(255,59,48,0.5)' }} />
-                                                                                    )}
-                                                                                    <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.25)' }}>
-                                                                                        {formatDate(session.created_at)}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            {/* Arrow */}
-                                                                            <ChevronRight size={14} strokeWidth={1.8} className="flex-shrink-0 group-hover:opacity-50 transition-opacity" style={{ color: 'rgba(0,0,0,0.12)' }} />
-                                                                        </motion.div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
-                                            </motion.div>
+                                                        {getShortTitle(session.prompt)}
+                                                    </p>
+                                                    <span
+                                                        style={{
+                                                            fontSize: 10,
+                                                            color: 'rgba(0,0,0,0.3)',
+                                                            marginTop: 4,
+                                                            display: 'block',
+                                                        }}
+                                                    >
+                                                        {formatTimestamp(session.created_at)}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         );
                                     })}
                                 </div>
@@ -612,7 +814,6 @@ export default function HistoryView({
                             transition={{ duration: 0.6, delay: 0.2 }}
                             className="flex flex-col items-center justify-center px-6 pt-10 pb-12"
                         >
-                            {/* Simple icon */}
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.5 }}
                                 animate={{ opacity: 1, scale: 1 }}
@@ -623,7 +824,6 @@ export default function HistoryView({
                                 <Eye size={32} strokeWidth={1.2} style={{ color: 'rgba(0,0,0,0.18)' }} />
                             </motion.div>
 
-                            {/* Text + CTA */}
                             {!api.getViUserId() ? (
                                 <>
                                     <motion.p
@@ -769,7 +969,7 @@ export default function HistoryView({
                                         return photos[0] ? (
                                             <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0"
                                                 style={{ border: '1px solid rgba(0,0,0,0.06)' }}>
-                                                <img src={photos[0]} alt="" className="w-full h-full object-cover" />
+                                                <img src={getCachedUrl(photos[0]) || photos[0]} alt="" className="w-full h-full object-cover" />
                                             </div>
                                         ) : null;
                                     })()}

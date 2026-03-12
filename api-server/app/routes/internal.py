@@ -25,13 +25,16 @@ from ..services.session_center import session_center
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_INTERNAL_TOKEN = "vi-internal-dev-token"
 INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")
 if not INTERNAL_API_TOKEN:
-    INTERNAL_API_TOKEN = "vi-internal-dev-token"
+    INTERNAL_API_TOKEN = _DEFAULT_INTERNAL_TOKEN
     logger.critical(
         "INTERNAL_API_TOKEN not set — falling back to insecure default. "
         "Set INTERNAL_API_TOKEN in environment for production!"
     )
+if os.getenv("ENVIRONMENT") == "production" and INTERNAL_API_TOKEN == _DEFAULT_INTERNAL_TOKEN:
+    raise RuntimeError("INTERNAL_API_TOKEN must be set in production")
 
 
 async def verify_internal_token(
@@ -91,13 +94,6 @@ class UpdateSessionRequest(BaseModel):
     memory_updates: list | None = None
 
 
-class CreateMemoryRequest(BaseModel):
-    vi_user_id: str
-    content: str
-    type: str = "long_term"
-    source: str = "agent"
-
-
 class MemoryUpdateItem(BaseModel):
     filename: str
     content: str
@@ -146,30 +142,6 @@ async def end_session(
     await db.commit()
     return {"ok": True}
 
-
-@router.post("/memories")
-async def create_memory(
-    req: CreateMemoryRequest,
-    db: AsyncSession = Depends(get_db),
-    redis=Depends(get_redis),
-):
-    """Persist a memory from the agent.
-
-    Called fire-and-forget by the agent when it writes a memory update.
-    Appends into the user's agent-memory.md file.
-    Uses type and source from request for proper layer inference.
-    """
-    filename = "agent-memory.md"
-    try:
-        await memory_center.append_memory(
-            db, req.vi_user_id, filename, req.content,
-            category=req.type,  # V3: use type field for category inference
-            source=req.source,  # V3: use source field
-            redis=redis,
-        )
-    except ValueError as e:
-        raise HTTPException(404, str(e))
-    return {"ok": True, "filename": filename}
 
 
 class UpsertMemoryRequest(BaseModel):

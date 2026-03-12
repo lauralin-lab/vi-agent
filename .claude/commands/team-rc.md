@@ -1,11 +1,14 @@
 ---
 description: "RC lifecycle — prepare staging or promote to production. Try: /team-rc help"
-version: "3.0.0"
+version: "3.8.3"
 ---
 
 # /team-rc — Release Candidate Lifecycle
 
 > Prepare an RC for staging verification, or promote a verified RC to production.
+
+**Visual Encoding** (apply to ALL output — see `docs/visual-encoding-standard.md`):
+`**bold**` → headers/labels (white) · `` `backtick` `` → commands/paths/counts (purple-blue) · `*italic*` → branches (dim) · `**#NNN**` → issues (light-blue clickable, 3+ digits) · `────` dividers · ⛔ NO code blocks around output
 
 **User input**: $ARGUMENTS
 
@@ -14,7 +17,9 @@ version: "3.0.0"
 | Input | Action |
 |-------|--------|
 | (empty) | Prepare: cut rc branch from develop → staging |
+| `cancel` | Cancel: delete current RC branch (fix on base, then re-cut) |
 | `promote` | Promote: squash merge rc → main → tag → GitHub Release |
+| `promote help` | Show promote operation usage |
 | `help` or `-h` | Show usage guide |
 
 ---
@@ -25,43 +30,52 @@ Parse `$ARGUMENTS`:
 
 - If `help` or `-h` → output the following and **STOP**:
 
-```
-/team-rc — Release Candidate Lifecycle (Teamwork v3.0.0)
-Author: liyasong + casey | 2026-03-05
+**`/team-rc` — Release Candidate Lifecycle**
+*Author: liyasong + casey | 2026-03-05*
 
-USAGE:
-  /team-rc              Prepare: cut rc branch, deploy staging
-  /team-rc promote      Promote: squash merge rc → main, tag, release
-  /team-rc help         Show this guide
+**USAGE**
+  `/team-rc`              Prepare: cut rc branch, deploy staging
+  `/team-rc cancel`       Cancel: delete current rc, fix on base, re-cut
+  `/team-rc promote`      Promote: squash merge rc → *main*, tag, release
+  `/team-rc help`         Show this guide
 
-PREPARE (/team-rc):
+**PREPARE** (`/team-rc`)
   1. Check no active rc branch on remote
   2. Derive next version from remote tags
-  3. Verify develop CI green
-  4. Cut rc/{version} from develop, push
+  3. Verify *develop* CI green
+  4. Cut *rc/{version}* from *develop*, push
   5. Trigger staging deploy (if configured)
 
-PROMOTE (/team-rc promote):
+**CANCEL** (`/team-rc cancel`)
+  Delete current RC branch (local + remote).
+  Use when staging found bugs — fix on *develop*, then `/team-rc` to re-cut.
+
+**PROMOTE** (`/team-rc promote`)
   1. Find active rc branch on remote
   2. Check staging status
-  3. Create PR: rc → main (squash merge via GitHub)
-  4. Tag squash commit on main
+  3. Create PR: rc → *main* (squash merge via GitHub)
+  4. Tag squash commit on *main*
   5. Create GitHub Release
   6. Close milestone if complete
   7. Delete rc branch
 
-HOTFIX (during rc — no special command):
-  Branch from rc/V0.x.y → fix → PR to rc branch (squash).
-  Cherry-pick fix to pre-launch immediately.
+**BUGFIX DURING RC** (upstream-first model)
+  RC is a frozen snapshot. Never commit directly to RC.
+  Found a bug on staging? →
+  1. Fix on *develop* (normal mission flow)
+  2. `/team-rc cancel` — delete stale RC
+  3. `/team-rc` — re-cut from latest *develop*
+  4. Re-deploy staging
 
-CONFIG:
-  versions.current: "V0.1"              Milestone prefix (patch auto-derived from tags)
-  conventions.base_branch: "pre-launch"  Development trunk
-  conventions.production_branch: "main"  Production branch
-  deploy.staging_workflow: "deploy.yml"  (optional) Staging deploy workflow name
-```
+**CONFIG**
+  `versions.current`: `"V0.1"`              Milestone prefix (patch auto-derived from tags)
+  `conventions.base_branch`: `"develop"`     Development trunk
+  `conventions.production_branch`: `"main"`  Production branch
+  `deploy.staging_workflow`: `"deploy.yml"`  *(optional)* Staging deploy workflow name
 
+- If `promote help` → jump to **Operation Promote Help**
 - If `promote` → jump to **Promote Flow**
+- If `cancel` → jump to **Cancel Flow**
 - Otherwise → **Prepare Flow**
 
 ---
@@ -70,18 +84,30 @@ CONFIG:
 
 ### Step 1: Pre-flight
 
+**Worktree guard** — `/team-rc` manages releases from the main repo, not mission worktrees:
+
+```bash
+if [ -f .mission ]; then
+  MAIN_REPO=$(bash ~/.claude/commands/scripts/tw-git.sh worktree-main-repo)
+  echo "⚠️ /team-rc must run from the main repo, not a mission worktree."
+  echo "Switch to main repo: cd $MAIN_REPO"
+  echo "Then retry: /team-rc"
+  # STOP
+  # 💡 Something wrong? Run /team doctor to diagnose, or /team doctor fix to auto-repair.
+fi
+```
+
 Detect config directory:
 
 ```bash
-if [ -f .teamwork/config.yml ]; then
-  TEAMWORK_DIR=".teamwork"
-elif [ -f .teamspace/config.yml ]; then
-  TEAMWORK_DIR=".teamspace"
-else
-  echo "ERROR: No config found. Run /team to initialize."
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "No teamwork config found. Run /team init first."
   # STOP
-fi
+}
 ```
+
+- If no config → "**ERROR:** Teamwork not initialized. Run `/team` first." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 Read required values:
 
@@ -100,8 +126,8 @@ if [ -z "$VERSION_PREFIX" ]; then
   # STOP
 fi
 
-BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "pre-launch" 2>/dev/null)
-BASE_BRANCH="${BASE_BRANCH:-pre-launch}"
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "develop" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-develop}"
 
 PROD_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.production_branch "main" 2>/dev/null)
 PROD_BRANCH="${PROD_BRANCH:-main}"
@@ -109,39 +135,43 @@ PROD_BRANCH="${PROD_BRANCH:-main}"
 STAGING_WORKFLOW=$(bash ~/.claude/commands/scripts/tw-config.sh deploy.staging_workflow "" 2>/dev/null)
 ```
 
+- If no repo detected → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+- If `versions.current` not set → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
 ### Step 2: RC Uniqueness Check
 
 ```bash
-EXISTING_RC=$(git ls-remote --heads origin 'rc/*' 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')
+RC_BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh find-rc 2>/dev/null)
+RC_EXIT=$?
+# RC_EXIT: 0=found one (RC_BRANCH has name), 1=none found, 3=multiple found
 ```
 
-**If `EXISTING_RC` is non-empty** → output and **STOP**:
+**If `RC_EXIT` is 0 (rc branch exists)** → show status and offer choices:
 
-```
-RC already in progress: {EXISTING_RC}
+**RC in progress:** *{RC_BRANCH}*
 
-Options:
-  - /team-rc promote    Ship this RC to production
-  - Delete it:          git push origin --delete {EXISTING_RC}
+Use `AskUserQuestion`:
 ```
+question: "已有 RC 分支 {RC_BRANCH}。如何操作？"
+options:
+  - label: "Promote（发布到 production）"
+    description: "RC 验证通过，执行 /team-rc promote"
+  - label: "Cancel（取消 RC，重新来）"
+    description: "删除 RC 分支，在 base 修复后重新切"
+  - label: "退出"
+    description: "不操作"
+```
+
+- If "Promote" → jump to **Promote Flow** (skip P1 pre-flight, config already loaded)
+- If "Cancel" → jump to **Cancel Flow** Step C3 (RC_BRANCH already found)
+- If "退出" → **STOP**
 
 ### Step 3: Derive Next Version
 
 ```bash
-git fetch --tags origin 2>/dev/null
-
-# Match only clean version tags (V0.1.0, V0.1.1, ...) — exclude pre-release like V0.1.0-beta
-LAST_TAG=$(git tag -l "${VERSION_PREFIX}.*" --sort=-v:refname \
-  | grep -E "^${VERSION_PREFIX}\.[0-9]+$" | head -1)
-
-if [ -z "$LAST_TAG" ]; then
-  NEXT_VERSION="${VERSION_PREFIX}.0"
-else
-  PATCH=$(echo "$LAST_TAG" | awk -F. '{print $NF}')
-  NEXT_PATCH=$((PATCH + 1))
-  PREFIX=$(echo "$LAST_TAG" | sed 's/\.[0-9]*$//')
-  NEXT_VERSION="${PREFIX}.${NEXT_PATCH}"
-fi
+NEXT_VERSION=$(bash ~/.claude/commands/scripts/tw-git.sh next-version "$VERSION_PREFIX")
 ```
 
 ### Step 4: Verify Develop CI
@@ -151,9 +181,42 @@ LATEST_CI=$(gh run list --branch "$BASE_BRANCH" --limit 1 \
   --json conclusion --jq '.[0].conclusion' 2>/dev/null)
 ```
 
-- If `success` → `Develop CI: green`
+- If `success` → `Develop CI: green` → continue to Step 5
 - If not `success` → warn: `Develop CI not green (${LATEST_CI}). Proceed with caution.`
-- Ask user: `Proceed? / Abort` — If abort → **STOP**
+
+Use `AskUserQuestion`:
+```
+question: "Develop CI 未通过 ({LATEST_CI})。是否继续？"
+options:
+  - label: "继续"
+    description: "CI 问题不影响本次 RC，继续切分支"
+  - label: "中止"
+    description: "先修 CI，之后重新 /team-rc"
+```
+If "中止" → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+### Step 4b: Confirm RC Preparation
+
+Display the RC summary and confirm before cutting:
+
+**PREPARE RC** ── **{NEXT_VERSION}** ────────────────────
+*rc/{NEXT_VERSION}* ← *{BASE_BRANCH}*
+Develop CI: {green / not green}
+Staging: {workflow name / "(No staging workflow configured — deploy manually)"}
+────────────────────────────────────────────
+
+Use `AskUserQuestion`:
+```
+question: "确认切 RC 分支？"
+options:
+  - label: "确认"
+    description: "从 {BASE_BRANCH} 切出 rc/{NEXT_VERSION}"
+  - label: "取消"
+    description: "放弃本次 RC"
+```
+If "取消" → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### Step 5: Cut RC Branch
 
@@ -161,7 +224,7 @@ LATEST_CI=$(gh run list --branch "$BASE_BRANCH" --limit 1 \
 bash ~/.claude/commands/scripts/tw-git.sh cut-release "$NEXT_VERSION"
 ```
 
-This runs: checkout develop → pull → create `rc/$NEXT_VERSION` → push to origin.
+This runs: fetch origin/develop → create `rc/$NEXT_VERSION` from it → push to origin. **Does NOT checkout or modify the working tree.**
 
 ### Step 6: Trigger Staging Deploy (optional)
 
@@ -171,30 +234,108 @@ This runs: checkout develop → pull → create `rc/$NEXT_VERSION` → push to o
 gh workflow run "$STAGING_WORKFLOW" --ref "rc/$NEXT_VERSION" -f environment=staging
 ```
 
-Output: `Staging deploy triggered for rc/$NEXT_VERSION`
+Output: Staging deploy triggered for *rc/{NEXT_VERSION}*
 
-**If not set:** Output: `(No staging workflow configured — deploy manually)`
+**If not set:** Output: *(No staging workflow configured — deploy manually)*
 
 ### Step 7: Summary
 
-```
-RC PREPARED
-════════════════════════════════════
-Version:  {NEXT_VERSION}
-Branch:   rc/{NEXT_VERSION}
-Source:   {BASE_BRANCH}
+**RC PREPARED ── {NEXT_VERSION}** ────────────────────
+*rc/{NEXT_VERSION}*  ← *{BASE_BRANCH}*
 Staging:  {triggered / deploy manually}
-════════════════════════════════════
 
-Next steps:
-  1. Verify on staging
-  2. Hotfix if needed:
-     - Branch from rc/{NEXT_VERSION}
-     - Fix → PR to rc/{NEXT_VERSION}
-     - Cherry-pick fix to {BASE_BRANCH}
-  3. /team-rc promote
-════════════════════════════════════
+**NEXT STEPS**
+  1. 部署 staging，验证
+  2. 发现 bug? → 在 *{BASE_BRANCH}* 修复 → `/team-rc cancel` → `/team-rc` 重新切
+  3. 验证通过 → `/team-rc promote`
+
+────────────────────────────────────────────
+
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
+
+---
+
+## Cancel Flow
+
+> Triggered by `/team-rc cancel`. Delete the current RC branch so you can fix on base and re-cut.
+
+### Step C1: Pre-flight
+
+Same prerequisites as Promote — config, `gh`, git remote.
+
+```bash
+TEAMWORK_DIR=$(bash ~/.claude/commands/scripts/tw-config.sh detect-dir 2>/dev/null) || {
+  echo "No teamwork config found. Run /team init first."
+  # STOP
+}
+
+BASE_BRANCH=$(bash ~/.claude/commands/scripts/tw-config.sh conventions.base_branch "develop" 2>/dev/null)
+BASE_BRANCH="${BASE_BRANCH:-develop}"
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 ```
+
+### Step C2: Find active RC branch
+
+```bash
+RC_BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh find-rc 2>/dev/null)
+```
+
+If no RC branch found → "No active RC branch to cancel." → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+If multiple found → "Multiple RC branches found. Delete manually: `git push origin --delete {branch}`" → **STOP**
+
+### Step C3: Show RC info + confirm
+
+```bash
+# Show what's on the RC branch
+RC_COMMITS=$(git log "origin/$BASE_BRANCH..origin/$RC_BRANCH" --oneline --no-merges 2>/dev/null)
+RC_COMMIT_COUNT=$(echo "$RC_COMMITS" | grep -c . 2>/dev/null || echo 0)
+```
+
+**CANCEL RC** ── *{RC_BRANCH}* ────────────────────
+Commits on RC: `{RC_COMMIT_COUNT}`
+{RC_COMMITS as indented list}
+
+⚠️ This will delete *{RC_BRANCH}* (local + remote). Commits are preserved in *{BASE_BRANCH}*.
+────────────────────────────────────────────
+
+Use `AskUserQuestion`:
+```
+question: "确认取消 RC？分支 {RC_BRANCH} 将被删除（local + remote）。"
+options:
+  - label: "确认取消"
+    description: "删除 RC 分支，之后可在 {BASE_BRANCH} 修复后重新 /team-rc"
+  - label: "保留"
+    description: "不取消，继续 staging 验证"
+```
+
+If "保留" → **STOP**
+
+### Step C4: Delete RC branch
+
+```bash
+# Delete remote
+git push origin --delete "$RC_BRANCH" 2>/dev/null || {
+  echo "WARNING: Could not delete remote branch (may not exist)" >&2
+}
+
+# Delete local
+git branch -d "$RC_BRANCH" 2>/dev/null || git branch -D "$RC_BRANCH" 2>/dev/null || true
+```
+
+### Step C5: Summary
+
+**RC CANCELLED** ── *{RC_BRANCH}* ────────────────────
+Branch deleted (local + remote).
+
+**Next:**
+  1. Fix the issue on *{BASE_BRANCH}* (normal mission flow)
+  2. `/team-rc` to re-cut RC from latest *{BASE_BRANCH}*
+  3. Re-deploy staging
+────────────────────────────────────────────
+
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
 
 ---
 
@@ -202,34 +343,31 @@ Next steps:
 
 ### Step P1: Pre-flight
 
-Same config reads as Prepare Step 1 (REPO, VERSION_PREFIX, BASE_BRANCH, PROD_BRANCH, STAGING_WORKFLOW).
+Same worktree guard + config reads as Prepare Step 1 (worktree check, REPO, VERSION_PREFIX, BASE_BRANCH, PROD_BRANCH, STAGING_WORKFLOW).
 
 ### Step P2: Find Active RC Branch
 
 ```bash
-EXISTING_RC=$(git ls-remote --heads origin 'rc/*' 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')
+RC_BRANCH=$(bash ~/.claude/commands/scripts/tw-git.sh find-rc 2>/dev/null)
+RC_EXIT=$?
+# RC_EXIT: 0=found one (RC_BRANCH has name), 1=none found, 3=multiple found
 ```
 
-**If empty** → output and **STOP**:
+**If `RC_EXIT` is 1 (none found)** → output and **STOP**:
 
-```
-No active RC branch found. Run /team-rc to prepare one first.
-```
+No active RC branch found. Run `/team-rc` to prepare one first.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
-**If more than one line** (multiple rc branches — abnormal state) → output and **STOP**:
+**If `RC_EXIT` is 3 (multiple found)** → output and **STOP**:
 
-```
-ERROR: Multiple RC branches found:
-{list each}
-
-Only one RC should exist at a time. Delete the stale one(s) and retry.
-```
+**ERROR:** Multiple RC branches found. Only one RC should exist at a time.
+Delete the stale one(s) and retry.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 Extract version from branch name:
 
 ```bash
-VERSION=$(echo "$EXISTING_RC" | sed 's|rc/||')
-RC_BRANCH="rc/$VERSION"
+VERSION=$(echo "$RC_BRANCH" | sed 's|rc/||')
 ```
 
 ### Step P3: Staging Check (optional)
@@ -242,29 +380,50 @@ LATEST_RUN=$(gh run list --workflow "$STAGING_WORKFLOW" --branch "$RC_BRANCH" --
 ```
 
 - If conclusion is `success` → `Staging: passed`
-- If not → warn with details, ask user `Proceed anyway? / Abort`
+- If not → warn with details.
 
-**If not set:** `(Staging check skipped — no workflow configured)`
+Use `AskUserQuestion`:
+```
+question: "Staging 未通过。是否继续 promote？"
+options:
+  - label: "继续"
+    description: "Staging 问题已知，继续 promote"
+  - label: "中止"
+    description: "先修 staging，之后重新 /team-rc promote"
+```
+If "中止" → **STOP**. Deploy to staging first. Check your CI/CD pipeline or manually trigger deployment.
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
+
+**If not set:**
+
+⚠️ **Staging 未配置** — `deploy.staging_workflow` 为空。
+跳过自动 staging 检查。**请手动验证 RC 分支可正常运行后再 promote。**
+配置方法：在 `config.yml` 添加 `deploy.staging_workflow: "deploy-staging.yml"`
 
 ### Step P4: Confirmation
 
-```
-PROMOTE SUMMARY
-════════════════════════════════════
-Version:    {VERSION}
-RC Branch:  {RC_BRANCH}
-Target:     {PROD_BRANCH}
+**PROMOTE ── {VERSION}** ────────────────────
+*{RC_BRANCH}* → *{PROD_BRANCH}*
 
-This will:
-  1. Create PR: {RC_BRANCH} → {PROD_BRANCH} (squash merge)
-  2. Tag {VERSION} on {PROD_BRANCH}
-  3. Create GitHub Release
-  4. Check milestone completion
-  5. Delete {RC_BRANCH}
-════════════════════════════════════
-```
+**ACTIONS**
+  1. PR: *{RC_BRANCH}* → *{PROD_BRANCH}* (squash)
+  2. Tag **{VERSION}** on *{PROD_BRANCH}*
+  3. GitHub Release
+  4. Check milestone
+  5. Delete *{RC_BRANCH}*
+────────────────────────────────────────────
 
-Ask user: `Proceed? / Abort` — If abort → **STOP**
+Use `AskUserQuestion`:
+```
+question: "确认 promote？这会创建 PR、tag、GitHub Release。"
+options:
+  - label: "Promote"
+    description: "执行上述所有操作"
+  - label: "中止"
+    description: "取消 promote"
+```
+If "中止" → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### Step P5: Generate Release Notes
 
@@ -310,52 +469,48 @@ Squash merge via GitHub (respects branch protection):
 gh pr merge "$PR_NUMBER" --squash --auto \
   --subject "release: $VERSION" \
   --body "$RELEASE_BODY" \
-  --delete-branch \
   --repo "$REPO"
 ```
 
 If `--auto` succeeds, poll until merge completes:
 
 ```bash
-while true; do
-  STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' --repo "$REPO")
-  if [ "$STATE" = "MERGED" ]; then break; fi
-  if [ "$STATE" = "CLOSED" ]; then
-    echo "ERROR: PR #$PR_NUMBER was closed without merging" >&2
-    # STOP
-  fi
-  sleep 10
-done
+bash ~/.claude/commands/scripts/tw-pr.sh wait-merged "$PR_NUMBER" "$REPO"
 ```
+
+If wait-merged exits non-zero → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 **If `--auto` fails** (repo doesn't have auto-merge enabled) → fallback:
 
 ```bash
 # Wait for CI checks to pass
-gh pr checks "$PR_NUMBER" --watch --repo "$REPO" 2>/dev/null || true
+bash ~/.claude/commands/scripts/tw-pr.sh watch "$PR_NUMBER" || {
+  echo "WARNING: CI checks failed or timed out — attempting merge anyway"
+}
 
 # Merge directly
 gh pr merge "$PR_NUMBER" --squash \
   --subject "release: $VERSION" \
   --body "$RELEASE_BODY" \
-  --delete-branch \
   --repo "$REPO"
 ```
 
-Output: `PR #$PR_NUMBER squash merged to $PROD_BRANCH`
+Output: PR **#{PR_NUMBER}** squash merged to *{PROD_BRANCH}*
 
 If merge fails → output error details → **STOP**
+  💡 Something wrong? Run `/team doctor` to diagnose, or `/team doctor fix` to auto-repair.
 
 ### Step P7: Tag on Main
 
 ```bash
-git checkout "$PROD_BRANCH"
-git pull origin "$PROD_BRANCH"
-
-bash ~/.claude/commands/scripts/tw-git.sh tag "$VERSION"
+git fetch origin "$PROD_BRANCH"
+bash ~/.claude/commands/scripts/tw-git.sh tag "$VERSION" "origin/$PROD_BRANCH"
 ```
 
-Output: `Tag $VERSION pushed`
+**Does NOT checkout or modify the working tree.** Tags the remote production branch ref directly.
+
+Output: Tag **{VERSION}** pushed
 
 ### Step P8: GitHub Release
 
@@ -368,7 +523,7 @@ gh release create "$VERSION" \
 
 Capture and output the release URL.
 
-If fails → warn but continue (tag exists, user can create release manually).
+If fails → warn but continue (tag exists, release can be created via `gh release create`).
 
 ### Step P8b: Notification
 
@@ -382,11 +537,15 @@ Non-fatal: if notification fails, warn but continue.
 ### Step P9: Milestone Check
 
 ```bash
-MILESTONE_DATA=$(gh api "repos/$REPO/milestones" \
-  --jq ".[] | select(.title | startswith(\"$VERSION_PREFIX\"))" 2>/dev/null)
+MILESTONE_FULL=$(bash ~/.claude/commands/scripts/tw-git.sh milestone-resolve "$VERSION_PREFIX" 2>/dev/null)
 ```
 
-Note: uses `startswith` so milestone "V0.1" matches "V0.1", "V0.1 — AI Camera", etc.
+Then query the resolved milestone by exact title:
+
+```bash
+MILESTONE_DATA=$(gh api "repos/$REPO/milestones" \
+  --jq ".[] | select(.title == \"$MILESTONE_FULL\")" 2>/dev/null)
+```
 
 **If milestone found:**
 
@@ -403,44 +562,77 @@ MILESTONE_NUMBER=$(echo "$MILESTONE_DATA" | jq -r '.number')
     --method PATCH --field state=closed
   ```
 
-  Output: `Milestone "$VERSION_PREFIX" closed (all issues complete)`
+  Output: Milestone **{MILESTONE_FULL}** closed (all issues complete)
 
-- If `OPEN_COUNT > 0` → output: `Milestone "$VERSION_PREFIX": $CLOSED_COUNT closed, $OPEN_COUNT still open`
+- If `OPEN_COUNT > 0` → output: Milestone **{MILESTONE_FULL}**: `{CLOSED_COUNT}` closed, `{OPEN_COUNT}` still open
 
-**If no milestone:** `(No milestone "$VERSION_PREFIX" found — skipped)`
+**If no milestone:** *(No milestone "{MILESTONE_FULL}" found — skipped)*
 
-### Step P10: Cherry-pick Reminder
+### Step P10: Delete RC Branch
 
-Output:
-
-```
-Reminder: If you applied hotfixes to {RC_BRANCH} during staging,
-make sure they were cherry-picked to {BASE_BRANCH}.
-```
-
-Note: Cannot check automatically here — the rc branch ref was deleted by `--delete-branch` in Step P6.
-
-### Step P11: Clean Up Local
+RC is a frozen snapshot — all fixes live in *{BASE_BRANCH}*. No merge-back needed.
 
 ```bash
-git branch -d "$RC_BRANCH" 2>/dev/null || true  # remote already deleted by --delete-branch
+# Delete remote
+git push origin --delete "$RC_BRANCH" 2>/dev/null || {
+  echo "WARNING: Could not delete remote RC branch" >&2
+}
+
+# Delete local
+git branch -d "$RC_BRANCH" 2>/dev/null || git branch -D "$RC_BRANCH" 2>/dev/null || true
 ```
 
-### Step P12: Summary
+### Step P11: Summary
 
-```
-RC PROMOTED
-════════════════════════════════════
-Version:    {VERSION}
-Tag:        {VERSION} (on {PROD_BRANCH})
-PR:         #{PR_NUMBER} (squash merged)
-Release:    {release_url}
-RC Branch:  {RC_BRANCH} (deleted)
-Milestone:  {VERSION_PREFIX} — {status}
-════════════════════════════════════
+**PROMOTED ── {VERSION}** ────────────────────
+Tag: **{VERSION}** (on *{PROD_BRANCH}*)
+PR:  **#{PR_NUMBER}** (squash merged)
+Release: {release_url}
+RC Branch:  *{RC_BRANCH}* (deleted)
+Milestone:  **{MILESTONE_FULL}** — {status}
 
-Reminder: Cherry-pick any rc hotfixes to {BASE_BRANCH} if not already done.
+────────────────────────────────────────────
+`/team-rc` to prepare next RC
 
-Next: /team-rc to prepare the next release candidate
-════════════════════════════════════
-```
+💡 Tip: {random tip — read `~/.claude/commands/scripts/tw-tips.txt`, pick one non-comment line at random}
+
+---
+
+## Operation Promote Help
+
+> Triggered by `/team-rc promote help`.
+
+Output the following and **STOP**:
+
+**`/team-rc promote` — Promote RC to Production**
+────────────────────────────────────────────
+
+**USAGE**
+  `/team-rc promote`          Promote current RC to production
+
+**WHAT IT DOES**
+  1. Verify RC branch exists and CI is green
+  2. Verify staging deployment succeeded (if configured)
+  3. Squash merge RC → *main* (production branch)
+  4. Create git tag with version
+  5. Create GitHub Release with auto-generated notes
+  6. Clean up RC branch
+
+**WHEN TO USE**
+  After RC has been tested on staging and approved.
+  Flow: `/team-rc` → *(test staging)* → `/team-rc promote`
+
+**PREREQUISITES**
+  RC branch must exist (created by `/team-rc`)
+  CI must be green on RC branch
+  Staging deploy must be successful (if `deploy.staging_workflow` configured)
+
+**TROUBLESHOOTING**
+  "No RC branch found" → Run `/team-rc` first to cut an RC
+  "CI not green" → Fix on *{base_branch}*, then `/team-rc cancel` + `/team-rc` to re-cut
+  "Staging not verified" → Deploy to staging first, verify manually
+
+**BUGFIX DURING RC**
+  RC is a frozen snapshot — never commit directly to RC.
+  Found a bug? Fix on *{base_branch}* → `/team-rc cancel` → `/team-rc` (re-cut).
+  See also: `/team-rc cancel`

@@ -10,6 +10,7 @@ import useSound from '../hooks/useSound';
 import { getShortTitle } from '../utils/text';
 import PersistentHtmlRenderer from './PersistentHtmlRenderer';
 import ModuleRenderer, { extractModuleTitle } from './modules/ModuleRenderer';
+import { StreamingContext } from './modules/StreamingContext';
 import { IFRAME_DESIGN_CSS } from './iframeDesignSystem';
 import { IntentionCardStrip } from './IntentionCard';
 import { resolveTemplate } from './TemplateEngine';
@@ -108,7 +109,7 @@ function extractFromHtml(html) {
 // ═══════════════════════════════════════════════════════════
 
 // ── StaticHtmlBlock: completed block rendered as a plain iframe ──
-function StaticHtmlBlock({ block, onAction }) {
+function StaticHtmlBlock({ block, onAction, isStreaming }) {
   const iframeRef = useRef(null);
   const [iframeHeight, setIframeHeight] = useState(300);
 
@@ -172,6 +173,18 @@ function StaticHtmlBlock({ block, onAction }) {
 
   return (
     <div className="rounded-xl overflow-hidden relative">
+      <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10">
+        {isStreaming ? (
+          <motion.div
+            className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
+            animate={{ x: ['-100%', '100%'] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
+            style={{ width: '40%', willChange: 'transform' }}
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+        )}
+      </div>
       <iframe
         ref={iframeRef}
         srcDoc={wrappedHtml}
@@ -190,16 +203,18 @@ function ActiveHtmlBlock({ block, onAction, streamingChunks }) {
 
   return (
     <div className="rounded-xl overflow-hidden relative">
-      {isStreaming && (
-        <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/5 overflow-hidden z-10">
+      <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10">
+        {isStreaming ? (
           <motion.div
             className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
             animate={{ x: ['-100%', '100%'] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
             style={{ width: '40%', willChange: 'transform' }}
           />
-        </div>
-      )}
+        ) : (
+          <div className="h-full w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+        )}
+      </div>
       <PersistentHtmlRenderer
         streamingChunks={streamingChunks}
         isStreaming={isStreaming}
@@ -232,7 +247,7 @@ function HtmlBlock({ block, onAction, isActive, streamingChunks, isPlaceholder }
   if (isActive && streamingChunks) {
     return <ActiveHtmlBlock block={block} onAction={onAction} streamingChunks={streamingChunks} />;
   }
-  return <StaticHtmlBlock block={block} onAction={onAction} />;
+  return <StaticHtmlBlock block={block} onAction={onAction} isStreaming={block.status !== 'done'} />;
 }
 
 // ── ImageBlock ──
@@ -339,11 +354,13 @@ function CanvasCard({ block, expanded, onToggle, onAction, isActive, streamingCh
       )}
 
       {isModule ? (
-        <ModuleRenderer
-          module_type={block.module_type}
-          data={block.data}
-          onAction={onAction}
-        />
+        <StreamingContext.Provider value={!isDone}>
+          <ModuleRenderer
+            module_type={block.module_type}
+            data={block.data}
+            onAction={onAction}
+          />
+        </StreamingContext.Provider>
       ) : block.type === 'image' ? (
         <ImageBlock block={block} />
       ) : (
@@ -595,7 +612,7 @@ function ProgressPill({ hasCanvasContent, taskProgress, infoBar, sessionTimedOut
 // Main Component
 // ═══════════════════════════════════════════════════════════
 
-export default function LiveSessionView({ result, photos, intention, onBack, livekit, nanoClaw, sessionData, onAddPhoto, sessionCacheRef }) {
+export default function LiveSessionView({ result, photos, intention, onBack, livekit, nanoClaw, sessionData, onAddPhoto, sessionCacheRef, sessionIdRef }) {
   const { play } = useSound();
   const scrollContainerRef = useRef(null);
   const headerRef = useRef(null);
@@ -605,6 +622,20 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
   const fromHome = sessionData?.fromHome;
   const cacheKey = sessionData?.sessionId;
   const [dispatchingSlug, setDispatchingSlug] = useState(null);
+
+  // Resolve the current session ID: prefer explicit sessionData, fall back to shared ref (set by LiveCameraView)
+  const getSessionId = useCallback(() => sessionData?.sessionId || sessionIdRef?.current || null, [sessionData, sessionIdRef]);
+
+  // After any dispatchExec, capture the returned sessionId for future calls
+  const dispatchWithSession = useCallback(async (params) => {
+    const sid = getSessionId();
+    const resp = await api.dispatchExec({ ...params, sessionId: sid });
+    // Always update ref with the backend's session ID (handles both new and existing)
+    if (resp?.sessionId && sessionIdRef) {
+      sessionIdRef.current = resp.sessionId;
+    }
+    return resp;
+  }, [getSessionId, sessionIdRef]);
 
   // ── Chat Input ──
   const [chatText, setChatText] = useState('');
@@ -716,7 +747,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
 
     // V5: Dispatch via REST → Redis → NanoClaw (replaces LiveKit RPC)
     try {
-      await api.dispatchExec({ prompt: text, mediaUrls: images });
+      await dispatchWithSession({ prompt: text, mediaUrls: images });
     } catch (e) {
       console.error('[Session] Failed to dispatch exec:', e);
       upsertBlock({
@@ -727,7 +758,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         role: 'system',
       });
     }
-  }, [chatText, chatImages, play, upsertBlock]);
+  }, [chatText, chatImages, play, upsertBlock, dispatchWithSession]);
 
   // ── File select handler ──
   const handleFileSelect = useCallback(async (e) => {
@@ -856,78 +887,6 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
     }
   }, [nanoClaw?.tasks, upsertBlock]);
 
-  // Legacy: last result → html block (fallback when NanoClaw is not active)
-  useEffect(() => {
-    if (!livekit.lastResult) return;
-    if (activeSourceRef.current === 'nanoclaw') return;
-    const currentBlocks = blocksRef.current;
-    const hasNcBlock = currentBlocks.some(b => b.id.startsWith('nc_'));
-    if (hasNcBlock) return;
-
-    upsertBlock({
-      id: 'result_main',
-      type: 'html',
-      status: 'done',
-      content: typeof livekit.lastResult.content === 'string'
-        ? livekit.lastResult.content
-        : `<div style="color:white;font-family:var(--font-primary);padding:8px;">${JSON.stringify(livekit.lastResult)}</div>`,
-    });
-  }, [livekit.lastResult, upsertBlock]);
-
-  // Legacy: session plan → bubble blocks
-  useEffect(() => {
-    if (livekit.sessionPlan && livekit.sessionPlan.length > 0) {
-      livekit.sessionPlan.forEach((step, i) => {
-        upsertBlock({
-          id: `plan_${step.id || i}`,
-          type: 'bubble',
-          status: 'done',
-          content: `${step.emoji || '\u{1F4CB}'} ${step.text}`,
-          collapsible: true,
-        });
-      });
-    }
-  }, [livekit.sessionPlan, upsertBlock]);
-
-  // Legacy: session rich text → html block
-  useEffect(() => {
-    if (!livekit.sessionRichText) return;
-    if (activeSourceRef.current) return;
-    const currentBlocks = blocksRef.current;
-    const hasNcBlock = currentBlocks.some(b => b.id.startsWith('nc_'));
-    if (hasNcBlock) return;
-
-    upsertBlock({
-      id: 'rich_text_summary',
-      type: 'html',
-      status: 'done',
-      content: `<div style="color:#000;font-family:var(--font-primary);padding:12px;">${livekit.sessionRichText}</div>`,
-    });
-  }, [livekit.sessionRichText, upsertBlock]);
-
-  // Legacy: agent text → bubble (deduplicate by content)
-  const lastAgentBubbleRef = useRef('');
-  const recentBubblesRef = useRef(new Set());
-  useEffect(() => {
-    if (livekit.lastAgentText && livekit.lastAgentText !== lastAgentBubbleRef.current) {
-      if (recentBubblesRef.current.has(livekit.lastAgentText)) return;
-      lastAgentBubbleRef.current = livekit.lastAgentText;
-      recentBubblesRef.current.add(livekit.lastAgentText);
-      if (recentBubblesRef.current.size > 50) {
-        const first = recentBubblesRef.current.values().next().value;
-        recentBubblesRef.current.delete(first);
-      }
-      upsertBlock({
-        id: `bubble_${Date.now()}`,
-        type: 'bubble',
-        status: 'done',
-        content: livekit.lastAgentText,
-        role: 'agent',
-        collapsible: true,
-      });
-    }
-  }, [livekit.lastAgentText, upsertBlock]);
-
   // User speech transcripts → bubble blocks (deduplicate by content)
   const prevTranscriptCountRef = useRef(0);
   const recentUserBubblesRef = useRef(new Set());
@@ -946,8 +905,6 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       if (!entry.content) continue;
       if (isNoiseTranscript(entry.content)) continue; // Skip STT noise artifacts
       if (recentUserBubblesRef.current.has(entry.content)) continue;
-      // Also skip if the same text was already typed by user (handleSendMessage)
-      if (recentBubblesRef.current.has(entry.content)) continue;
 
       recentUserBubblesRef.current.add(entry.content);
       if (recentUserBubblesRef.current.size > 50) {
@@ -997,6 +954,46 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         });
     }
 
+    // Reconstruct cards from session result (persisted by NanoClaw → API server)
+    const resultCards = sessionData?.result?.cards;
+    if (resultCards && typeof resultCards === 'object') {
+      for (const [cardId, card] of Object.entries(resultCards)) {
+        if (!card?.template) continue;
+        const templateEntry = resolveTemplate(card.template);
+        if (templateEntry.renderer === 'react' && templateEntry.component) {
+          upsertBlock({
+            id: `nc_${cardId}`,
+            type: 'module',
+            module_type: card.template,
+            data: card.data || {},
+            status: 'done',
+            content: '',
+            source: 'nanoclaw',
+          });
+        } else if (card.data?.html) {
+          upsertBlock({
+            id: `nc_${cardId}`,
+            type: 'html',
+            status: 'done',
+            content: card.data.html,
+            source: 'nanoclaw',
+          });
+        } else if (card.data && Object.keys(card.data).length > 0) {
+          upsertBlock({
+            id: `nc_${cardId}`,
+            type: 'module',
+            module_type: card.template,
+            data: card.data,
+            status: 'done',
+            content: '',
+            source: 'nanoclaw',
+          });
+        }
+      }
+      // If cards were found, skip legacy fallbacks
+      if (Object.keys(resultCards).length > 0) return;
+    }
+
     // Add the final HTML result artifact
     if (sessionData?.result_html) {
       upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: sessionData.result_html });
@@ -1009,10 +1006,10 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       if (r.type === 'html' && r.content) {
         upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: r.content });
       } else if (typeof r === 'string') {
-        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:white;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${r}</div>` });
+        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:rgba(0,0,0,0.7);font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${r}</div>` });
       } else if (r.content || r.raw || r.summary) {
         const text = r.content || r.raw || r.summary || JSON.stringify(r);
-        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:white;font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${text}</div>` });
+        upsertBlock({ id: 'home_result', type: 'html', status: 'done', content: `<div style="color:rgba(0,0,0,0.7);font-family:var(--font-primary);padding:12px;white-space:pre-wrap;">${text}</div>` });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1075,7 +1072,7 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
         const title = payload.title || '';
         const allOptions = (payload.allOptions || '').split('|').filter(Boolean);
         const optionsStr = allOptions.length ? ` (options: ${allOptions.join(', ')})` : '';
-        api.dispatchExec({ prompt: `[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}` }).catch(() => {});
+        dispatchWithSession({ prompt: `[ActionCard] ${title}${title ? ', ' : ''}user click on ${selected}${optionsStr}` }).catch(() => {});
         showToast(selected || 'Selected');
         break;
       }
@@ -1084,13 +1081,13 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
       default:
         showToast('Done');
     }
-  }, [showToast]);
+  }, [showToast, dispatchWithSession]);
 
   // ── Action card handler ──
   const handleActionSelect = useCallback((option) => {
-    api.dispatchExec({ prompt: option }).catch(() => {});
+    dispatchWithSession({ prompt: option }).catch(() => {});
     livekit?.dismissActionCard?.();
-  }, [livekit]);
+  }, [livekit, dispatchWithSession]);
 
   // ── Scroll handling ──
   const handleContentScroll = useCallback(() => {
@@ -1304,11 +1301,14 @@ export default function LiveSessionView({ result, photos, intention, onBack, liv
               if (dispatchingSlug) return; // prevent double-tap
               setDispatchingSlug(slug);
               try {
-                await api.dispatchExec({
-                  prompt: [intention.title, intention.description].filter(Boolean).join(' '),
+                // Send #{skill} hashtag command — NanoClaw routes via Experience Package
+                const hashtag = intention.skill_slug ? `#${intention.skill_slug}` : '';
+                const description = [intention.title, intention.description].filter(Boolean).join(' ');
+                const prompt = hashtag ? `${hashtag} ${description}` : description;
+                await dispatchWithSession({
+                  prompt,
                   skillSlug: intention.skill_slug,
                   mediaUrls: intention.params?.media_urls || [],
-                  sessionId: sessionData?.sessionId,
                   priority: 'thorough',
                   params: intention.params,
                 });

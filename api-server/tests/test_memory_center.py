@@ -14,6 +14,8 @@ from app.services.memory_center import (
     MemoryCenter,
     infer_layer_category,
 )
+from app.services.session_center import SessionCenter
+from app.utils import resolve_user_id
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +26,6 @@ def _make_user(vi_user_id: str = "vi-test0000000001") -> User:
     u = User()
     u.id = str(uuid.uuid4())
     u.email = f"{vi_user_id}@test.com"
-    u.password_hash = "fakehash"
     u.vi_user_id = vi_user_id
     return u
 
@@ -44,6 +45,42 @@ async def user(db_session):
 @pytest.fixture
 def mc():
     return MemoryCenter()
+
+
+# =========================================================================
+# 0. resolve_user_id auto-create
+# =========================================================================
+
+
+@pytest.mark.asyncio
+class TestResolveUserId:
+
+    async def test_raises_when_user_not_found_and_no_auto_create(self, db_session):
+        with pytest.raises(ValueError, match="No user found"):
+            await resolve_user_id(db_session, "vi-nonexistent")
+
+    async def test_auto_creates_user_when_not_found(self, db_session):
+        user_id = await resolve_user_id(db_session, "vi-auto-created", auto_create=True)
+        assert user_id is not None
+        # Calling again returns the same ID (idempotent)
+        user_id2 = await resolve_user_id(db_session, "vi-auto-created", auto_create=True)
+        assert user_id == user_id2
+
+    async def test_returns_existing_user_regardless_of_auto_create(self, db_session):
+        u = _make_user("vi-existing-user")
+        db_session.add(u)
+        await db_session.commit()
+        user_id = await resolve_user_id(db_session, "vi-existing-user", auto_create=False)
+        assert user_id == u.id
+
+
+@pytest.mark.asyncio
+class TestSessionCenterAutoCreate:
+
+    async def test_create_session_auto_creates_user(self, db_session):
+        sc = SessionCenter()
+        session_id = await sc.create_session(db_session, "vi-brand-new-session-user")
+        assert session_id is not None
 
 
 # =========================================================================
@@ -239,9 +276,12 @@ class TestMemoryCenterUpsert:
         mem = await mc.get_memory(db_session, VI_USER_ID, "test.md")
         assert mem is not None
 
-    async def test_upsert_invalid_vi_user_id_raises(self, db_session, user, mc):
-        with pytest.raises(ValueError, match="No user found"):
-            await mc.upsert_memory(db_session, "vi-nonexistent", "f.md", "c")
+    async def test_upsert_auto_creates_user_for_unknown_vi_user_id(self, db_session, user, mc):
+        """upsert_memory auto-creates a stub user for unknown vi_user_id (internal API use)."""
+        await mc.upsert_memory(db_session, "vi-brand-new-user", "f.md", "hello")
+        mem = await mc.get_memory(db_session, "vi-brand-new-user", "f.md")
+        assert mem is not None
+        assert mem["content"] == "hello"
 
 
 @pytest.mark.asyncio
@@ -526,7 +566,64 @@ class TestHeartbeatMaintenance:
 
 
 # =========================================================================
-# 7. Event publishing integration
+# 7. Auto-create behavior for internal APIs
+# =========================================================================
+
+
+@pytest.mark.asyncio
+class TestAutoCreateBehavior:
+    """Internal APIs should auto-create users instead of raising 404."""
+
+    async def test_upsert_auto_creates_user(self, db_session, mc):
+        """upsert_memory creates a stub user when vi_user_id is unknown."""
+        await mc.upsert_memory(db_session, "vi-new-user-upsert", "test.md", "content")
+        mem = await mc.get_memory(db_session, "vi-new-user-upsert", "test.md")
+        assert mem is not None
+        assert mem["content"] == "content"
+
+    async def test_append_auto_creates_user(self, db_session, mc):
+        """append_memory creates a stub user when vi_user_id is unknown."""
+        await mc.append_memory(db_session, "vi-new-user-append", "log.md", "entry")
+        mem = await mc.get_memory(db_session, "vi-new-user-append", "log.md")
+        assert mem is not None
+        assert mem["content"] == "entry"
+
+    async def test_get_context_returns_empty_for_unknown_user(self, db_session, mc):
+        """get_context_for_agent returns empty string for unknown users (not 404)."""
+        ctx = await mc.get_context_for_agent(db_session, "vi-unknown-user")
+        assert ctx == ""
+
+    async def test_heartbeat_returns_zeros_for_unknown_user(self, db_session, mc):
+        """heartbeat_maintenance returns zero counts for unknown users (not 404)."""
+        result = await mc.heartbeat_maintenance(db_session, "vi-unknown-user")
+        assert result["recomputed"] == 0
+        assert result["expired_deleted"] == 0
+
+    async def test_process_session_end_auto_creates_user(self, db_session, mc):
+        """process_session_end works for unknown users (via append_memory auto-create)."""
+        session_id = str(uuid.uuid4())
+        await mc.process_session_end(
+            db_session, session_id, "vi-new-user-session-end",
+            summary="Session ended.",
+        )
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        mem = await mc.get_memory(db_session, "vi-new-user-session-end", f"memory/{today}.md")
+        assert mem is not None
+        assert "Session ended." in mem["content"]
+
+    async def test_get_user_memories_raises_for_unknown_user(self, db_session, mc):
+        """Read-only methods still raise ValueError for unknown users (public API)."""
+        with pytest.raises(ValueError, match="No user found"):
+            await mc.get_user_memories(db_session, "vi-unknown-user")
+
+    async def test_delete_memory_raises_for_unknown_user(self, db_session, mc):
+        """delete_memory raises ValueError for unknown users (no user = nothing to delete)."""
+        with pytest.raises(ValueError, match="No user found"):
+            await mc.delete_memory(db_session, "vi-unknown-user", "test.md")
+
+
+# =========================================================================
+# 8. Event publishing integration
 # =========================================================================
 
 

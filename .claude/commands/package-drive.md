@@ -1,0 +1,675 @@
+---
+description: "Create or improve experience packages. Try: /package-drive help"
+version: "2.1.0"
+---
+
+# /package-drive — Experience Package Workshop
+
+> For product managers, marketers, and designers. Create or improve VI Agent experience packages — no coding required.
+
+**User input**: $ARGUMENTS
+
+If `$ARGUMENTS` is `help` or `-h`, output the following and **STOP**:
+
+```
+/package-drive — Create or improve experience packages
+
+USAGE:
+  /package-drive                     Start a new package from scratch
+  /package-drive improve {id}        Improve an existing package
+  /package-drive test {id}           Test a package and iterate
+
+WHAT IS AN EXPERIENCE PACKAGE?
+  A package = everything needed for one AI capability.
+  It can be simple (add a skill) or transformative (turn the app into a scanner).
+
+  Examples:
+  • "Nutrition Analyzer" — user asks about food → AI shows nutrition card
+  • "Document Scanner" — app becomes a scanner with guides and "Scan" button
+  • "Style Advisor" — user sends outfit photo → AI gives fashion advice
+
+  A package has:
+  • SKILL.md — the skill prompt with Claude Code frontmatter (THIS IS THE SKILL)
+  • manifest.json — metadata (name, icon, category, templates)
+  • templates/ — card layout definitions (optional, most use shared templates)
+  • examples/ — saved test runs showing input → output
+
+HOW SKILLS WORK (Claude Code Native Pattern):
+  SKILL.md uses Claude Code frontmatter with `name`, `description`, and
+  `user-invocable: false`. At runtime, SKILL.md gets auto-deployed to
+  .claude/skills/{id}/SKILL.md inside the agent container.
+
+  Claude sees all skill DESCRIPTIONS in its context (~2% budget).
+  When a user's prompt matches a description, Claude auto-invokes
+  the full skill — no keyword matching, no host-side routing.
+
+HOW CARDS WORK (Auto-Discovery):
+  All card templates in packages/_shared/*.json are auto-discovered at
+  container startup. A card catalog is generated at
+  .claude/skills/_card-catalog/SKILL.md listing every template with
+  its fields. The agent sees this catalog and can use ANY template.
+
+  Skills that need rich card output include a ```card-data JSON block
+  with a "_template" field. The agent-runner extracts this and creates
+  the card. Skills without cards output plain markdown.
+
+  The agent ALSO uses cards autonomously (without a skill) when the
+  user's request matches a template — e.g., asking about weather,
+  places, recipes, etc. The card catalog teaches it when and how.
+
+WHERE TO FIND THINGS:
+  • Packages live in:      packages/{package-id}/
+  • SKILL.md lives in:     packages/{package-id}/SKILL.md
+  • Shared templates:      packages/_shared/ (16 templates)
+  • Card catalog:          auto-generated at .claude/skills/_card-catalog/
+  • Reference skill:       packages/nutrition-analyzer/SKILL.md (card output)
+  • Reference skill:       packages/scene-describer/SKILL.md (markdown output)
+
+NO CODING NEEDED:
+  You write what the AI should do in plain English (SKILL.md).
+  I handle the technical parts (manifest, templates, file structure).
+```
+
+---
+
+## Step 0: Git Workflow Gate
+
+All package changes go through the team's GitHub Issue workflow. Before any work, check if the user has an active mission branch.
+
+```bash
+# Check if teamwork is initialized
+if [ -f .teamwork/config.yml ] || [ -f .teamspace/config.yml ]; then
+  TEAMWORK_DIR=$([ -f .teamwork/config.yml ] && echo ".teamwork" || echo ".teamspace")
+  echo "TEAMWORK_OK"
+else
+  echo "NO_TEAMWORK"
+fi
+```
+
+```bash
+# Check current branch
+CURRENT_BRANCH=$(git branch --show-current)
+echo "$CURRENT_BRANCH"
+```
+
+```bash
+# Check for active mission contract
+ls .teamwork/active/MISSION-*.md 2>/dev/null || ls .teamspace/active/MISSION-*.md 2>/dev/null || echo "NO_CONTRACT"
+```
+
+**If NO_TEAMWORK** → Tell the user: "Let me set things up for you first." Run `/team` to initialize. Then continue.
+
+**If on `main` or `pre-launch` (no mission branch):**
+
+Use `AskUserQuestion`:
+
+```
+question: "Before we start, your changes need to go through the team workflow — this keeps everything tracked and reviewable. I'll handle the technical parts. What would you like to do?"
+options:
+  - label: "Create a new package — set up everything for me"
+    description: "I'll create a GitHub Issue, set up a branch, and we'll start building. You just describe what you want."
+  - label: "Improve an existing package — set up everything for me"
+    description: "I'll create an Issue for the improvement, set up a branch, and we'll edit together."
+  - label: "Just test an existing package (no changes)"
+    description: "I only want to test — no Issue or branch needed for read-only testing."
+  - label: "I already have an Issue assigned to me"
+    description: "I've been assigned an Issue — let me give you the number."
+```
+
+**If user picks "set up everything for me" (create or improve):**
+
+1. Ask what they want to do (brief description in their own words)
+2. Create a GitHub Issue for them automatically:
+   ```bash
+   # Compose the Issue title and body from user's description
+   gh issue create --title "pkg: {short-title}" \
+     --label "mission" \
+     --body "## Objective
+   {user's description}
+
+   ## Acceptance Criteria
+   - [ ] Package files created/updated in packages/{id}/
+   - [ ] SKILL.md reviewed and tested
+   - [ ] manifest.json valid with correct triggers and templates
+   - [ ] At least one example test case added"
+   ```
+3. Claim the Issue for them: run the equivalent of `/team-claim #{issue-number}`
+4. Tell the user: "All set! I created Issue #{N} and set up your branch. Let's build your package."
+
+**If user picks "I already have an Issue":**
+- Ask for the Issue number
+- Run `/team-claim #{number}` if not already claimed
+
+**If user picks "Just test":**
+- Skip git workflow, go directly to TEST mode (Step 3)
+
+**After the git gate is resolved, proceed to the appropriate mode.**
+
+---
+
+## Step 0b: Understand What We're Doing
+
+Read the user's input. Determine the mode:
+
+- **No arguments / natural language description** → CREATE mode (new package)
+- **`improve {id}`** → IMPROVE mode (edit existing package)
+- **`test {id}`** → TEST mode (run and iterate)
+
+---
+
+## Step 1: CREATE Mode — New Package from Scratch
+
+### 1.1 Gather the Idea
+
+Use `AskUserQuestion` to understand what the user wants:
+
+```
+question: "What should this AI skill do? Describe it like you're explaining to a friend."
+options:
+  - label: "Photo → Analysis"
+    description: "User takes a photo, AI analyzes it and shows results (e.g., identify plants, rate outfits, check nutrition)"
+  - label: "Photo → Creative"
+    description: "User takes a photo, AI transforms it into something creative (e.g., movie poster, comic strip, meme)"
+  - label: "Chat → Action"
+    description: "User asks a question, AI researches and acts (e.g., find restaurants, plan trips, compare products)"
+  - label: "I'll describe it"
+    description: "I have a specific idea — let me explain"
+```
+
+### 1.2 Define the App Experience
+
+Based on the user's description, first determine if this package transforms the app or just adds a skill:
+
+Use `AskUserQuestion`:
+
+```
+question: "How much should this change the app when active? [restate the idea in 1 sentence]"
+options:
+  - label: "Just add a skill"
+    description: "The app looks the same — user takes a photo or chats, AI responds with result cards. Most packages work this way."
+  - label: "Transform into a scanner"
+    description: "Change the camera to scan mode with frame guides, replace the capture button with 'Scan', show extracted content as the main result."
+  - label: "Transform into a tracker/diary"
+    description: "Add a running total or dashboard widget (e.g., daily calories, expense total), keep a persistent summary visible."
+  - label: "I'll describe the experience"
+    description: "I have a specific vision for how the app should look and behave"
+```
+
+If user picks a transformation mode, generate an `app_mode` section in manifest.json:
+- **Scanner**: `camera.overlay: "scan-frame"`, `camera.resolution: "high"`, `shutter.label: "Scan"`
+- **Tracker/diary**: `persistent_widget` with summary template, `layout: "dashboard"`
+- **Custom**: Ask follow-up questions about camera, buttons, layout
+
+Then ask about card output:
+
+```
+question: "What cards should the user see after using this skill?"
+options:
+  - label: "Thinking → Result"
+    description: "Show a thinking animation, then the final result card. Simple and clean."
+  - label: "Step-by-step"
+    description: "Show progress through multiple steps, each with its own card. Good for complex analysis."
+  - label: "Image + Details"
+    description: "Hero image card at the top, then detail cards below. Good for visual results."
+  - label: "Let me customize"
+    description: "I want to pick specific card templates from the catalog"
+```
+
+If user wants to customize, show them all available templates from the shared catalog:
+
+```bash
+# List all shared template schemas
+for f in packages/_shared/*.json; do
+  id=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$f','utf8')).\$id)")
+  desc=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$f','utf8')).description || '')")
+  echo "  $id — $desc"
+done
+```
+
+Read a few template JSON files to show their field schemas, and let the user pick. All 16 templates are auto-discovered at runtime — the agent sees them all via the card catalog skill.
+
+### 1.3 Pick a Package ID
+
+Use `AskUserQuestion`:
+
+```
+question: "What should we call this package? (This becomes the folder name — lowercase, hyphens, no spaces)"
+options:
+  - label: "{suggested-id-1}"
+    description: "Based on your description"
+  - label: "{suggested-id-2}"
+    description: "Alternative name"
+  - label: "{suggested-id-3}"
+    description: "Shorter version"
+  - label: "I'll type my own"
+    description: "I have a name in mind"
+```
+
+### 1.4 Generate the Package
+
+Now generate all files. Explain each one as you create it:
+
+**Tell the user:**
+```
+Creating your package: {name}
+
+I'll create these files:
+  📄 packages/{id}/manifest.json  — package metadata & config
+  📝 packages/{id}/SKILL.md       — the skill prompt (what the AI does — you can edit this!)
+  📁 packages/{id}/examples/      — we'll add test examples next
+
+At runtime, SKILL.md auto-deploys to .claude/skills/{id}/SKILL.md
+so the agent discovers it as a native skill.
+```
+
+**Create SKILL.md** in `packages/{id}/SKILL.md` — THIS IS THE MOST IMPORTANT FILE:
+
+SKILL.md uses Claude Code's native skill format with YAML frontmatter:
+
+```yaml
+---
+name: {package-id}
+description: {What this skill does and when to use it. Include keywords users would naturally say. Claude uses this description to decide when to auto-invoke the skill.}
+user-invocable: false
+---
+```
+
+After the frontmatter, write the skill instructions in plain English:
+- Structure: `# Title` → `## What to do` (numbered steps) → `## Guidelines` → `## Output`
+- Keep it under 50 lines — concise instructions, not a novel
+- The `description` field is critical — it's what Claude sees to decide skill relevance
+
+**Two output patterns** (choose based on whether this skill needs a rich card):
+
+**Pattern A: Card output** (use when results have structured data like nutrition, scores, stats):
+- In the `## Output` section, include a `card-data` JSON example with `"_template": "{template-name}"`
+- Field names MUST match the template's slot schema exactly
+- Tell Claude the block is REQUIRED
+- Reference: `packages/nutrition-analyzer/SKILL.md`
+
+**Pattern B: Markdown output** (use for analysis, advice, descriptions):
+- In the `## Output` section, say "Present as well-structured markdown text"
+- No JSON block needed
+- Reference: `packages/scene-describer/SKILL.md`, `packages/style-advisor/SKILL.md`
+
+**Create manifest.json** in `packages/{id}/manifest.json`:
+- Use the user's description for `name` and `description`
+- Pick an appropriate emoji for `icon`
+- Set `category` (health, creative, lifestyle, productivity, general)
+- Set `instruction.file` to `"SKILL.md"`
+- Set `instruction.model` to `claude-sonnet-4-6` (default)
+- Pick appropriate `templates.shared` from `packages/_shared/`
+- If using Pattern A card output, set `output.template` to the template name
+- Note: `trigger.voice_keywords` is for reference/documentation only — Claude does NOT use manifest triggers for routing. Skill selection is driven entirely by the SKILL.md `description` frontmatter field.
+
+**Create examples directory** `packages/{id}/examples/`
+
+### 1.5 Review Together
+
+Show the user what was created:
+
+```
+✅ Package created: {name}
+
+Here's your SKILL.md (this is what the AI does):
+──────────────────────────────────────
+{content of SKILL.md}
+──────────────────────────────────────
+
+Key details:
+  Description: {description from frontmatter — Claude uses this to find the skill}
+  Output:      {card template name OR "plain markdown"}
+  Templates:   {shared template list}
+  Model:       {model}
+```
+
+Use `AskUserQuestion`:
+
+```
+question: "How does this look?"
+options:
+  - label: "Looks great — let's test it!"
+    description: "Move on to testing with a real photo or prompt"
+  - label: "Edit the skill prompt"
+    description: "I want to change what the AI does — let's refine SKILL.md"
+  - label: "Change the templates"
+    description: "I want different card layouts for the output"
+  - label: "Start over"
+    description: "This isn't what I had in mind — let's try again"
+```
+
+If user wants to edit → show SKILL.md, let them describe changes in plain English, you rewrite it. Repeat until satisfied.
+
+### 1.6 Test the Package
+
+**Tell the user:**
+```
+To test your package:
+
+  1. Open the dashboard: http://localhost:3001
+  2. Go to the Chat tab
+  3. Type a prompt that would trigger your skill
+     Example: "{suggested test prompt}"
+  4. Watch the cards stream in real-time
+
+Or, I can run a quick test right here. Want me to?
+```
+
+Use `AskUserQuestion`:
+
+```
+question: "How would you like to test?"
+options:
+  - label: "Test in dashboard"
+    description: "I'll open the dashboard and try it there (recommended — you see the real card UI)"
+  - label: "Describe a test scenario"
+    description: "I'll describe a test case and you tell me what the AI would do"
+  - label: "Skip testing for now"
+    description: "I'll test later — just save what we have"
+  - label: "Add example test cases"
+    description: "Let me define some example inputs and expected outputs"
+```
+
+If adding examples → create JSON files in `packages/{id}/examples/`:
+```json
+{
+  "name": "descriptive-name",
+  "prompt": "user's test prompt",
+  "mediaUrls": ["url-or-path-to-test-image"],
+  "expectedCards": ["thinking-process", "result-card"],
+  "notes": "what the ideal output looks like"
+}
+```
+
+### 1.7 Save Test Runs as Examples
+
+After testing in the dashboard, guide the user to save good test runs:
+
+```
+To build your package gallery with real examples:
+
+  1. Open dashboard → test your package with different inputs
+  2. When you get a result you like, click "Save as Example"
+  3. The dashboard saves the input photo + card output as an example
+  4. Examples appear in the package gallery for everyone to see
+
+Each saved example becomes:
+  📸 The input (photo/prompt) → what the user sent
+  🖼️ The output (card screenshots) → what the AI produced
+  ⭐ A gallery entry → shows up in the package detail page
+```
+
+Use `AskUserQuestion`:
+
+```
+question: "Would you like to test and save some examples now?"
+options:
+  - label: "Yes — let's test in the dashboard"
+    description: "I'll guide you through testing and saving good examples"
+  - label: "I'll do that later"
+    description: "Move on to shipping — I'll add examples next time"
+  - label: "How does 'Save as Example' work?"
+    description: "Explain the dashboard save feature in more detail"
+  - label: "Add example test cases manually"
+    description: "I want to define example inputs as JSON files (for automated testing)"
+```
+
+If user tests and saves examples via dashboard, those are automatically stored in `packages/{id}/examples/` with input + output snapshots.
+
+### 1.8 Wrap Up and Ship
+
+```
+✅ Package ready: {name}
+
+Files created:
+  📄 packages/{id}/manifest.json    — package config
+  📝 packages/{id}/SKILL.md         — the skill prompt
+  📁 packages/{id}/templates/       — card templates (if any)
+  📁 packages/{id}/examples/        — test examples (if any)
+```
+
+Use `AskUserQuestion`:
+
+```
+question: "Your package is ready! What's next?"
+options:
+  - label: "Ship it — create PR for review"
+    description: "I'll commit your files and create a pull request. A teammate will review before it goes live."
+  - label: "Test more first"
+    description: "Go back to testing — I want to refine the skill prompt more"
+  - label: "Save for later"
+    description: "Commit what we have — I'll come back to finish with /package-drive improve {id}"
+  - label: "Improve the skill prompt"
+    description: "The package structure is fine but I want to tweak what the AI does"
+```
+
+**If "Ship it":**
+
+Commit the package files and use the team ship workflow:
+
+```bash
+# Stage package files
+git add packages/{id}/
+
+# Commit
+git commit -m "pkg({id}): create {name} experience package
+
+Adds SKILL.md, manifest.json, templates, and examples.
+Mission: #{issue}"
+```
+
+Then tell the user:
+```
+Files committed. To create a pull request, run:
+  /team-ship
+
+A teammate will review your package, then it goes live!
+```
+
+**If "Save for later":**
+
+```bash
+git add packages/{id}/ packages/{id}/
+git commit -m "pkg({id}): work in progress — {name}
+
+Mission: #{issue}"
+```
+
+Tell the user:
+```
+Saved! When you're ready to continue:
+  /package-drive improve {id}    — to keep editing
+  /package-drive test {id}       — to test
+  /team-ship                     — to ship when done
+```
+
+---
+
+## Step 2: IMPROVE Mode — Edit Existing Package
+
+### 2.1 Load the Package
+
+```bash
+ls packages/{id}/
+```
+
+Read `packages/{id}/manifest.json` and `packages/{id}/SKILL.md`.
+
+**Show the user what exists:**
+```
+📦 Package: {name}
+   {description from SKILL.md frontmatter}
+
+   SKILL.md preview:
+   ──────────────────────────────────────
+   {first 20 lines of SKILL.md}
+   ──────────────────────────────────────
+
+   Description: {frontmatter description — how Claude finds this skill}
+   Output:      {card template OR "plain markdown"}
+   Templates:   {shared template list}
+```
+
+### 2.2 What to Improve?
+
+Use `AskUserQuestion`:
+
+```
+question: "What would you like to improve?"
+options:
+  - label: "Change what the AI does"
+    description: "Edit the skill prompt (SKILL.md) — make it smarter, more detailed, or different"
+  - label: "Change how results look"
+    description: "Switch templates, add card output, or change from markdown to card format"
+  - label: "Improve skill discovery"
+    description: "Change when this skill activates — update the description so Claude recognizes more user prompts"
+  - label: "Fix a problem"
+    description: "Something isn't working right — let me describe the issue"
+```
+
+### 2.3 Apply Changes
+
+Based on user's choice, edit the relevant files. After each change:
+
+- Show the diff ("Here's what I changed")
+- Ask if it looks right
+- Suggest testing
+
+### 2.4 Iterate
+
+Loop back to 2.2 until the user is satisfied.
+
+### 2.5 Wrap Up
+
+Same as CREATE mode 1.7-1.8 — offer asset upload, then ship/save options with commit and `/team-ship`.
+
+---
+
+## Step 3: TEST Mode — Run and Iterate
+
+### 3.1 Load and Show
+
+Same as IMPROVE 2.1 — load and display the package.
+
+### 3.2 Guide Testing
+
+**Tell the user:**
+```
+Let's test "{name}".
+
+DASHBOARD TESTING (recommended):
+  1. Open http://localhost:3001
+  2. Go to Chat tab
+  3. Type: "{suggested prompt based on triggers}"
+  4. Watch the cards stream in
+
+Tell me what you see — I'll help fix any issues.
+```
+
+Use `AskUserQuestion`:
+
+```
+question: "What happened when you tested?"
+options:
+  - label: "It worked great!"
+    description: "The output was good — I'm happy with it"
+  - label: "Output was wrong"
+    description: "The AI said the wrong thing or misunderstood the task"
+  - label: "Cards looked wrong"
+    description: "The layout or formatting was off"
+  - label: "It didn't trigger"
+    description: "The skill didn't activate — it used the generic assistant instead"
+```
+
+### 3.3 Fix Based on Feedback
+
+- **Output was wrong** → Edit SKILL.md to be more specific about what the AI should do
+- **Cards looked wrong** → Check the `card-data` JSON example in SKILL.md — field names must match the template's slot schema exactly. Read the template JSON in `packages/_shared/` to verify field names. The agent also has the full card catalog at `.claude/skills/_card-catalog/SKILL.md` — if the field names there don't match, the template JSON needs updating.
+- **Wrong card template used** → The agent picks templates from the card catalog based on content type. If the skill should always use a specific template, make the `## Output` section in SKILL.md explicit: "You MUST use `_template: X`". If the skill doesn't specify, the agent chooses autonomously from the catalog.
+- **Didn't trigger** → Improve the `description` field in SKILL.md frontmatter. Claude uses this description to decide when to invoke the skill. Add more natural keywords the user might say. Check that `user-invocable: false` is set (so Claude auto-invokes). Note: manifest.json `trigger.voice_keywords` is NOT used for routing — only the SKILL.md description matters.
+
+After each fix, tell the user to test again. Loop until satisfied.
+
+---
+
+## Principles for Non-Programmers
+
+Throughout the entire flow, follow these rules:
+
+1. **No jargon.** Say "what the AI does" not "system prompt." Say "card layout" not "template schema." Say "trigger words" not "voice_keywords array."
+
+2. **Show, don't tell.** When describing a template, show what it looks like. When creating a skill, show the plain English prompt, not the file structure.
+
+3. **One question at a time.** Don't overwhelm with options. Each AskUserQuestion should be one clear decision.
+
+4. **Always explain WHERE things are.** After creating files, tell the user the exact path and what each file does. They should be able to find and edit things later.
+
+5. **Celebrate progress.** Use clear checkmarks and summaries at each step. The user should always know where they are in the process.
+
+6. **Default to simple.** If the user doesn't have a preference, pick the simplest option. Two-card flow (thinking → result) covers 80% of use cases.
+
+7. **SKILL.md is king.** The skill prompt is what matters most. Spend time getting it right. Everything else is packaging.
+
+---
+
+## Architecture Reference
+
+### How skills work at runtime
+
+```
+packages/{id}/SKILL.md
+    ↓ (bind-mounted into container at /workspace/packages/)
+agent-runner setupSkills()
+    ↓ (copies to /workspace/group/.claude/skills/{id}/SKILL.md)
+Claude Code auto-discovery
+    ↓ (description loaded into context, full content on invocation)
+Claude decides to invoke skill based on user's prompt
+    ↓ (Claude outputs card-data JSON with _template OR plain markdown)
+agent-runner extractCardData()
+    ↓ (extracts _template field, creates card via IPC)
+Frontend renders card
+```
+
+### How card templates are auto-discovered
+
+```
+packages/_shared/*.json  +  packages/*/templates/*.json
+    ↓ (bind-mounted into container at /workspace/packages/)
+agent-runner setupCardCatalog()
+    ↓ (reads all template JSONs, deduplicates by $id)
+    ↓ (generates .claude/skills/_card-catalog/SKILL.md)
+Claude Code auto-discovery
+    ↓ (sees catalog description in context, reads full catalog on invocation)
+Claude uses ANY template from the catalog when content is structured
+    ↓ (outputs card-data JSON with _template matching a catalog entry)
+agent-runner extractCardData() → Frontend renders card
+```
+
+The card catalog is regenerated every container startup, so adding a new
+template JSON to `packages/_shared/` automatically makes it available.
+
+### Key design principles
+
+1. **SKILL.md IS the skill** — the frontmatter `description` drives discovery, the content drives behavior
+2. **No host-side routing** — Claude selects skills, not keyword matching
+3. **Card catalog is auto-discovered** — all templates in `_shared/` + bundled are compiled into `_card-catalog/SKILL.md` at startup; the agent knows every template and its fields
+4. **`_template` in card-data** — skills that need cards include `"_template": "template-name"` in their JSON output; agent-runner reads this to create the card
+5. **manifest.json is metadata** — for the package registry/gallery, NOT for skill routing
+6. **Shared templates** in `packages/_shared/` take priority over bundled templates
+7. **Agent uses cards autonomously** — even without a specific skill, the agent can choose a card template from the catalog when the content is structured
+
+---
+
+## Drive Integration
+
+This skill uses the `/drive` execution engine for implementation work. When creating or editing package files, follow Drive Mode's discipline:
+
+- **Verify after changes:** Check that manifest.json is valid JSON, SKILL.md has correct frontmatter
+- **Self-review:** Re-read created files before presenting to user
+- **Don't stop:** After each user answer, immediately proceed to the next step
+- **AskUserQuestion always:** Never output questions as plain text — always use the AskUserQuestion tool
+- **Check template slots:** When creating card output skills, read the target template JSON in `packages/_shared/` to verify field names match exactly
+- **New templates auto-discovered:** If you create a new template JSON in `packages/_shared/`, it will be auto-discovered at next container startup — no code changes needed
+- **Verify MODULE_MAP:** If adding a brand new template (not using an existing shared one), ensure the frontend `ModuleRenderer.jsx` MODULE_MAP includes the template ID → component mapping
+
+But unlike `/team-drive`, there is NO Mission Contract, NO GitHub Issue, NO branch management. This is a lightweight creative workshop, not a code mission.

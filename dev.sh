@@ -26,8 +26,6 @@ sleep 2
 # Port configuration (read from .env or use defaults)
 API_PORT="${API_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-GATEWAY_HTTP_PORT="${GATEWAY_HTTP_PORT:-18789}"
-
 # Start API server
 echo "Starting API server on :${API_PORT}..."
 cd "$PROJECT_ROOT/api-server"
@@ -57,14 +55,6 @@ else
     echo "Skipping vi-realtime (GOOGLE_API_KEY not set)"
 fi
 
-# Start vi-gateway
-echo "Starting vi-gateway..."
-cd "$PROJECT_ROOT/gateway/plugin"
-npm install --silent 2>/dev/null
-npm run dev &
-VI_GATEWAY_PID=$!
-echo "vi-gateway PID: $VI_GATEWAY_PID"
-
 # Start frontend
 echo "Starting frontend on :${FRONTEND_PORT}..."
 cd "$PROJECT_ROOT/frontend"
@@ -80,7 +70,6 @@ echo "==================================="
 echo "  Frontend:    http://localhost:${FRONTEND_PORT}"
 echo "  API Server:  http://localhost:${API_PORT}"
 echo "  API Docs:    http://localhost:${API_PORT}/docs"
-echo "  Gateway:     http://localhost:${GATEWAY_HTTP_PORT}"
 echo ""
 echo "  Press Ctrl+C to stop all services"
 echo "==================================="
@@ -88,7 +77,7 @@ echo "==================================="
 # Cleanup on exit
 cleanup() {
     echo "Shutting down..."
-    kill $API_PID $VI_GATEWAY_PID $FRONTEND_PID $REALTIME_PID 2>/dev/null
+    kill $API_PID $FRONTEND_PID $REALTIME_PID 2>/dev/null
     wait 2>/dev/null
 }
 trap cleanup EXIT INT TERM

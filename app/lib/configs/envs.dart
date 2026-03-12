@@ -15,8 +15,8 @@ enum ServerEnv {
   /// 当前选择环境的 Base URL
   String get host {
     return switch (this) {
-      ServerEnv.production => 'https://api.dev-user.agentone.collov.ai/v1',
-      ServerEnv.test => 'https://api.dev-user.agentone.collov.ai/v1',
+      ServerEnv.production => 'http://34.172.9.61:3601/api',
+      ServerEnv.test => 'http://34.172.9.61:3601/api',
     };
   }
 

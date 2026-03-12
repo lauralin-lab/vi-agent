@@ -2,6 +2,8 @@
 ToolsMixin — all @function_tool decorated methods for the Assistant.
 
 These are the tools exposed to the LLM (Gemini / OpenAI) during a voice session.
+Legacy RPC methods are preserved but NOT decorated with @function_tool
+so Gemini cannot invoke them. They can still be called programmatically.
 """
 import asyncio
 import json
@@ -37,18 +39,16 @@ class ToolsMixin:
             logger.error(f"[{method}] User RPC failed: {e}")
             return {"success": False, "error": str(e)}
 
-    # Frontend Control Tools (RPC to user participant)
+    # ─── Legacy RPC methods (kept for programmatic use, NOT exposed to Gemini) ───
 
-    @function_tool
-    async def rpc_b2f_take_photo(self, context: RunContext):
+    async def rpc_b2f_take_photo(self, context: RunContext = None):
         """Captures photo from camera, adds to chat input (user must then Send)."""
         logger.info("[rpc_b2f_take_photo] Tool invoked")
         result = await self.rpc_b2f_call("rpcB2FTakePhoto")
         return {"status": "captured" if result.get("success") else "failed"}
 
-    @function_tool
-    async def rpc_b2f_capture_and_upload(self, context: RunContext):
-        """Captures a photo from the user's camera and uploads it to S3 automatically. Returns the S3 URL of the captured image. Use this when you need a photo to include in a task (website creation, research, etc.) — no user action needed."""
+    async def rpc_b2f_capture_and_upload(self, context: RunContext = None):
+        """Captures a photo from the user's camera and uploads it to S3 automatically."""
         logger.info("[rpc_b2f_capture_and_upload] Tool invoked")
         result = await self.rpc_b2f_call("rpcB2FCaptureAndUpload")
         if result.get("success") and result.get("url"):
@@ -59,33 +59,52 @@ class ToolsMixin:
         logger.error(f"[rpc_b2f_capture_and_upload] Failed: {error}")
         return {"status": "failed", "error": error}
 
-    @function_tool
-    async def rpc_b2f_set_chat_text(self, context: RunContext, text: str):
+    async def rpc_b2f_set_chat_text(self, context: RunContext = None, text: str = ""):
         """Writes text into chat input box."""
         logger.info(f"[rpc_b2f_set_chat_text] Tool invoked text={text[:50]}")
         result = await self.rpc_b2f_call("rpcB2FSetChatText", {"text": text})
         return {"status": "set" if result.get("success") else "failed"}
 
-    @function_tool
-    async def rpc_b2f_get_chat_content(self, context: RunContext):
+    async def rpc_b2f_get_chat_content(self, context: RunContext = None):
         """Reads current text and images from chat input box."""
         logger.info("[rpc_b2f_get_chat_content] Tool invoked")
         result = await self.rpc_b2f_call("rpcB2FGetChatContent")
         return result if result.get("text") is not None else {}
 
-    @function_tool
-    async def rpc_b2f_show_action_card(self, context: RunContext, title: str, options: list[str]):
+    async def rpc_b2f_show_action_card(self, context: RunContext = None, title: str = "", options: list[str] = None):
         """Shows clickable option buttons (max 4 options)."""
+        options = options or []
         logger.info(f"[rpc_b2f_show_action_card] Tool invoked title={title} options={len(options)}")
         result = await self.rpc_b2f_call("rpcB2FShowActionCard", {"title": title, "options": options[:4]})
         return {"status": "shown" if result.get("success") else "failed"}
 
-    @function_tool
-    async def rpc_b2f_show_result(self, context: RunContext, result_type: str, content: str):
-        """Displays rich content visually to user. Types: html, json, url, markdown, text, data. Call BEFORE speaking your response when you have rich content."""
+    async def rpc_b2f_show_result(self, context: RunContext = None, result_type: str = "", content: str = ""):
+        """Displays rich content visually to user."""
         logger.info(f"[rpc_b2f_show_result] Tool invoked type={result_type} len={len(content)}")
         result = await self.rpc_b2f_call("rpcB2FShowResult", {"result_type": result_type, "content": content})
         return {"status": "shown" if result.get("success") else "failed"}
+
+    async def rpc_b2f_navigate_to(self, context: RunContext = None, page: str = ""):
+        """Navigate the user to a different page."""
+        logger.info(f"[rpc_b2f_navigate_to] Navigating to: {page}")
+        result = await self.rpc_b2f_call("rpcB2FNavigateTo", {"page": page})
+        if result.get("success"):
+            self._current_page = page
+        return {"status": "navigated" if result.get("success") else "failed", "page": page}
+
+    async def rpc_b2f_zoom(self, context: RunContext = None, level: float = 1.0):
+        """Adjust camera zoom level."""
+        logger.info(f"[rpc_b2f_zoom] Setting zoom: {level}")
+        result = await self.rpc_b2f_call("rpcB2FZoom", {"level": level})
+        return {"status": "zoomed" if result.get("success") else "failed", "level": level}
+
+    async def rpc_b2f_switch_camera(self, context: RunContext = None, camera: str = ""):
+        """Switch between front and back camera."""
+        logger.info(f"[rpc_b2f_switch_camera] Switching to: {camera}")
+        result = await self.rpc_b2f_call("rpcB2FSwitchCamera", {"camera": camera})
+        return {"status": "switched" if result.get("success") else "failed", "camera": camera}
+
+    # ─── Active tools (exposed to Gemini via @function_tool) ─────────────
 
     @function_tool
     async def update_info_bar(self, context: RunContext, status: str, message: str):
@@ -123,56 +142,18 @@ class ToolsMixin:
         return {"status": "updated"}
 
     @function_tool
-    async def rpc_b2f_navigate_to(self, context: RunContext, page: str):
-        """Navigate the user to a different page. Pages: 'camera', 'session', 'home'. Use when context suggests user should see a different view."""
-        logger.info(f"[rpc_b2f_navigate_to] Navigating to: {page}")
-        result = await self.rpc_b2f_call("rpcB2FNavigateTo", {"page": page})
-        if result.get("success"):
-            self._current_page = page
-        return {"status": "navigated" if result.get("success") else "failed", "page": page}
-
-    @function_tool
-    async def rpc_b2f_zoom(self, context: RunContext, level: float):
-        """Adjust camera zoom level. level: 1.0 = normal, 2.0 = 2x zoom, etc. Use to focus on details."""
-        logger.info(f"[rpc_b2f_zoom] Setting zoom: {level}")
-        result = await self.rpc_b2f_call("rpcB2FZoom", {"level": level})
-        return {"status": "zoomed" if result.get("success") else "failed", "level": level}
-
-    @function_tool
-    async def rpc_b2f_switch_camera(self, context: RunContext, camera: str):
-        """Switch between front and back camera. camera: 'front' or 'back'."""
-        logger.info(f"[rpc_b2f_switch_camera] Switching to: {camera}")
-        result = await self.rpc_b2f_call("rpcB2FSwitchCamera", {"camera": camera})
-        return {"status": "switched" if result.get("success") else "failed", "camera": camera}
+    async def rpc_b2f_action_button(self, context: RunContext, hashtag: str, label: str):
+        """Show a tappable action button to the user. ONLY use these predefined hashtags: #search, #identify, #translate, #shop, #solve, #ask, #nutrition, #read, #todo, #schedule. Use the matching predefined label: Search, Identify, Translate, Shop, Solve, Ask, Nutrition, Read, Todo, Schedule. Do NOT invent custom hashtags or labels."""
+        logger.info(f"[rpc_b2f_action_button] hashtag={hashtag} label={label}")
+        await self._push_to_frontend("vi-agent", {
+            "type": "action_button",
+            "hashtag": hashtag,
+            "label": label,
+        })
+        return {"status": "shown", "hashtag": hashtag}
 
     @function_tool
     async def dispatch_to_nanoclaw(self, context: RunContext, prompt: str):
         """Dispatches a task to NanoClaw for processing. Provide a clear, detailed description of what needs to be done. NanoClaw will automatically choose the best approach (website creation, research, document generation, data analysis, etc.). Results are delivered asynchronously to the frontend via SSE."""
         logger.info(f"[dispatch_to_nanoclaw] Dispatching: {prompt[:100]}")
         return await self._dispatch_via_nanoclaw(prompt)
-
-    @function_tool
-    async def update_memory(self, context: RunContext, memory_update: str):
-        """Updates important memory (agent name, user name, profile, facts, requests, preferences). Use this to record information the user explicitly wants remembered OR information critical for future conversations. MUST be called when user says 'remember this', 'you must know', etc."""
-        logger.info(f"[update_memory] Saving: {memory_update[:100]}")
-        try:
-            http = await self._get_http_session()
-            resp = await http.post(
-                f"{self._api_base}/api/internal/memories",
-                json={
-                    "vi_user_id": self._vi_user_id,
-                    "content": memory_update,
-                    "type": "long_term",
-                    "source": "agent",
-                },
-            )
-            if resp.status == 200:
-                logger.info(f"[memory] Saved memory update for user {self._vi_user_id}")
-                return {"ok": True, "message": "Memory saved successfully"}
-            else:
-                body = await resp.text()
-                logger.warning(f"[memory] Memory save failed ({resp.status}): {body}")
-                return {"ok": False, "error": f"Memory save failed: {resp.status}"}
-        except Exception as e:
-            logger.warning(f"[memory] Error saving memory: {e}")
-            return {"ok": False, "error": str(e)}

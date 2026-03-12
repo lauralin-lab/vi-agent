@@ -8,12 +8,13 @@ COPY src/ ./src/
 RUN npm run build
 
 FROM node:22-alpine
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg docker-cli
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY data/shared/skills/ /skills/
+COPY public/ ./public/
 
-EXPOSE 3100
+EXPOSE 3100 3101
 CMD ["node", "dist/index.js"]

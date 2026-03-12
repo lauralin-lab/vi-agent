@@ -61,6 +61,10 @@ for svc in "${SERVICES[@]}"; do
     BUILD_ARGS=""
     if [ "$svc" = "frontend" ]; then
         BUILD_ARGS="--build-arg VITE_API_URL= --build-arg VITE_LIVEKIT_URL="
+        # Firebase SDK config — baked into frontend at build time
+        for fb_var in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID VITE_FIREBASE_PACKAGE_NAME; do
+            BUILD_ARGS="$BUILD_ARGS --build-arg ${fb_var}=${!fb_var:-}"
+        done
     fi
 
     if docker build $BUILD_ARGS \

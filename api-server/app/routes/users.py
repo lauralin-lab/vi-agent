@@ -3,7 +3,7 @@ import uuid as _uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_current_user, get_db, verify_device_ownership
+from ..deps import get_db, get_firebase_user, verify_device_ownership
 from ..models import Session, User
 from ..services.session_center import session_center
 
@@ -32,7 +32,7 @@ async def get_sessions_by_device(
 async def get_sessions(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     vi_user_id = user.vi_user_id
@@ -63,7 +63,7 @@ async def delete_session_by_device(
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a session by ID (JWT auth)."""

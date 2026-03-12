@@ -38,9 +38,6 @@ class AppInfoPage extends StatelessWidget {
           // 环境信息
           _buildSection('环境', [
             _InfoRow('Server Host', app.serverEnv.host),
-            _InfoRow('Gateway URL', app.auth.gateWayUrl),
-            _InfoRow('Workspace URL', app.auth.workSpaceUrl),
-            _InfoRow('IP Config', app.auth.ipConfig),
           ]),
 
           // 用户信息

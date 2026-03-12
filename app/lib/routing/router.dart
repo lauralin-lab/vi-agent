@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../modules/pages/guidance/guidance_page.dart';
 import '../modules/pages/center/center_page.dart';
 import '../modules/pages/home_page.dart';
 import '../modules/pages/login/login_page.dart';
@@ -25,9 +24,6 @@ final class RouterPaths {
 
   /// Center
   static const cneter = '/center';
-
-  /// 引导页
-  static const guidance = '/guidance';
 
   /// 会话
   static const session = '/session';
@@ -83,17 +79,6 @@ class CenterRoute extends AppGoRouteData {
   @override
   Widget buildPageWidget(BuildContext context, GoRouterState state) {
     return const CenterPage();
-  }
-}
-
-/// 引导页
-@TypedGoRoute<GuidanceRoute>(path: RouterPaths.guidance, name: RouterPaths.guidance)
-class GuidanceRoute extends AppGoRouteData {
-  const GuidanceRoute() : super(transition: AdaptiveTransitionType.fade);
-
-  @override
-  Widget buildPageWidget(BuildContext context, GoRouterState state) {
-    return const GuidancePage();
   }
 }
 

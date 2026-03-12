@@ -1,6 +1,7 @@
 """Test configuration and fixtures for the API server."""
 
 import uuid as _uuid
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -67,16 +68,59 @@ async def db_session():
 
 
 # ---------------------------------------------------------------------------
+# Mock Firebase Manager
+# ---------------------------------------------------------------------------
+TEST_FIREBASE_UID = "firebase-test-uid-001"
+TEST_PACKAGE_NAME = "com.example.viagent.ios"
+TEST_USER_EMAIL = "test@example.com"
+TEST_USER_DISPLAY_NAME = "Test User"
+
+
+def _make_mock_firebase_manager():
+    """Create a mock FirebaseManager that maps id-token to firebase_uid.
+
+    Token format: "token-for-{uid}" maps to firebase_uid "{uid}".
+    Default token "valid-firebase-token" maps to TEST_FIREBASE_UID.
+    """
+    mock_mgr = MagicMock()
+
+    async def _verify_id_token(package_name, id_token):
+        if id_token == "invalid-token":
+            raise Exception("InvalidIdTokenError: invalid token")
+        if id_token == "expired-token":
+            raise Exception("ExpiredIdTokenError: token expired")
+        # Support multi-user: "token-for-{uid}" → uid
+        if id_token.startswith("token-for-"):
+            uid = id_token[len("token-for-"):]
+        else:
+            uid = TEST_FIREBASE_UID
+        return {
+            "uid": uid,
+            "email": f"{uid}@example.com",
+            "firebase": {"sign_in_provider": "google.com"},
+        }
+
+    async def _get_user(package_name, uid):
+        user_record = MagicMock()
+        user_record.display_name = f"User {uid[:8]}"
+        user_record.email = f"{uid}@example.com"
+        user_record.photo_url = "https://example.com/photo.jpg"
+        user_record.phone_number = None
+        user_record.email_verified = True
+        user_record.provider_data = []
+        return user_record
+
+    mock_mgr.verify_id_token = AsyncMock(side_effect=_verify_id_token)
+    mock_mgr.get_user = AsyncMock(side_effect=_get_user)
+    return mock_mgr
+
+
+# ---------------------------------------------------------------------------
 # FastAPI test client
 # ---------------------------------------------------------------------------
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession):
-    """Provide an HTTPX AsyncClient bound to the FastAPI app with test DB.
-
-    We create a fresh FastAPI app WITHOUT the production lifespan to avoid
-    background tasks (event aggregator, stale session cleanup) that would
-    keep the event loop alive and hang pytest.
-    """
+    """Provide an HTTPX AsyncClient bound to the FastAPI app with test DB."""
     from app.deps import get_db
     from app.main import app
 
@@ -91,6 +135,9 @@ async def client(db_session: AsyncSession):
     # Provide a mock redis on app.state so routes that check it don't crash
     app.state.redis = None
 
+    # Provide a mock Firebase manager
+    app.state.firebase_manager = _make_mock_firebase_manager()
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -101,21 +148,18 @@ async def client(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 # Convenience fixtures
 # ---------------------------------------------------------------------------
-TEST_USER_EMAIL = "test@example.com"
-TEST_USER_PASSWORD = "securepass123"
-TEST_USER_DISPLAY_NAME = "Test User"
+FIREBASE_AUTH_HEADERS = {
+    "id-token": "valid-firebase-token",
+    "package-name": TEST_PACKAGE_NAME,
+}
 
 
 @pytest_asyncio.fixture
 async def registered_user(client: AsyncClient):
-    """Register a test user and return the auth response dict."""
+    """Register a test user via Firebase auth and return the response dict."""
     resp = await client.post(
-        "/api/auth/signup",
-        json={
-            "email": TEST_USER_EMAIL,
-            "password": TEST_USER_PASSWORD,
-            "display_name": TEST_USER_DISPLAY_NAME,
-        },
+        "/api/auth/firebase",
+        headers=FIREBASE_AUTH_HEADERS,
     )
     assert resp.status_code == 200
     return resp.json()
@@ -123,6 +167,5 @@ async def registered_user(client: AsyncClient):
 
 @pytest_asyncio.fixture
 async def auth_headers(registered_user: dict):
-    """Return Authorization headers for the registered test user."""
-    token = registered_user["token"]
-    return {"Authorization": f"Bearer {token}"}
+    """Return Firebase auth headers for the registered test user."""
+    return FIREBASE_AUTH_HEADERS.copy()

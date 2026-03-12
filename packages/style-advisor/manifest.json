@@ -1,0 +1,39 @@
+{
+  "id": "style-advisor",
+  "version": "1.0.0",
+  "name": "Style Advisor",
+  "description": "Get personalized fashion advice and outfit suggestions from photos",
+  "icon": "👔",
+  "category": "lifestyle",
+
+  "trigger": {
+    "visual_cues": ["clothing", "outfit", "fashion", "style", "dress", "shoes", "accessory"],
+    "voice_keywords": ["style", "fashion", "outfit", "wear", "clothes", "look"],
+    "intention_level": "L1"
+  },
+
+  "instruction": {
+    "file": "SKILL.md",
+    "model": "claude-sonnet-4-6",
+    "max_turns": 5,
+    "max_tokens": 8192
+  },
+
+  "templates": {
+    "bundled": [],
+    "shared": ["thinking-process", "image-analysis"]
+  },
+
+  "tools": {
+    "bundled": [],
+    "builtin": []
+  },
+
+  "apis": {},
+
+  "output": {
+    "card_sequence": ["thinking-process", "image-analysis"],
+    "estimated_time": "10-20s",
+    "estimated_cost": "$0.02-0.05"
+  }
+}

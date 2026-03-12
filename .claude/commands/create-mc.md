@@ -107,6 +107,14 @@ fi
 # Final milestone: arg override > config versions.current > empty
 CURRENT_VERSION=$(bash ~/.claude/commands/scripts/tw-config.sh versions.current "" 2>/dev/null)
 MILESTONE="${MILESTONE_OVERRIDE:-$CURRENT_VERSION}"
+
+# Resolve short milestone name to full GitHub title (prefix match)
+# e.g. "V0.1" → "V0.1 — AI Camera Pipeline 全链路验证"
+if [ -n "$MILESTONE" ]; then
+  MILESTONE_FULL=$(gh api "repos/$REPO/milestones" \
+    --jq ".[] | select(.title | startswith(\"$MILESTONE\")) | .title" 2>/dev/null | head -1)
+  [ -n "$MILESTONE_FULL" ] && MILESTONE="$MILESTONE_FULL"
+fi
 ```
 
 **Assignee resolution**: Match `@mention` against:

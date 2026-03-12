@@ -57,6 +57,7 @@ calc_ports() {
   FRONTEND_HTTPS_PORT=$((FRONTEND_PORT + 10))
   API_PORT=$((3000 + slot * 100 + 1))
   NANOCLAW_PORT=$((3000 + slot * 100 + 2))
+  NANOCLAW_HTTPS_PORT=$((NANOCLAW_PORT + 10))
   REALTIME_PORT=$((3000 + slot * 100 + 3))
   POSTGRES_PORT=$((5432 + slot))
   REDIS_PORT=$((6379 + slot))
@@ -180,10 +181,14 @@ cmd_deploy() {
   echo "  Ports: frontend=$FRONTEND_PORT api=$API_PORT nanoclaw=$NANOCLAW_PORT"
 
   mkdir -p "$INSTANCE_DIR"
+  chown gitaction:docker "$INSTANCE_DIR"
+  chmod 2775 "$INSTANCE_DIR"
 
   # --- Generate SSL cert if missing ---
   if [ ! -f "$INSTANCE_DIR/ssl/cert.pem" ]; then
     mkdir -p "$INSTANCE_DIR/ssl"
+    chown gitaction:docker "$INSTANCE_DIR/ssl"
+    chmod 2775 "$INSTANCE_DIR/ssl"
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
       -keyout "$INSTANCE_DIR/ssl/key.pem" \
       -out "$INSTANCE_DIR/ssl/cert.pem" \
@@ -204,7 +209,7 @@ EOF
   fi
 
   # Update API keys from environment (injected by GitHub Actions)
-  for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET GOOGLE_API_KEY ANTHROPIC_API_KEY GCS_BUCKET; do
+  for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET GOOGLE_API_KEY ANTHROPIC_API_KEY GCS_BUCKET FIREBASE_ENABLED FIREBASE_PROJECTS; do
     val="${!key:-}"
     if [ -n "$val" ]; then
       sed -i "/^${key}=/d" "$INSTANCE_DIR/.env"
@@ -214,8 +219,26 @@ EOF
   # Ensure SERVER_IP is current
   sed -i "/^SERVER_IP=/d" "$INSTANCE_DIR/.env"
   echo "SERVER_IP=$SERVER_IP" >> "$INSTANCE_DIR/.env"
-  chmod 600 "$INSTANCE_DIR/.env"
+  chown gitaction:docker "$INSTANCE_DIR/.env"
+  chmod 660 "$INSTANCE_DIR/.env"
   echo "API keys updated from environment."
+
+  # --- Setup Firebase SA file (shared → instance, readable by container) ---
+  SHARED_SA="$BASE_DIR/firebase/sa.json"
+  INSTANCE_SA_DIR="$INSTANCE_DIR/firebase"
+  if [ -f "$SHARED_SA" ]; then
+    mkdir -p "$INSTANCE_SA_DIR"
+    chown gitaction:docker "$INSTANCE_SA_DIR"
+    chmod 2775 "$INSTANCE_SA_DIR"
+    cp "$SHARED_SA" "$INSTANCE_SA_DIR/sa.json"
+    chmod 644 "$INSTANCE_SA_DIR/sa.json"
+    echo "Firebase SA copied to instance (644 for container read access)."
+  else
+    mkdir -p "$INSTANCE_SA_DIR"
+    chown gitaction:docker "$INSTANCE_SA_DIR"
+    chmod 2775 "$INSTANCE_SA_DIR"
+    echo "WARNING: No Firebase SA at $SHARED_SA — Firebase auth will be disabled."
+  fi
 
   # --- Generate docker-compose.yml from template ---
   local TEMPLATE_FILE="$TEMPLATE_DIR/docker-compose.instance-image.yml.tpl"
@@ -230,6 +253,7 @@ EOF
       -e "s/__FRONTEND_HTTPS_PORT__/$FRONTEND_HTTPS_PORT/g" \
       -e "s/__API_PORT__/$API_PORT/g" \
       -e "s/__NANOCLAW_PORT__/$NANOCLAW_PORT/g" \
+      -e "s/__NANOCLAW_HTTPS_PORT__/$NANOCLAW_HTTPS_PORT/g" \
       -e "s/__REALTIME_PORT__/$REALTIME_PORT/g" \
       -e "s/__POSTGRES_PORT__/$POSTGRES_PORT/g" \
       -e "s/__REDIS_PORT__/$REDIS_PORT/g" \
@@ -240,6 +264,14 @@ EOF
   # --- Stop existing containers ---
   cd "$INSTANCE_DIR"
   docker compose down --remove-orphans 2>/dev/null || true
+
+  # --- Docker Hub login (avoid rate limit) ---
+  if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+    echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>/dev/null
+    echo "Docker Hub authenticated."
+  else
+    echo "WARNING: No Docker Hub credentials — pull may hit rate limit."
+  fi
 
   # --- Pull and start ---
   echo "Pulling images..."
@@ -261,6 +293,13 @@ EOF
     fi
     sleep 2
   done
+
+  # --- Database migrations (after health check to ensure DB is ready) ---
+  echo "Running database migrations..."
+  docker compose exec -T api-server alembic upgrade head || {
+    echo "WARNING: Migration failed — check api-server logs"
+    docker compose logs --tail=10 api-server 2>/dev/null || true
+  }
 
   # --- Run tests if available ---
   if [ -f "$TEMPLATE_DIR/test-instance.sh" ]; then
@@ -337,6 +376,23 @@ cmd_logs() {
     docker compose logs --tail "$LINES" "$SERVICE" 2>&1
   else
     docker compose logs --tail "$LINES" 2>&1
+  fi
+
+  # Also show logs from spawned agent containers (not part of compose)
+  echo ""
+  echo "=== Spawned Agent Containers ==="
+  local SPAWNED
+  SPAWNED=$(docker ps -a --filter "label=vi-agent-spawned=true" --format "{{.Names}}\t{{.Status}}" 2>/dev/null || true)
+  if [ -z "$SPAWNED" ]; then
+    echo "  (none)"
+  else
+    echo "$SPAWNED"
+    echo ""
+    for CNAME in $(docker ps -a --filter "label=vi-agent-spawned=true" --format "{{.Names}}"); do
+      echo "--- Logs: $CNAME (last 50 lines) ---"
+      docker logs --tail 50 "$CNAME" 2>&1 || echo "  (no logs available)"
+      echo ""
+    done
   fi
 }
 

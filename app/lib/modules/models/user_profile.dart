@@ -4,7 +4,7 @@ part 'user_profile.g.dart';
 
 /// 基础信息
 class SelfProfile {
-  const SelfProfile(this.uuid, this.userName, this.avatar, this.firebaseID, this.liveKit);
+  const SelfProfile(this.uuid, this.userName, this.avatar, this.firebaseID);
 
   /// 用户 UUID
   final String uuid;
@@ -18,18 +18,9 @@ class SelfProfile {
   /// fireBase ID
   final String firebaseID;
 
-  /// LiveKit信息
-  final LiveKit liveKit;
-
   static SelfProfile? fromUserProfile(UserProfile? profile) {
     if (profile == null) return null;
-    return SelfProfile(
-      profile.uuid,
-      profile.userName,
-      profile.photoUrl,
-      profile.firebaseUid,
-      profile.liveKit,
-    );
+    return SelfProfile(profile.viUserId, profile.displayName, profile.photoUrl, profile.firebaseUid);
   }
 
   @override
@@ -40,74 +31,68 @@ class SelfProfile {
           uuid == other.uuid &&
           userName == other.userName &&
           avatar == other.avatar &&
-          firebaseID == other.firebaseID &&
-          liveKit == other.liveKit;
+          firebaseID == other.firebaseID;
 
   @override
-  int get hashCode => Object.hash(uuid, userName, avatar, firebaseID, liveKit);
+  int get hashCode => Object.hash(uuid, userName, avatar, firebaseID);
 }
 
 /// 用户信息
 @JsonSerializable(createToJson: false)
 class UserProfile {
   /// 默认构造函数
-  const UserProfile(
+  UserProfile(
+    this.userId,
+    this.viUserId,
     this.firebaseUid,
-    this.uuid,
-    this.packageName,
-    this.userName,
     this.displayName,
     this.eMail,
     this.photoUrl,
     this.signInProvider,
-    this.tier,
-    this.balance,
-    this.liveKit,
+    this.language,
+    this.isNewUser,
+    this.inviteRequired,
   );
 
-  /// firebase_uid
-  @JsonKey(name: 'id', defaultValue: '')
-  final String firebaseUid;
+  /// 用户 UD
+  @JsonKey(name: 'user_id', defaultValue: '')
+  String userId;
 
-  /// 用户 UUID
-  @JsonKey(name: 'custom_uid', defaultValue: '')
-  final String uuid;
+  /// VI 系统唯一ID
+  @JsonKey(name: 'vi_user_id', defaultValue: '')
+  String viUserId;
 
-  /// 包名
-  @JsonKey(name: 'package_name', defaultValue: '')
-  final String packageName;
-
-  /// 用户名称
-  @JsonKey(name: 'user_name', defaultValue: '')
-  final String userName;
+  /// firebase ID
+  @JsonKey(name: 'firebase_uid', defaultValue: '')
+  String firebaseUid;
 
   /// 用户显示名字
   @JsonKey(name: 'display_name', defaultValue: '')
-  final String displayName;
+  String displayName;
 
-  /// Email
+  /// 邮箱
   @JsonKey(name: 'email', defaultValue: '')
-  final String eMail;
+  String eMail;
 
-  /// 头像
+  /// 照片
   @JsonKey(name: 'photo_url', defaultValue: '')
-  final String photoUrl;
+  String photoUrl;
 
   /// 登陆方式
   @JsonKey(name: 'sign_in_provider', defaultValue: '')
-  final String signInProvider;
+  String signInProvider;
 
-  /// tier
-  @JsonKey(name: 'tier', defaultValue: '')
-  final String tier;
+  /// 语言
+  @JsonKey(name: 'language', defaultValue: '')
+  String language;
 
-  /// balance
-  @JsonKey(name: 'balance', defaultValue: '')
-  final String balance;
+  /// 语言
+  @JsonKey(name: 'is_new_user', defaultValue: true)
+  bool isNewUser;
 
-  /// liveKit
-  @JsonKey(name: 'livekit', defaultValue: _emptyLiveKit)
-  final LiveKit liveKit;
+  /// 当前是否需要邀请码
+  @JsonKey(name: 'invite_required', defaultValue: false)
+  bool inviteRequired;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => _$UserProfileFromJson(json);
 
@@ -116,109 +101,44 @@ class UserProfile {
       identical(this, other) ||
       other is UserProfile &&
           runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          viUserId == other.viUserId &&
           firebaseUid == other.firebaseUid &&
-          uuid == other.uuid &&
-          packageName == other.packageName &&
-          userName == other.userName &&
           displayName == other.displayName &&
           eMail == other.eMail &&
           photoUrl == other.photoUrl &&
           signInProvider == other.signInProvider &&
-          tier == other.tier &&
-          balance == other.balance &&
-          liveKit == other.liveKit;
+          language == other.language &&
+          isNewUser == other.isNewUser &&
+          inviteRequired == other.inviteRequired;
 
   @override
   int get hashCode => Object.hash(
+    userId,
+    viUserId,
     firebaseUid,
-    uuid,
-    packageName,
-    userName,
     displayName,
     eMail,
     photoUrl,
     signInProvider,
-    tier,
-    balance,
-    liveKit,
+    language,
+    isNewUser,
+    inviteRequired,
   );
 
   @override
   String toString() {
     return 'UserProfile{'
+        'userId:$userId,'
+        'vUserId:$viUserId,'
         'firebaseUid: $firebaseUid,'
-        'uuid: $uuid, '
-        'packageName: $packageName,'
-        'userName: $userName, '
         'displayName: $displayName,'
         'eMail: $eMail,'
         'photoUrl: $photoUrl,'
         'signInProvider: $signInProvider,'
-        'tier: $tier,'
-        'balance: $balance,'
-        'liveKit: $liveKit,'
+        'language: $language,'
+        'isNewUser: $isNewUser,'
+        'inviteRequired: $inviteRequired'
         '}';
   }
 }
-
-@JsonSerializable()
-class LiveKit {
-  LiveKit({
-    required this.liveKitToken,
-    required this.liveKitUrl,
-    required this.roomName,
-    required this.participantName,
-    required this.sessionKey,
-  });
-
-  static final LiveKit empty = LiveKit(
-    liveKitToken: '',
-    liveKitUrl: '',
-    roomName: '',
-    participantName: '',
-    sessionKey: '',
-  );
-
-  /// LiveKit Token
-  @JsonKey(name: 'token', defaultValue: '')
-  String liveKitToken;
-
-  /// LiveKit Url
-  @JsonKey(name: 'url', defaultValue: '')
-  String liveKitUrl;
-
-  /// LiveKit RoomName
-  @JsonKey(name: 'room_name', defaultValue: '')
-  String roomName;
-
-  /// LiveKit participantName
-  @JsonKey(name: 'participant_name', defaultValue: '')
-  String participantName;
-
-  /// SessionKey
-  @JsonKey(name: 'session_key', defaultValue: '')
-  String sessionKey;
-
-  factory LiveKit.fromJson(Map<String, dynamic> json) => _$LiveKitFromJson(json);
-
-  Map<String, dynamic> toJson() => _$LiveKitToJson(this);
-
-  LiveKit copyWith({
-    String? liveKitToken,
-    String? liveKitUrl,
-    String? roomName,
-    String? participantName,
-    String? sessionKey,
-  }) {
-    return LiveKit(
-      liveKitToken: liveKitToken ?? this.liveKitToken,
-      liveKitUrl: liveKitUrl ?? this.liveKitUrl,
-      roomName: roomName ?? this.roomName,
-      participantName: participantName ?? this.participantName,
-      sessionKey: sessionKey ?? this.sessionKey,
-    );
-  }
-}
-
-/// 空数据
-LiveKit _emptyLiveKit() => LiveKit.empty;

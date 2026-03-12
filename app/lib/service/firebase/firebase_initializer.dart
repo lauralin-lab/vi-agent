@@ -11,7 +11,6 @@ import '../../app.dart';
 import '../../configs/constans.dart';
 import '../../configs/firebase_options.dart';
 import '../network/api_service.dart';
-import 'fcm_service.dart';
 
 /// Firebase 初始化
 class FirebaseInitializer extends Initializer {
@@ -40,9 +39,6 @@ class FirebaseInitializer extends Initializer {
     FirebaseMessaging.instance.onTokenRefresh.listen((event) {
       ApiService.reportInfo();
     });
-
-    // FCM 消息接收监听
-    await FCMService.initialize();
 
     App().auth; // 初始化登录服务
   }

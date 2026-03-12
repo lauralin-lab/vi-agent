@@ -1,0 +1,39 @@
+{
+  "id": "document-scanner",
+  "version": "1.0.0",
+  "name": "Document Scanner",
+  "description": "Extract and structure text from document photos, receipts, and handwritten notes",
+  "icon": "📄",
+  "category": "productivity",
+
+  "trigger": {
+    "visual_cues": ["document", "receipt", "letter", "form", "handwritten", "note", "business card", "invoice"],
+    "voice_keywords": ["scan", "extract", "ocr", "document", "receipt", "text"],
+    "intention_level": "L1"
+  },
+
+  "instruction": {
+    "file": "SKILL.md",
+    "model": "claude-sonnet-4-6",
+    "max_turns": 5,
+    "max_tokens": 8192
+  },
+
+  "templates": {
+    "bundled": [],
+    "shared": ["thinking-process", "image-analysis"]
+  },
+
+  "tools": {
+    "bundled": [],
+    "builtin": []
+  },
+
+  "apis": {},
+
+  "output": {
+    "card_sequence": ["thinking-process", "image-analysis"],
+    "estimated_time": "10-20s",
+    "estimated_cost": "$0.02-0.05"
+  }
+}

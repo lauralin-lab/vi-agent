@@ -1,5 +1,5 @@
 schema_version: 3
-skill_version: 3.0.0
+skill_version: 3.8.0
 
 team:
   name: "VI Agent"
@@ -106,6 +106,9 @@ notifications:
     milestone.done: [slack, feishu]
     review.requested: [slack, feishu]
     review.changes_requested: [slack, feishu]
+
+deploy:
+  staging_workflow: "deploy.yml"
 
 versions:
   current: "V0.1"

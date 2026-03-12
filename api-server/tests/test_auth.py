@@ -1,105 +1,56 @@
-"""Tests for auth routes: signup, login, me."""
+"""Tests for Firebase auth routes: /api/auth/firebase, /api/auth/me."""
 
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import TEST_USER_EMAIL, TEST_USER_PASSWORD
+from tests.conftest import FIREBASE_AUTH_HEADERS, TEST_FIREBASE_UID, TEST_PACKAGE_NAME
 
 
-class TestSignup:
+class TestFirebaseAuth:
     @pytest.mark.asyncio
-    async def test_signup_success(self, client: AsyncClient):
+    async def test_firebase_login_creates_new_user(self, client: AsyncClient):
         resp = await client.post(
-            "/api/auth/signup",
-            json={
-                "email": "new@example.com",
-                "password": "pass1234secure",
-                "display_name": "New User",
-            },
+            "/api/auth/firebase",
+            headers=FIREBASE_AUTH_HEADERS,
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "token" in data
-        assert data["email"] == "new@example.com"
-        assert data["display_name"] == "New User"
+        assert data["is_new_user"] is True
+        assert data["firebase_uid"] == TEST_FIREBASE_UID
         assert data["vi_user_id"].startswith("vi-")
-        assert "user_id" in data
+        assert data["sign_in_provider"] == "google.com"
 
     @pytest.mark.asyncio
-    async def test_signup_duplicate_email(self, client: AsyncClient, registered_user):
+    async def test_firebase_login_returns_existing_user(self, client: AsyncClient, registered_user):
         resp = await client.post(
-            "/api/auth/signup",
-            json={
-                "email": TEST_USER_EMAIL,
-                "password": "another_pass_secure",
-                "display_name": "Duplicate",
-            },
-        )
-        assert resp.status_code == 409
-
-    @pytest.mark.asyncio
-    async def test_signup_invalid_email(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/auth/signup",
-            json={"email": "not-an-email", "password": "pass1234secure"},
-        )
-        assert resp.status_code == 422  # Pydantic validation error
-
-    @pytest.mark.asyncio
-    async def test_signup_missing_password(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/auth/signup",
-            json={"email": "x@example.com"},
-        )
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_signup_without_display_name(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/auth/signup",
-            json={"email": "nodisplay@example.com", "password": "pass1234secure"},
+            "/api/auth/firebase",
+            headers=FIREBASE_AUTH_HEADERS,
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["display_name"] is None
-
-
-class TestLogin:
-    @pytest.mark.asyncio
-    async def test_login_success(self, client: AsyncClient, registered_user):
-        resp = await client.post(
-            "/api/auth/login",
-            json={"email": TEST_USER_EMAIL, "password": TEST_USER_PASSWORD},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "token" in data
-        assert data["email"] == TEST_USER_EMAIL
+        assert data["is_new_user"] is False
         assert data["vi_user_id"] == registered_user["vi_user_id"]
 
     @pytest.mark.asyncio
-    async def test_login_wrong_password(self, client: AsyncClient, registered_user):
+    async def test_firebase_login_missing_headers(self, client: AsyncClient):
+        resp = await client.post("/api/auth/firebase")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_firebase_login_missing_package_name(self, client: AsyncClient):
         resp = await client.post(
-            "/api/auth/login",
-            json={"email": TEST_USER_EMAIL, "password": "wrongpass1234"},
+            "/api/auth/firebase",
+            headers={"id-token": "some-token"},
         )
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_login_nonexistent_user(self, client: AsyncClient):
+    async def test_firebase_login_invalid_token(self, client: AsyncClient):
         resp = await client.post(
-            "/api/auth/login",
-            json={"email": "nobody@example.com", "password": "pass1234secure"},
+            "/api/auth/firebase",
+            headers={"id-token": "invalid-token", "package-name": TEST_PACKAGE_NAME},
         )
         assert resp.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_login_invalid_email_format(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/auth/login",
-            json={"email": "bad-email", "password": "pass1234secure"},
-        )
-        assert resp.status_code == 422
 
 
 class TestMe:
@@ -108,19 +59,19 @@ class TestMe:
         resp = await client.get("/api/auth/me", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["email"] == TEST_USER_EMAIL
+        assert data["firebase_uid"] == TEST_FIREBASE_UID
         assert data["vi_user_id"].startswith("vi-")
         assert "created_at" in data
 
     @pytest.mark.asyncio
     async def test_me_no_token(self, client: AsyncClient):
         resp = await client.get("/api/auth/me")
-        assert resp.status_code == 401  # No credentials → 401 Unauthorized
+        assert resp.status_code == 401
 
     @pytest.mark.asyncio
     async def test_me_invalid_token(self, client: AsyncClient):
         resp = await client.get(
             "/api/auth/me",
-            headers={"Authorization": "Bearer invalid.jwt.token"},
+            headers={"id-token": "invalid-token", "package-name": TEST_PACKAGE_NAME},
         )
         assert resp.status_code == 401

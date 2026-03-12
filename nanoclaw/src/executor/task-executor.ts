@@ -5,6 +5,8 @@ import { executeSkill } from '../skills/skill-executor.js';
 import { syncToCloud } from '../fs/cloud-sync.js';
 import { readFileOrNull } from '../fs/user-fs.js';
 import { config } from '../config.js';
+import { requestContext } from '../channels/request-context.js';
+import { getSessionCardState } from '../persistence/card-store.js';
 import type { ExecRequest } from '../channels/types.js';
 
 /**
@@ -59,8 +61,9 @@ export async function executeTask(request: ExecRequest): Promise<void> {
     await persistResult(request, result, Date.now() - startTime);
 
     // Sync changed files back to remote storage
+    const userId = requestContext.getStore()?.userId ?? config.userId;
     const changedFiles = await collectChangedFiles(request.sessionId, request.taskId);
-    syncToCloud(changedFiles).catch((err) => {
+    syncToCloud(changedFiles, userId).catch((err) => {
       console.error('[task-executor] post-task sync failed:', err);
     });
 
@@ -85,14 +88,26 @@ async function persistResult(
       `${request.taskId}.json`,
     );
     await mkdir(dirname(resultPath), { recursive: true });
+
+    // Collect card final state from in-memory card store
+    const cardState = getSessionCardState(request.sessionId);
+    const cards: Record<string, unknown> = {};
+    for (const [cardId, state] of Object.entries(cardState.finalState)) {
+      if (state.status !== 'removed') {
+        cards[cardId] = { template: state.template, data: state.data, status: state.status };
+      }
+    }
+
     await writeFile(
       resultPath,
       JSON.stringify({
         taskId: request.taskId,
         sessionId: request.sessionId,
-        skillSlug: request.skillSlug || '_generic',
+        skillSlug: request.skillSlug || 'agent:main',
         prompt: request.prompt,
+        mediaUrls: request.mediaUrls || [],
         result: result.slice(0, 10000),
+        cards: Object.keys(cards).length > 0 ? cards : undefined,
         durationMs,
         ts: Date.now(),
       }),
@@ -108,16 +123,17 @@ async function collectChangedFiles(sessionId: string, taskId: string): Promise<s
   const files: string[] = [];
   // Always sync the session result file
   files.push(join('sessions', sessionId, `${taskId}.json`));
-  // Sync memory dirs that skills commonly write to
-  for (const dir of ['memory/identity', 'memory/semantic', 'memory/episodic']) {
-    try {
-      const entries = await readdir(join(config.userDataDir, dir));
-      for (const entry of entries) {
-        files.push(join(dir, entry));
+  // Sync MEMORY.md and category topic files
+  files.push('MEMORY.md');
+  try {
+    const entries = await readdir(join(config.userDataDir, 'memory'));
+    for (const entry of entries) {
+      if (entry.endsWith('.md')) {
+        files.push(join('memory', entry));
       }
-    } catch {
-      // directory may not exist
     }
+  } catch {
+    // directory may not exist
   }
   return files;
 }
@@ -127,8 +143,8 @@ function buildGenericSkill(request: ExecRequest) {
   const hasMedia = !!request.mediaUrls?.length;
   return {
     manifest: {
-      name: 'Generic Assistant',
-      slug: '_generic',
+      name: 'Main Agent',
+      slug: 'agent:main',
       icon: '🤖',
       description: 'General-purpose assistant',
       category: 'general' as const,

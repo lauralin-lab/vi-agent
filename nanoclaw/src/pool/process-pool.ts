@@ -120,7 +120,7 @@ async function runWorker(workerId: number): Promise<void> {
         console.log(
           `[process-pool] worker-${workerId} executing task ${task.taskId} for user ${userId} (session=${task.sessionId})`,
         );
-        await requestContext.run({ userId }, () => executeTask(task));
+        await requestContext.run({ userId, sessionId: task.sessionId }, () => executeTask(task));
         console.log(
           `[process-pool] worker-${workerId} completed task ${task.taskId}`,
         );

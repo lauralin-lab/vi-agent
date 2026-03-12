@@ -99,18 +99,20 @@ BASE_PROMPT_PATH = Path(__file__).parent.parent / "base.md"
 try:
     AGENT_INSTRUCTIONS_TEMPLATE = BASE_PROMPT_PATH.read_text(encoding="utf-8")
     AGENT_INSTRUCTIONS = AGENT_INSTRUCTIONS_TEMPLATE.replace("{{AGENT_NAME}}", AGENT_NAME)
-    AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS
+    # Append Experience Package registry to core instructions
+    from assistant.experience_packages import get_ep_registry_prompt
+    AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS + "\n\n" + get_ep_registry_prompt()
 except Exception as e:
     logger.error(f"Failed to load base.md: {e}")
-    AGENT_INSTRUCTIONS_TEMPLATE = f"""You are {{{{AGENT_NAME}}}}, a warm and friendly voice assistant."""
     AGENT_INSTRUCTIONS = f"""You are {AGENT_NAME}, a warm and friendly voice assistant."""
     AGENT_INSTRUCTIONS_CORE = AGENT_INSTRUCTIONS
 
 PAGE_PROMPTS = {
     "camera": (
         "## Camera Mode\n"
-        "- Focus on visual analysis, describe what you see\n"
-        "- Proactively suggest photo actions via suggest_action\n"
+        "- Analyze what you see, suggest matching Experience Package via suggest_action\n"
+        "- e.g., see text → suggest translate, see food → suggest nutrition\n"
+        "- Use rpc_b2f_action_button(hashtag, label) to offer one-tap actions\n"
         "- Use update_info_bar to show perception status\n"
         "- On dispatch, gather <media> material first\n"
     ),
@@ -125,7 +127,6 @@ PAGE_PROMPTS = {
         "## Home Mode\n"
         "- Help with navigation and memory management\n"
         "- Answer task history queries\n"
-        "- Use update_memory for explicit memory saves\n"
     ),
 }
 
@@ -214,6 +215,8 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
 
     # Internal API token for authenticating calls to api-server
     _INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "vi-internal-dev-token")
+    if os.getenv("ENVIRONMENT") == "production" and _INTERNAL_API_TOKEN == "vi-internal-dev-token":
+        raise RuntimeError("INTERNAL_API_TOKEN must be set in production — refusing to start with default dev token")
 
     def __init__(self, room_name: str, room: rtc.Room) -> None:
         super().__init__(instructions=AGENT_INSTRUCTIONS)
@@ -224,7 +227,9 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         self._job_context: JobContext | None = None
         # API server for task persistence
         self._api_base = os.getenv("API_BASE_URL", "http://api-server:8000")
-        self._vi_user_id = room_name.replace("vi-room-", "") if room_name.startswith("vi-room-") else room_name
+        # Strip "vi-room-" prefix and trailing "-{timestamp}" suffix to get vi_user_id
+        raw_id = room_name.replace("vi-room-", "") if room_name.startswith("vi-room-") else room_name
+        self._vi_user_id = re.sub(r'-\d+$', '', raw_id)
         self._current_session_id: str | None = None  # Track active session for status updates
         self._current_dispatch_started_at: float | None = None  # Staleness detection
         self._dispatch_heartbeat_count: int = 0  # Max retries for heartbeat task prompts
@@ -324,8 +329,16 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
                 logger.warning(f"[conversation] Error creating session: {e}")
 
     async def persist_conversation_timeline(self):
-        """Persist conversation timeline to DB on disconnect."""
+        """Persist conversation timeline to DB on disconnect.
+
+        Only persists if there are user messages — agent-only timelines
+        (e.g. just a greeting) are not worth saving as sessions.
+        """
         if not self._conversation_timeline:
+            return
+        has_user_message = any(e.get("type") == "user" for e in self._conversation_timeline)
+        if not has_user_message:
+            logger.info("[conversation] Skipping timeline persist — no user messages (agent-only)")
             return
         try:
             await self.ensure_conversation_session()
@@ -541,17 +554,6 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         if self._keyframe_sampler_task and not self._keyframe_sampler_task.done():
             self._keyframe_sampler_task.cancel()
 
-        # Trigger memory update before shutdown
-        if self._agent_session and self.user_identity:
-            try:
-                logger.info("[shutdown] Prompting agent to update memory before ending session...")
-                await asyncio.sleep(1.5)
-                self._agent_session.generate_reply(user_input="[SYSTEM: Session ending. If there's anything important from this conversation to remember (user preferences, facts, requests, or information user explicitly asked to remember), call update_memory now. Skip information already recorded in your previous calls of update_memory. If nothing important to remember, skip this step.]")
-                logger.info("[shutdown] Memory update prompt sent")
-                await asyncio.sleep(2)
-            except Exception as e:
-                logger.warning(f"[shutdown] Failed to trigger memory update: {e}")
-
         # Say goodbye to the user (best-effort, single attempt)
         if self._agent_session and self.user_identity:
             try:
@@ -568,33 +570,8 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
         except Exception as e:
             logger.warning(f"[shutdown] Failed to persist conversation timeline: {e}")
 
-        # Trigger session-end memory extraction
-        try:
-            if self._conversation_timeline and self._vi_user_id:
-                summary_parts = []
-                for entry in self._conversation_timeline[:20]:
-                    role = entry.get("type", "unknown")
-                    text = entry.get("content", "")[:200]
-                    summary_parts.append(f"{role}: {text}")
-                summary = "\n".join(summary_parts)
-
-                session_id = self._conversation_session_id or self._current_session_id or ""
-                http = await self._get_http_session()
-                resp = await http.post(
-                    f"{self._api_base}/api/internal/memories/session-end",
-                    json={
-                        "session_id": session_id,
-                        "vi_user_id": self._vi_user_id,
-                        "summary": summary[:3000],
-                    },
-                )
-                if resp.status == 200:
-                    logger.info("[shutdown] Session-end memory extraction triggered")
-                else:
-                    body = await resp.text()
-                    logger.debug(f"[shutdown] Session-end memory failed ({resp.status}): {body}")
-        except Exception as e:
-            logger.warning(f"[shutdown] Failed to trigger session-end memory: {e}")
+        # Memory is handled exclusively by NanoClaw memory-hook (diary + promote)
+        # LiveKit voice chat does not write memory — only NanoClaw tasks do
 
         # Cache Gemini session resumption token for faster next-session connect
         try:
@@ -650,51 +627,6 @@ class Assistant(ToolsMixin, HeartbeatMixin, DispatchMixin, ContextMixin, Agent):
 
     # Internal methods (_publish_user_event, _push_to_frontend, _start_context_subscription,
     # _format_intention_hints, _start_keyframe_sampler) are provided by ContextMixin.
-
-
-def register_agent_rpc_methods(room: rtc.Room, assistant: Assistant):
-    """Register RPC methods for agent to receive from frontend."""
-
-    async def handle_f2b_send_message(request: rtc.RpcInvocationData):
-        """Receive message from frontend user and process with LLM."""
-        data = json.loads(request.payload) if request.payload else {}
-
-        if data.get("action") == "page_context":
-            page = data.get("page", "camera")
-            assistant._current_page = page
-            assistant._page_metadata = data.get("metadata", {})
-            if hasattr(assistant, '_update_page_context'):
-                await assistant._update_page_context(page)
-            await assistant._publish_user_event("page_navigate", {"page": page})
-            logger.info(f"[page_context] User is now on: {page}")
-            return json.dumps({"ok": True})
-
-        text = data.get("text", "")
-        images = data.get("images", [])
-        log_info(f"[rpc_f2b_send_message] Received message from user: {text[:100]}", "user")
-
-        # Record timeline + publish event for all messages
-        if text:
-            assistant.record_timeline_entry("user", text)
-            assistant._track_task(asyncio.create_task(assistant.ensure_conversation_session()))
-            await assistant._publish_user_event("text_message", {"text": text[:500]})
-
-        # Task dispatch goes through REST API → Redis → NanoClaw.
-        # All messages here are voice/chat — process with LLM for voice response.
-        try:
-            if assistant._agent_session:
-                log_info("[rpc_f2b_send_message] Processing message with generate_reply", "agent")
-                assistant._agent_session.generate_reply(user_input=text)
-                log_info("[rpc_f2b_send_message] Message queued for processing", "agent")
-                return json.dumps({"ok": True, "status": "processing"})
-            logger.warning("[rpc_f2b_send_message] Agent session not ready")
-            return json.dumps({"ok": False, "error": "Agent session not ready"})
-        except Exception as e:
-            logger.error(f"[rpc_f2b_send_message] Failed to process message: {e}")
-            return json.dumps({"ok": False, "error": str(e)})
-
-    room.local_participant.register_rpc_method("rpcF2BSendMessage", handle_f2b_send_message)
-    log_info("[rpc] Agent RPC methods registered (direct RPC)", "agent")
 
 
 server = AgentServer(num_idle_processes=1)
@@ -774,6 +706,7 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         if participant.identity.startswith("user-"):
             user_state["identity"] = participant.identity
             assistant.set_user_identity(participant.identity)
+            asyncio.create_task(_publish_version())
 
             if session is not None:
                 try:
@@ -819,6 +752,26 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
     logger.info("Connecting to LiveKit room...")
     await ctx.connect()
     logger.info("Connected to room, setting up event handlers...")
+
+    # Publish agent version — called when user joins (reliable) and once after delay (fallback)
+    version_published = False
+    async def _publish_version():
+        nonlocal version_published
+        if version_published:
+            return
+        version_published = True
+        try:
+            from version import VERSION
+            await asyncio.sleep(1)  # Brief delay for DataChannel to stabilize
+            await ctx.room.local_participant.publish_data(
+                json.dumps({"type": "agent_version", "version": VERSION}).encode("utf-8"),
+                reliable=True,
+                topic="vi-agent",
+            )
+            logger.info(f"[init] Agent version: {VERSION}")
+        except Exception as e:
+            version_published = False  # Allow retry
+            logger.debug(f"[init] Failed to publish version: {e}")
 
     # Duplicate agent guard — kick old agent, new agent always proceeds
     my_identity = ctx.room.local_participant.identity
@@ -871,6 +824,7 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         if participant.identity.startswith("user-") and not user_state["identity"]:
             user_state["identity"] = participant.identity
             assistant.set_user_identity(participant.identity)
+            asyncio.create_task(_publish_version())
             logger.info(f"[init] User already in room (post-connect): {participant.identity}")
 
     logger.info("Creating AgentSession...")
@@ -894,9 +848,6 @@ async def run_agent(ctx: JobContext, assistant: Assistant, create_session):
         if identity:
             asyncio.create_task(publish_transcript(ctx.room, "user", event.transcript))
             assistant.record_timeline_entry("user", event.transcript)
-            asyncio.create_task(assistant._publish_user_event(
-                "voice_transcript", {"text": event.transcript[:500]}
-            ))
 
     @session.on("agent_speech_committed")
     def on_agent_speech_committed(event):

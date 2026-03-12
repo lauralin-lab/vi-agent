@@ -1,61 +1,27 @@
-import 'package:flutter/material.dart';
-
-import '../../../../common/extension/ui_ext.dart';
-
 /// LiveKit 连接状态枚举
+///
+/// 纯领域模型，不包含 UI 逻辑。UI 映射见 [main_top_tools_widget.dart]。
 enum LiveKitConnectionState {
   /// 初始态
   idle,
 
-  /// 等待前置条件（camera + auth）
+  /// 等待前置条件（camera + auth + token）
   waitingPrerequisites,
 
   /// 正在连接房间
   connecting,
 
-  /// 房间连接成功，等待判断 Gateway
-  roomConnected,
+  /// 房间连接成功
+  connected,
 
-  /// 等待 VPS 就绪
-  waitingVps,
-
-  /// 正在连接 Gateway
-  connectingGateway,
-
-  /// 全部就绪
-  done,
-
-  /// 失败
+  /// 连接失败（可重试）
   failed;
 
-  /// 可连接状态
-  bool get ready => this == LiveKitConnectionState.idle || this == LiveKitConnectionState.waitingPrerequisites;
+  bool get isConnected => this == LiveKitConnectionState.connected;
 
-  /// liveKit连接
-  bool get isConnected => this == LiveKitConnectionState.done;
-
-  /// 获取状态Title
-  String getTitle() {
-    return switch (this) {
-      LiveKitConnectionState.roomConnected => 'LiveKit Linked,Waiting Gateway',
-      LiveKitConnectionState.waitingVps => "LiveKit Linked,Waiting VPS",
-      LiveKitConnectionState.connectingGateway => "Gateway Linking",
-      LiveKitConnectionState.done => "LIVE",
-      LiveKitConnectionState.failed => "OFFLINE",
-      _ => 'LINKING',
-    };
-  }
-
-  /// Widget图标
-  Widget getIcon() {
-    return switch (this) {
-      LiveKitConnectionState.done => Icon(Icons.wifi, color: Colors.white, size: 14.dpx),
-      LiveKitConnectionState.failed => Icon(Icons.wifi_off, color: Colors.white, size: 14.dpx),
-      _ => SizedBox(
-        width: 10.dpx,
-        height: 10.dpx,
-        child: CircularProgressIndicator(color: Colors.white.withValues(alpha: 0.6), strokeWidth: 2.dpx),
-      ),
-    };
-  }
+  /// 是否处于可以尝试连接的状态
+  bool get canAttemptConnect =>
+      this == LiveKitConnectionState.idle ||
+      this == LiveKitConnectionState.waitingPrerequisites ||
+      this == LiveKitConnectionState.failed;
 }

@@ -14,24 +14,64 @@ import { GlassCard, GlassSection, ModuleHeader, AccentBar } from './shared';
  * Parse steps from various formats:
  * - Array of objects (normal)
  * - Concatenated JSON strings from stream_to_card (e.g., '{"label":"A",...}{"label":"B",...}')
+ *
+ * Also deduplicates steps that appear multiple times (streaming can cause repeats).
  */
 function parseSteps(raw) {
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw !== 'string' || !raw.trim()) return [];
-  // Try parsing concatenated JSON objects
-  try {
-    // Split on }{ boundaries, then parse each
-    const parts = raw.replace(/\}\s*\{/g, '}|||{').split('|||');
-    return parts.map(p => JSON.parse(p)).filter(Boolean);
-  } catch {
+  let steps;
+  if (Array.isArray(raw)) {
+    steps = raw;
+  } else if (typeof raw !== 'string' || !raw.trim()) {
     return [];
+  } else {
+    // Try parsing as a JSON array first
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        steps = parsed;
+      } else {
+        steps = [parsed];
+      }
+    } catch {
+      // Split on }{ boundaries, then parse each
+      try {
+        const parts = raw.replace(/\}\s*\{/g, '}|||{').split('|||');
+        steps = parts.map(p => JSON.parse(p)).filter(Boolean);
+      } catch {
+        return [];
+      }
+    }
   }
+
+  // Deduplicate steps by label+status (streaming can emit duplicates)
+  const seen = new Set();
+  return steps.filter(s => {
+    const key = `${s.label || s.title || ''}::${s.status || ''}::${s.content || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Deduplicate conclusion text that may have been streamed/concatenated twice.
+ */
+function dedupeConclusion(text) {
+  if (!text || typeof text !== 'string') return text;
+  const trimmed = text.trim();
+  // Check if the text is exactly doubled
+  const half = Math.floor(trimmed.length / 2);
+  if (half > 20 && trimmed.slice(0, half) === trimmed.slice(half)) {
+    return trimmed.slice(0, half);
+  }
+  return trimmed;
 }
 
 export default function StepsGuideModule({ data, onAction }) {
   if (!data) return null;
 
-  const { title, conclusion } = data;
+  const { title } = data;
+  const conclusion = dedupeConclusion(data.conclusion);
   const steps = parseSteps(data.steps);
   // Hide internal "thinking" steps that are just status markers
   const visibleSteps = steps.filter(s => s.content && s.content !== 'Processing your request...');

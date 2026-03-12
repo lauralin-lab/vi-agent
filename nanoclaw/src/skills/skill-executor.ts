@@ -5,7 +5,7 @@ import { normalize, resolve } from 'node:path';
 import { config } from '../config.js';
 import { publishStreamEvent } from '../channels/stream-publisher.js';
 import { readUserFile, writeUserFile, listUserDir } from '../fs/user-fs.js';
-import { updateMemory, appendMemory } from '../tools/memory-update.js';
+import { writeMemory, readMemory, writeCategoryFile, readAllCategories } from '../tools/memory-update.js';
 import { oauthCall } from '../tools/oauth-call.js';
 import type { ExecRequest, CardOp } from '../channels/types.js';
 import type { LoadedSkill } from './types.js';
@@ -67,6 +67,22 @@ async function streamToCard(
     cardId,
     slot,
     chunk,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+async function appendToCard(
+  taskId: string,
+  cardId: string,
+  slot: string,
+  items: unknown[],
+): Promise<void> {
+  await publishCardOp({
+    op: 'append_to_card',
+    taskId,
+    cardId,
+    slot,
+    items,
     timestamp: new Date().toISOString(),
   });
 }
@@ -152,28 +168,22 @@ const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: 'memory_update',
     description:
-      'Update user memory. Use this when you learn new preferences, facts, or daily events about the user.',
+      'Update user memory. PROACTIVELY call this whenever you learn something new about the user. Two layers: "long_term" for stable identity (MEMORY.md, user-visible) and topic categories for conversation notes (AI-managed, not user-visible).',
     input_schema: {
       type: 'object' as const,
       properties: {
-        category: {
+        target: {
           type: 'string',
-          enum: ['identity', 'semantic', 'episodic'],
           description:
-            'Memory layer: identity (who they are), semantic (knowledge/preferences), episodic (daily events)',
+            '"long_term" → rewrite MEMORY.md (stable identity: name, preferences, allergies). Any other value → category topic file (e.g. "装修", "饮食", "旅行"). Reuse existing categories when possible.',
         },
-        filename: {
+        content: {
           type: 'string',
-          description: 'Filename (e.g. "preferences.md", "2026-03-04.md")',
-        },
-        content: { type: 'string', description: 'Content to write' },
-        mode: {
-          type: 'string',
-          enum: ['replace', 'append'],
-          description: 'Replace entire file or append to existing',
+          description:
+            'The COMPLETE updated content for the target file. For long_term: full MEMORY.md (read current first). For categories: full updated category file after intelligent merge — update conflicting entries, append new info, remove stale info.',
         },
       },
-      required: ['category', 'filename', 'content'],
+      required: ['target', 'content'],
     },
   },
   {
@@ -382,16 +392,15 @@ async function executeTool(
         return entries.join('\n') || '(empty directory)';
       }
       case 'memory_update': {
-        const category = input.category as 'identity' | 'semantic' | 'episodic';
-        const filename = input.filename as string;
+        const target = input.target as string;
         const content = input.content as string;
-        const mode = (input.mode as string) || 'replace';
-        if (mode === 'append') {
-          await appendMemory(category, filename, content);
+        if (target === 'long_term') {
+          await writeMemory(content);
+          return 'MEMORY.md updated';
         } else {
-          await updateMemory(category, filename, content);
+          await writeCategoryFile(target, content);
+          return `Category file updated: memory/${target}.md`;
         }
-        return `Memory updated: ${category}/${filename}`;
       }
       case 'oauth_call': {
         const result = await oauthCall(
@@ -451,14 +460,39 @@ async function executeTool(
       }
       case 'bash': {
         const command = input.command as string;
-        const dangerous = ['rm -rf /', 'mkfs', 'dd if=', ':(){', 'fork bomb'];
+        const dangerous = [
+          'rm -rf /', 'mkfs', 'dd if=', ':(){', 'fork bomb',
+          'chmod -R 777', 'chown', 'passwd', 'useradd', 'userdel',
+          'curl|sh', 'wget|sh', 'curl|bash', 'wget|bash',
+          '/etc/shadow', '/etc/passwd',
+          'nc -l', 'ncat', 'socat',
+          'iptables', 'ufw',
+          'mount', 'umount',
+          'shutdown', 'reboot', 'halt', 'poweroff',
+        ];
         if (dangerous.some((d) => command.includes(d))) {
           return 'Error: command rejected for safety';
+        }
+        // Validate command doesn't reference paths outside workspace
+        const workspaceDir = resolve(config.userDataDir);
+        if (/(?:^|\s)\/(?!workspace|tmp|dev\/null)/.test(command)) {
+          return JSON.stringify({ output: 'Error: absolute paths outside workspace are not allowed' });
         }
         return await new Promise<string>((res) => {
           exec(
             command,
-            { cwd: config.userDataDir, timeout: 30_000, maxBuffer: 1024 * 1024 },
+            {
+              cwd: config.userDataDir,
+              timeout: 30_000,
+              maxBuffer: 1024 * 1024,
+              env: {
+                ...process.env,
+                HOME: workspaceDir,
+                INTERNAL_API_TOKEN: undefined,
+                AWS_SECRET_ACCESS_KEY: undefined,
+                DATABASE_URL: undefined,
+              },
+            },
             (err, stdout, stderr) => {
               const exitCode = err?.code ?? 0;
               res(
@@ -490,9 +524,13 @@ async function executeTool(
       case 'search': {
         const pattern = input.pattern as string;
         const searchPath = (input.path as string) || '.';
+        const resolvedPath = resolve(config.userDataDir, searchPath);
+        if (!resolvedPath.startsWith(resolve(config.userDataDir))) {
+          return JSON.stringify({ output: 'Error: search path must be within workspace' });
+        }
         return await new Promise<string>((res) => {
           exec(
-            `grep -rn --include='*' ${JSON.stringify(pattern)} ${JSON.stringify(searchPath)}`,
+            `grep -rn --include='*' ${JSON.stringify(pattern)} ${JSON.stringify(resolvedPath)}`,
             { cwd: config.userDataDir, timeout: 15_000, maxBuffer: 1024 * 1024 },
             (err, stdout) => {
               if (!stdout) {
@@ -585,6 +623,68 @@ export async function executeSkill(
 
   systemParts.push(skill.promptContent);
 
+  // Inject two-layer memory: MEMORY.md + category files
+  let currentMemory = '';
+  try {
+    currentMemory = await readMemory();
+  } catch { /* no memory yet */ }
+
+  let categorySection = '';
+  try {
+    const categories = await readAllCategories();
+    if (categories.size > 0) {
+      const catNames = [...categories.keys()];
+      const catEntries: string[] = [];
+      for (const [cat, content] of categories) {
+        catEntries.push(`### ${cat}\n${content}`);
+      }
+      categorySection = `已有主题：${catNames.join('、')}（优先复用已有主题）\n\n${catEntries.join('\n\n')}`;
+    }
+  } catch { /* no categories yet */ }
+
+  systemParts.push(`\n---\n\n## Memory System
+
+You have a two-layer memory system. Use it PROACTIVELY — don't wait for the user to say "remember this".
+
+### 长期记忆 — 关于用户 (MEMORY.md, user-visible)
+${currentMemory ? `Current content:\n\`\`\`\n${currentMemory}\n\`\`\`` : '(empty — no memories yet)'}
+
+**What belongs here:** Stable identity info that rarely changes — name, location, allergies, pets, occupation, language preference, aesthetic taste.
+**Analogy:** Things you'd re-tell a new AI assistant.
+**How to update:** Call memory_update with target="long_term". Output the COMPLETE updated MEMORY.md.
+
+Rules:
+- Write from user's perspective (first person: 我/I)
+- Record confirmed facts only, not guesses
+- If info conflicts with existing, update the old entry (latest wins)
+- Do NOT delete existing correct info
+- Sections appear only when there's content — no empty sections
+- Stay under 2000 characters
+
+### 主题记忆 — 对话积累 (category files, internal)
+${categorySection || '(no topics yet — create freely as needed)'}
+
+**What belongs here:** Conversation details, evolving preferences, project progress, specific needs — organized by topic.
+**Analogy:** Notes accumulated from many conversations with this AI.
+**How to update:** Call memory_update with target="{topic_name}" (e.g. "装修", "饮食", "旅行"). Output the COMPLETE updated file after intelligent merge:
+- New info → append
+- Conflicts with existing → update the old entry (latest wins)
+- Info clearly outdated → remove
+- Reuse existing topic names when possible; create new ones freely when needed
+
+### What to remember proactively:
+- User corrections ("不要用 npm，用 pnpm") → MUST record immediately
+- Names, relationships ("我老婆叫小李") → long_term
+- Stable preferences ("回复用中文") → long_term
+- Project details, evolving preferences → category topic file
+- Important dates/deadlines → category or long_term depending on permanence
+
+### What NOT to record:
+- One-time query results
+- Sensitive credentials (passwords, tokens)
+- Temporary emotional states ("今天很累")
+`);
+
   // Add template registry context so the AI knows available templates
   systemParts.push(`\n---\n\nAvailable card templates for publish_card tool:
 PERCEIVE: image-analysis, text-extraction, nutrition-card, plant-animal-id, label-read, landmark-id, document-scan, barcode-scan, color-palette, handwriting-ocr, face-analysis, scene-description, object-detection
@@ -622,11 +722,13 @@ This is critical — present results as a structured card, not plain text in you
   const predefinedSteps = skill.manifest.thinking?.steps || [];
   let stepIndex = 0;
 
-  // Publish exec_start
+  // Publish exec_start (include prompt + media so dashboard can display them)
   await publishStreamEvent({
     type: 'exec_start',
     taskId,
     executor: `nanoclaw:${skill.manifest.slug}`,
+    prompt: request.prompt,
+    mediaUrls: request.mediaUrls,
   });
 
   // Progress step 1: Preparing
@@ -702,18 +804,18 @@ This is critical — present results as a structured card, not plain text in you
         // Emit thinking step from manifest or generic fallback
         if (stepIndex < predefinedSteps.length) {
           const step = predefinedSteps[stepIndex];
-          await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+          await appendToCard(taskId, thinkingCardId!, 'steps', [{
             label: step.label,
             content: step.content || '',
             status: 'active',
-          }));
+          }]);
           stepIndex++;
         } else {
-          await streamToCard(taskId, thinkingCardId!, 'steps', JSON.stringify({
+          await appendToCard(taskId, thinkingCardId!, 'steps', [{
             label: turnCount === 1 ? 'Analyzing' : `Processing (step ${turnCount})`,
             content: '',
             status: 'active',
-          }));
+          }]);
         }
       }
 
@@ -822,20 +924,20 @@ This is critical — present results as a structured card, not plain text in you
       // Emit any remaining pre-defined steps as "done"
       while (stepIndex < predefinedSteps.length) {
         const step = predefinedSteps[stepIndex];
-        await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
+        await appendToCard(taskId, thinkingCardId, 'steps', [{
           label: step.label,
           content: step.content || '',
           status: 'done',
-        }));
+        }]);
         stepIndex++;
       }
 
       // Final completion step
-      await streamToCard(taskId, thinkingCardId, 'steps', JSON.stringify({
+      await appendToCard(taskId, thinkingCardId, 'steps', [{
         label: 'Complete',
         content: 'Analysis finished.',
         status: 'done',
-      }));
+      }]);
       await finalizeCard(taskId, thinkingCardId);
     }
 

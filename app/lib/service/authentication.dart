@@ -14,11 +14,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../app.dart';
 import '../common/utils/log_utils.dart';
 import '../modules/models/user_profile.dart';
-import '../modules/models/vps_model.dart';
 import 'network/api_service.dart';
 
 typedef AuthInfoAutoProvider = AutoDisposeStreamProvider<AuthInfo>;
-typedef VpsInfoAuthProvider = AutoDisposeStreamProvider<VpsData?>;
 
 enum AuthProvider {
   /// 未知
@@ -145,11 +143,11 @@ final class AuthInfo {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is AuthInfo &&
-          runtimeType == other.runtimeType &&
-          provider == other.provider &&
-          user == other.user &&
-          self == other.self;
+          other is AuthInfo &&
+              runtimeType == other.runtimeType &&
+              provider == other.provider &&
+              user == other.user &&
+              self == other.self;
 
   @override
   int get hashCode => Object.hash(provider, user, self);
@@ -162,47 +160,17 @@ class Authentication {
   /// 登录信息
   AuthInfo get currentAuth => _authInfo;
 
-  /// Vps信息 --- 主要是gateway && workspace url
-  VpsData? get currentVps => _vpsInfo;
-
   /// 判断用户是否登录
   bool get logged => _authInfo.logged;
 
   /// 监听账户变化，监听时会返回最后一次结果
   Stream<AuthInfo> get onAuthChangedListener => _authStream;
 
-  /// 监听Vps变化、临时返回最后一次结果
-  Stream<VpsData?> get onVpsChangedListener => _vpsStream;
-
   /// 用户 UUID
   String get uuid => currentAuth.self?.uuid ?? App().preferences.uuidInLocalCache;
 
-  /// liveKit Token
-  String get liveKitToken => currentAuth.self?.liveKit.liveKitToken ?? '';
-
-  /// liveKit Url
-  String get liveKitUrl => currentAuth.self?.liveKit.liveKitUrl ?? '';
-
-  /// liveKit roomName
-  String get liveKitRoomName => currentAuth.self?.liveKit.roomName ?? '';
-
-  /// Vps初始化完成
-  bool get vpsInitCompleted => currentVps?.statusEnum == VpsStatus.initialized;
-
-  /// gateway
-  String get gateWayUrl => 'https://${currentVps?.ip}:${currentVps?.port}';
-
-  /// gateway Token
-  String get gateWayToken => currentVps?.gatewayToken ?? '';
-
-  /// 获取workSpaceUrl
-  String get workSpaceUrl => currentVps?.workSpaceUrl ?? '';
-
-  /// ip
-  String get ipConfig => currentVps?.ip ?? '';
-
-  /// sessionKey
-  String get sessionKey => currentAuth.self?.liveKit.sessionKey ?? '';
+  /// SSE 事件广播流（供 onSseEventProvider 消费）
+  final StreamController<SseEvent> sseEventStream = StreamController<SseEvent>.broadcast();
 
   // /// 尝试刷新自动登录，一般情况下请勿使用
   // void tryAutoLogin([bool refresh = false]) {
@@ -212,6 +180,7 @@ class Authentication {
 
   /// 退出
   Future<bool> logout() async {
+    _disconnectSSE();
     try {
       App().preferences.setHasLogin(false);
       await FirebaseAuth.instance.signOut();
@@ -263,7 +232,7 @@ class Authentication {
 
       // 登录回调
       _currentAuth = authUser;
-      _getUserVps();
+      // _getUserVps();
       _updateUserState();
       return LoginState.ok;
     } catch (ex, st) {
@@ -286,12 +255,6 @@ class Authentication {
     _notifyUpdateUserInfo();
   }
 
-  set _currentVps(VpsData? info) {
-    if (_vpsInfo == info) return;
-    _vpsInfo = info;
-    _notifyUpdateVpsInfo();
-  }
-
   /// 初始化
   Future<void> _init() async {
     // 卸载重装后 iOS Keychain 中 Firebase 登录态不会被清除,---如果有用户信息走一次退出
@@ -312,19 +275,12 @@ class Authentication {
       _initTime = DateTime.now();
       _currentAuth = _userToAuthInfo(user, null);
       _updateUserState();
-      _getUserVps();
     });
 
     _authStream = Stream.multi((c) {
       _listeners.add(c);
       c.onCancel = () => _listeners.remove(c);
       c.add(_authInfo);
-    });
-
-    _vpsStream = Stream.multi((c) {
-      _vpsListeners.add(c);
-      c.onCancel = () => _vpsListeners.remove(c);
-      c.add(_vpsInfo);
     });
 
     // 如果用户 2 秒没有初始化信息，则进行初始化
@@ -374,24 +330,24 @@ class Authentication {
   /// 匿名登陆
   Future<(UserCredential?, LoginState)> _signInWithAnonymous() async {
     return (
-      await FirebaseAuth.instance.signInAnonymously(),
-      LoginState.ok,
+    await FirebaseAuth.instance.signInAnonymously(),
+    LoginState.ok,
     );
   }
 
   /// 匿名登陆（恢复）
   Future<(UserCredential?, LoginState)> _signInWithRestore(String token) async {
     return (
-      await FirebaseAuth.instance.signInWithCustomToken(token),
-      LoginState.ok,
+    await FirebaseAuth.instance.signInWithCustomToken(token),
+    LoginState.ok,
     );
   }
 
   Future<(UserCredential?, LoginState)> _signInWithApple() async {
     final appleProvider = AppleAuthProvider();
     return (
-      await FirebaseAuth.instance.signInWithProvider(appleProvider),
-      LoginState.ok,
+    await FirebaseAuth.instance.signInWithProvider(appleProvider),
+    LoginState.ok,
     );
   }
 
@@ -403,8 +359,8 @@ class Authentication {
 
     // 执行登录
     return (
-      await FirebaseAuth.instance.signInWithCredential(credential),
-      LoginState.ok,
+    await FirebaseAuth.instance.signInWithCredential(credential),
+    LoginState.ok,
     );
   }
 
@@ -430,13 +386,6 @@ class Authentication {
     }
   }
 
-  /// 更新Vps用户信息，发送给
-  void _notifyUpdateVpsInfo() {
-    for (var l in _vpsListeners) {
-      l.add(_vpsInfo);
-    }
-  }
-
   /// 创建用户
   Future<bool> _createCurrentUser(String uid, String idToken) async {
     try {
@@ -448,35 +397,6 @@ class Authentication {
       _logError(ex, st);
     }
     return false;
-  }
-
-  /// 获取gateway && workspace url
-  Future<void> _getUserVps() async {
-    var retryCount = 0;
-    try {
-      while (true) {
-        try {
-          final result = await ApiService.getVpsInfo();
-          _currentVps = result.vpsInfo!;
-          // 失败
-          if (result.vpsInfo?.statusEnum == VpsStatus.initFailed) {
-            throw Exception('VPS Init Error');
-          }
-          // 成功
-          if (result.vpsInfo?.statusEnum == VpsStatus.initialized) {
-            return;
-          }
-          // 延迟5秒后再查询进度
-          await Future.delayed(5000.ms);
-        } catch (e) {
-          // 其它错误重试
-          if (retryCount >= 5) rethrow;
-          retryCount++;
-        }
-      }
-    } catch (ex) {
-      loge('Vps error :$ex');
-    }
   }
 
   /// 更新用户状态
@@ -500,17 +420,21 @@ class Authentication {
     final info = currentAuth;
     if (!info.logged) {
       _currentUserUuid = "";
+      _disconnectSSE();
       return;
     }
     try {
       final profile = await ApiService.getUserProfile();
-      _currentUserUuid = profile.uuid;
+      _currentUserUuid = profile.viUserId;
       _currentAuth = currentAuth.copyWith(self: SelfProfile.fromUserProfile(profile));
       //用户请求完成后走下
       if (!userCompleter.isCompleted) {
         userCompleter.complete();
       }
       _lastUserUpdated = DateTime.now();
+
+      // 认证 + 用户信息就绪 → 连接 SSE
+      _connectSSE();
     } on DioException catch (err) {
       // 网络异常重试
       if (err.type == DioExceptionType.connectionTimeout ||
@@ -531,7 +455,7 @@ class Authentication {
         final idToken = await user?.getIdToken();
         if (user != null && idToken != null) {
           await _createCurrentUser(user.uid, idToken);
-          _getUserVps();
+          // _getUserVps();
           if (!retry) return;
           await _delayedQueryUserData(count * 3, count < 3, count + 1);
           return;
@@ -578,9 +502,10 @@ class Authentication {
 
     if (!willUpdate) return;
 
-    /// 网络发生变化
-    // 强登录模式：不再自动补匿名登录
-    // if (!logged) _AutoLogin.login(true);
+    /// 网络恢复 → 重新连接 SSE
+    if (logged && uuid.isNotEmpty && _sseSubscription == null) {
+      _connectSSE();
+    }
   }
 
   /// 尝试更新用户信息
@@ -618,7 +543,7 @@ class Authentication {
     if (_reportedUid == uid) return Future.value();
 
     final f = ApiService.reportInfo().then(
-      (r) {
+          (r) {
         if (!r) return;
         // 上报成功
         _reportedUid = uid;
@@ -630,7 +555,74 @@ class Authentication {
     return uid == App().preferences.lastReportedUid ? Future.value() : f;
   }
 
-  ///#endregion 内部方法˚
+  ///#endregion 内部方法
+
+  ///#region SSE 生命周期管理
+
+  /// 连接 SSE 事件流
+  ///
+  /// 对应前端 `useRealtimeEvents` hook，在认证完成且拿到 uuid 后自动调用。
+  /// 支持指数退避自动重连（1s → 2s → 4s ... 最大 30s）。
+  void _connectSSE() {
+    final uid = uuid;
+    if (uid.isEmpty) return;
+
+    // 已连接同一 uid，跳过
+    if (_sseUserId == uid && _sseSubscription != null) return;
+
+    _disconnectSSE();
+    _sseUserId = uid;
+    _sseReconnectAttempt = 0;
+
+    logi('[SSE] connecting for uid=$uid');
+
+    _sseSubscription = ApiService.connectSSE(uid).listen(
+      (event) {
+        _sseReconnectAttempt = 0; // 收到数据 → 重置退避
+        sseEventStream.add(event);
+      },
+      onError: (error) {
+        loge('[SSE] stream error: $error');
+        _scheduleSSEReconnect();
+      },
+      onDone: () {
+        logi('[SSE] stream closed');
+        _scheduleSSEReconnect();
+      },
+    );
+  }
+
+  /// 断开 SSE
+  void _disconnectSSE() {
+    _sseReconnectTimer?.cancel();
+    _sseReconnectTimer = null;
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+    _sseUserId = null;
+  }
+
+  /// 指数退避重连
+  void _scheduleSSEReconnect() {
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+
+    if (!logged || uuid.isEmpty) return;
+
+    final delay = Duration(
+      milliseconds: (1000 * (1 << _sseReconnectAttempt)).clamp(1000, 30000),
+    );
+    _sseReconnectAttempt++;
+
+    logi('[SSE] reconnecting in ${delay.inSeconds}s (attempt $_sseReconnectAttempt)');
+    _sseReconnectTimer?.cancel();
+    _sseReconnectTimer = Timer(delay, () {
+      if (logged && uuid.isNotEmpty) {
+        _connectSSE();
+      }
+    });
+  }
+
+  ///#endregion SSE
 
   ///#region 私有属性
 
@@ -640,17 +632,8 @@ class Authentication {
   /// 监听者
   final _listeners = <MultiStreamController<AuthInfo>>{};
 
-  /// vps监听广播流
-  late final Stream<VpsData?> _vpsStream;
-
-  /// vps监听者
-  final _vpsListeners = <MultiStreamController<VpsData?>>{};
-
   /// 登录信息，请使用 [AuthInfoAutoProvider]
   AuthInfo _authInfo = const AuthInfo(AuthProvider.unknown, null, null);
-
-  /// Vps信息 --- 主要是gateway && workspace url
-  VpsData? _vpsInfo;
 
   /// 登录中
   bool _accountLogging = false;
@@ -666,6 +649,12 @@ class Authentication {
 
   /// 已经上报成功过的 uid
   String? _reportedUid;
+
+  /// SSE 连接状态
+  StreamSubscription<SseEvent>? _sseSubscription;
+  Timer? _sseReconnectTimer;
+  String? _sseUserId;
+  int _sseReconnectAttempt = 0;
 }
 
 /// 输出错误

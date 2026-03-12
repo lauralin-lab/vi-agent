@@ -2,13 +2,11 @@
 # tw-contract.sh — Mission Contract operations for teamwork skills
 #
 # USAGE:
-#   bash tw-contract.sh teamwork-dir                      # Print detected teamwork directory
-#   bash tw-contract.sh find [ISSUE]                       # Locate contract file(s)
 #   bash tw-contract.sh read-field PATH FIELD              # Extract YAML frontmatter field
 #   bash tw-contract.sh hash TITLE BODY                    # Compute SHA256 hash
 #   bash tw-contract.sh check-freshness PATH ISSUE         # Compare hashes (0=fresh, 1=stale, 2=no-hash)
 #   bash tw-contract.sh toggle-task PATH N                  # Check off Nth subtask
-#   bash tw-contract.sh sync-checkbox ISSUE SUBTASK_TEXT   # Update checkbox in GitHub Issue body
+#   bash tw-contract.sh sync-all-checkboxes PATH ISSUE     # Batch-sync all checked items to Issue
 #   bash tw-contract.sh delete PATH                         # Remove contract file
 #
 # EXIT CODES:
@@ -16,6 +14,7 @@
 #   1 — stale (for check-freshness) or error
 #   2 — no hash in contract (for check-freshness)
 #   3 — not found
+#   4 — network error (for check-freshness, non-fatal)
 
 set -euo pipefail
 
@@ -32,59 +31,9 @@ _teamwork_dir() {
 
 usage() {
   echo "Usage: tw-contract.sh <subcommand> [args...]" >&2
-  echo "Subcommands: teamwork-dir, find, read-field, hash, check-freshness," >&2
-  echo "             toggle-task, sync-checkbox, delete" >&2
+  echo "Subcommands: read-field, hash, check-freshness," >&2
+  echo "             toggle-task, sync-all-checkboxes, delete" >&2
   exit 1
-}
-
-cmd_teamwork_dir() {
-  local dir
-  dir=$(_teamwork_dir)
-  if [ -z "$dir" ]; then
-    echo "ERROR: No teamwork config found" >&2
-    exit 3
-  fi
-  echo "$dir"
-}
-
-cmd_find() {
-  local issue="${1:-}"
-  local dir
-  dir=$(_teamwork_dir)
-  if [ -z "$dir" ]; then
-    echo "ERROR: No teamwork config found" >&2
-    exit 3
-  fi
-
-  if [ -n "$issue" ]; then
-    local path="$dir/active/MISSION-${issue}.md"
-    if [ -f "$path" ]; then
-      echo "$path"
-      return 0
-    else
-      echo "ERROR: Contract not found: $path" >&2
-      exit 3
-    fi
-  fi
-
-  # Find all contracts
-  local contracts
-  contracts=$(ls "$dir"/active/MISSION-*.md 2>/dev/null || true)
-
-  if [ -z "$contracts" ]; then
-    echo "ERROR: No active contracts found" >&2
-    exit 3
-  fi
-
-  local count
-  count=$(echo "$contracts" | wc -l | tr -d ' ')
-  if [ "$count" -gt 1 ]; then
-    echo "ERROR: Multiple active contracts found:" >&2
-    echo "$contracts" >&2
-    exit 1
-  fi
-
-  echo "$contracts"
 }
 
 cmd_read_field() {
@@ -123,7 +72,7 @@ with open(path) as f:
 
 cmd_hash() {
   local title="${1:-}" body="${2:-}"
-  echo "${title}${body}" | shasum -a 256 | cut -d' ' -f1
+  printf '%s' "${title}${body}" | shasum -a 256 | cut -d' ' -f1
 }
 
 cmd_check_freshness() {
@@ -153,13 +102,13 @@ cmd_check_freshness() {
   local issue_data
   issue_data=$(gh issue view "$issue" --json title,body 2>/dev/null) || {
     echo "NETWORK_ERROR"
-    exit 0  # Non-fatal
+    exit 4  # Non-fatal, distinct from FRESH (exit 0)
   }
 
   local title body current_hash
   title=$(echo "$issue_data" | jq -r '.title // ""')
   body=$(echo "$issue_data" | jq -r '.body // ""')
-  current_hash=$(echo "${title}${body}" | shasum -a 256 | cut -d' ' -f1)
+  current_hash=$(printf '%s' "${title}${body}" | shasum -a 256 | cut -d' ' -f1)
 
   if [ "$contract_hash" = "$current_hash" ]; then
     echo "FRESH"
@@ -180,7 +129,7 @@ cmd_toggle_task() {
   local timestamp
   timestamp=$(date '+%H:%M')
 
-  python3 -c "
+  if ! python3 -c "
 import sys
 path, n, ts = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 with open(path) as f:
@@ -200,45 +149,176 @@ if not found:
 with open(path, 'w') as f:
     f.writelines(lines)
 print(f'Task {n} checked off at {ts}')
-" "$path" "$n" "$timestamp"
-}
-
-cmd_sync_checkbox() {
-  local issue="${1:-}" subtask_text="${2:-}"
-  if [ -z "$issue" ] || [ -z "$subtask_text" ]; then
-    echo "ERROR: sync-checkbox requires ISSUE and SUBTASK_TEXT" >&2
+" "$path" "$n" "$timestamp"; then
+    echo "ERROR: Failed to update Contract at $path (task $n)" >&2
     exit 1
   fi
+}
 
+cmd_sync_all_checkboxes() {
+  local contract_path="${1:-}" issue="${2:-}"
+  if [ -z "$contract_path" ] || [ -z "$issue" ]; then
+    echo "ERROR: sync-all-checkboxes requires CONTRACT_PATH and ISSUE" >&2
+    exit 1
+  fi
+  if [ ! -f "$contract_path" ]; then
+    echo "ERROR: Contract not found: $contract_path" >&2
+    exit 2
+  fi
+
+  # Fetch Issue body (one read)
   local issue_body
-  issue_body=$(gh issue view "$issue" --json body --jq '.body' 2>/dev/null) || {
-    echo "WARNING: Could not fetch Issue body" >&2
-    exit 0
+  issue_body=$(gh issue view "$issue" --json body --jq '.body' 2>&1) || {
+    echo "ERROR: Could not fetch Issue #$issue body: $issue_body" >&2
+    exit 3
   }
-
   if [ -z "$issue_body" ]; then
-    echo "WARNING: Issue body is empty" >&2
+    echo "WARNING: Issue #$issue body is empty — nothing to sync" >&2
     exit 0
   fi
 
-  local updated_body
-  updated_body=$(python3 -c "
-import sys
-body = sys.stdin.read()
-task = sys.argv[1]
-body = body.replace('- [ ] ' + task, '- [x] ' + task, 1)
-print(body, end='')
-" "$subtask_text" <<< "$issue_body" 2>/dev/null) || {
-    echo "WARNING: Could not process Issue body" >&2
-    exit 0
-  }
+  # Python: read Contract, extract checked items, fuzzy-match and update Issue body
+  local result
+  result=$(python3 -c "
+import sys, re
 
-  if [ -n "$updated_body" ]; then
-    gh issue edit "$issue" --body "$updated_body" 2>/dev/null || {
-      echo "WARNING: Could not sync sub-task to GitHub Issue (non-fatal)" >&2
-      exit 0
+contract_path = sys.argv[1]
+
+# Read Contract
+with open(contract_path) as f:
+    contract = f.read()
+
+# Read Issue body from stdin
+issue_body = sys.stdin.read()
+
+def normalize(text):
+    # Strip timestamp suffix: ' — HH:MM' or ' - HH:MM'
+    text = re.sub(r'\s*[—–-]\s*\d{1,2}:\d{2}\s*$', '', text)
+    # Strip MANUAL prefix for matching
+    text = re.sub(r'^🔧\s*MANUAL:\s*', '', text)
+    # Collapse whitespace
+    text = ' '.join(text.split())
+    # Normalize dashes (em-dash, en-dash → hyphen)
+    text = text.replace('—', '-').replace('–', '-')
+    return text.strip().lower()
+
+# Extract checked items from Contract (both Sub-tasks and Success Criteria)
+checked_items = []
+for line in contract.split('\n'):
+    m = re.match(r'^-\s*\[x\]\s*(.*)', line, re.IGNORECASE)
+    if m:
+        checked_items.append(m.group(1).strip())
+
+if not checked_items:
+    print('No checked items in Contract — nothing to sync')
+    sys.exit(0)
+
+# Extract unchecked items from Issue body with their positions
+unchecked_pattern = re.compile(r'^- \[ \] (.*)$', re.MULTILINE)
+unchecked_in_issue = [(m.start(), m.end(), m.group(1).strip()) for m in unchecked_pattern.finditer(issue_body)]
+
+if not unchecked_in_issue:
+    print('All Issue checkboxes already checked — nothing to sync')
+    sys.exit(0)
+
+# Fuzzy match: for each checked Contract item, find matching unchecked Issue item
+synced = 0
+unmatched = []
+# Build the updated body by replacing matches (process from end to preserve positions)
+replacements = []  # (start, end, original_text)
+
+def similarity_ratio(a, b):
+    return min(len(a), len(b)) / max(len(a), len(b)) if max(len(a), len(b)) > 0 else 0
+
+for contract_item in checked_items:
+    norm_contract = normalize(contract_item)
+    if not norm_contract:
+        continue
+    best_match = None
+    best_score = 0  # 0=none, 1=containment, 2=prefix, 3=exact
+    best_diff = float('inf')  # length difference (lower = closer match)
+    for start, end, issue_text in unchecked_in_issue:
+        norm_issue = normalize(issue_text)
+        diff = abs(len(norm_contract) - len(norm_issue))
+        if norm_contract == norm_issue:
+            best_match = (start, end, issue_text)
+            best_score = 3
+            break  # exact = best possible
+        elif norm_issue.startswith(norm_contract) or norm_contract.startswith(norm_issue):
+            if best_score < 2 or (best_score == 2 and diff < best_diff):
+                best_match = (start, end, issue_text)
+                best_score = 2
+                best_diff = diff
+            # Don't break — pick closest prefix match
+        elif (norm_contract in norm_issue or norm_issue in norm_contract) and similarity_ratio(norm_contract, norm_issue) >= 0.5:
+            # Containment: require >=50% length similarity to prevent false positives
+            if best_score < 1 or (best_score == 1 and diff < best_diff):
+                best_match = (start, end, issue_text)
+                best_score = 1
+                best_diff = diff
+
+    if best_match:
+        start, end, issue_text = best_match
+        replacements.append((start, end, issue_text))
+        # Remove from candidates to avoid double-matching
+        unchecked_in_issue = [(s, e, t) for s, e, t in unchecked_in_issue if s != start]
+        synced += 1
+    else:
+        unmatched.append(contract_item)
+
+# Apply replacements (from end to start to preserve positions)
+updated_body = issue_body
+for start, end, issue_text in sorted(replacements, key=lambda x: x[0], reverse=True):
+    updated_body = updated_body[:start] + '- [x] ' + issue_text + updated_body[end:]
+
+# Report
+if synced > 0:
+    print(f'SYNC:{synced}')
+    if unmatched:
+        for item in unmatched:
+            print(f'UNMATCHED:{item}', file=sys.stderr)
+    # Output updated body to fd 3
+    with open('/dev/fd/3', 'w') as f:
+        f.write(updated_body)
+else:
+    print('NO_MATCHES')
+    for item in unmatched:
+        print(f'UNMATCHED:{item}', file=sys.stderr)
+    sys.exit(1)
+" "$contract_path" 3>/tmp/tw-sync-body.$$ <<< "$issue_body" 2>&1)
+  local exit_code=$?
+  if [ "$exit_code" -ne 0 ]; then
+    echo "WARNING: Sync matching failed (exit $exit_code): $result" >&2
+    rm -f /tmp/tw-sync-body.$$
+    exit "$exit_code"
+  fi
+
+  if [ -f /tmp/tw-sync-body.$$ ] && [ -s /tmp/tw-sync-body.$$ ]; then
+    # Write updated body back to GitHub (one write)
+    gh issue edit "$issue" --body "$(cat /tmp/tw-sync-body.$$)" 2>&1 || {
+      echo "ERROR: Could not update Issue #$issue body (gh issue edit failed)" >&2
+      rm -f /tmp/tw-sync-body.$$
+      exit 3
     }
-    echo "Synced checkbox to Issue #$issue"
+    rm -f /tmp/tw-sync-body.$$
+
+    # Extract count from SYNC:N line
+    local count
+    count=$(echo "$result" | grep '^SYNC:' | head -1 | cut -d: -f2)
+    echo "Synced $count checkbox(es) to Issue #$issue"
+
+    # Report unmatched items if any
+    local unmatched
+    unmatched=$(echo "$result" | grep '^UNMATCHED:' | sed 's/^UNMATCHED:/  - /' || true)
+    if [ -n "$unmatched" ]; then
+      echo "WARNING: Could not match these Contract items to Issue body:" >&2
+      echo "$unmatched" >&2
+    fi
+  else
+    rm -f /tmp/tw-sync-body.$$
+    echo "WARNING: No checkboxes matched between Contract and Issue" >&2
+    echo "$result" >&2
+    exit 1
   fi
 }
 
@@ -261,13 +341,11 @@ SUBCOMMAND="${1:-}"
 shift || true
 
 case "$SUBCOMMAND" in
-  teamwork-dir)     cmd_teamwork_dir ;;
-  find)             cmd_find "$@" ;;
   read-field)       cmd_read_field "$@" ;;
   hash)             cmd_hash "$@" ;;
   check-freshness)  cmd_check_freshness "$@" ;;
   toggle-task)      cmd_toggle_task "$@" ;;
-  sync-checkbox)    cmd_sync_checkbox "$@" ;;
-  delete)           cmd_delete "$@" ;;
-  *)                usage ;;
+  sync-all-checkboxes)   cmd_sync_all_checkboxes "$@" ;;
+  delete)                cmd_delete "$@" ;;
+  *)                     usage ;;
 esac

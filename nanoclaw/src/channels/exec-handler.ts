@@ -4,6 +4,7 @@ import { publishStreamEvent } from './stream-publisher.js';
 import { executeTask } from '../executor/task-executor.js';
 import { config } from '../config.js';
 import { requestContext } from './request-context.js';
+import { trackUser } from './active-users.js';
 
 const MAX_QUEUE_SIZE = 5;
 const taskQueue: ExecRequest[] = [];
@@ -23,7 +24,7 @@ async function processNext(): Promise<void> {
 
   try {
     console.log(`[redis][nanoclaw] Executing task ${request.taskId} for user ${userId} (queue: ${taskQueue.length} remaining)`);
-    await requestContext.run({ userId }, () => executeTask(request));
+    await requestContext.run({ userId, sessionId: request.sessionId }, () => executeTask(request));
   } catch (err) {
     console.error(`[redis][nanoclaw] unhandled error for task ${request.taskId}:`, err);
   } finally {
@@ -49,8 +50,12 @@ export async function startExecHandler(): Promise<void> {
   const sub = getSubscriber();
 
   sub.on('pmessage', (_pattern: string, ch: string, message: string) => {
+    // Guard: only process vi:exec:* channels (shared subscriber fires for all patterns)
+    if (!ch.startsWith('vi:exec:')) return;
+
     // Extract userId from channel: vi:exec:{userId} → userId
     const userId = ch.slice('vi:exec:'.length);
+    trackUser(userId);
 
     try {
       const request: ExecRequest = JSON.parse(message);

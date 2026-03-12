@@ -1,11 +1,9 @@
 import 'package:livekit_client/livekit_client.dart';
 import 'package:rive_rolls_collection/common.dart';
 
-import '../../../../app.dart';
 import '../../../../common/utils/log_utils.dart';
 import '../../../../service/hardware/hard_ware_initializer.dart';
-import '../../../../service/network/api_service.dart';
-import '../../../widgets/custom_notify_widget.dart';
+import '../../../models/room_info.dart';
 import 'live_kit_config.dart';
 
 /// 房间连接生命周期管理
@@ -19,25 +17,14 @@ class LiveKitRoomService {
   /// 房间是否连接成功
   bool get isConnected => room.connectionState == ConnectionState.connected;
 
-  /// VPS 是否已就绪
-  bool get isVpsReady => App().auth.vpsInitCompleted;
-
-  /// 连接房间（单次尝试，重试由上层控制器负责）
-  Future<void> connect() async {
-    // 存在连接
+  /// 连接房间（RoomInfo 由外部传入，不再内部请求）
+  Future<void> connect(RoomInfo roomInfo) async {
     if (room.connectionState == ConnectionState.connected ||
         room.connectionState == ConnectionState.reconnecting ||
         room.connectionState == ConnectionState.connecting) {
       return;
     }
 
-    // 检查是否登录
-    if (!App().auth.logged || App().auth.currentAuth.self == null) {
-      logw('Connect Skipped: Not logged in');
-      return;
-    }
-
-    // 检查音视频流初始化完成
     if (!HardWareInitializer.instance.isInit) {
       logw('Connect Skipped: Hardware not ready');
       return;
@@ -48,10 +35,10 @@ class LiveKitRoomService {
     _isConnecting = true;
 
     try {
-      await room.prepareConnection(App().auth.liveKitUrl, App().auth.liveKitToken);
+      await room.prepareConnection(roomInfo.liveKitUrl, roomInfo.token);
       await room.connect(
-        App().auth.liveKitUrl,
-        App().auth.liveKitToken,
+        roomInfo.liveKitUrl,
+        roomInfo.token,
         fastConnectOptions: FastConnectOptions(
           microphone: TrackOption(track: HardWareInitializer.instance.audioTrack!),
           camera: TrackOption(track: HardWareInitializer.instance.videoTrack!),
@@ -62,18 +49,6 @@ class LiveKitRoomService {
       rethrow;
     } finally {
       _isConnecting = false;
-    }
-  }
-
-  /// GateWay加入房间
-  Future<void> joinGateWay() async {
-    try {
-      if (App().auth.vpsInitCompleted) {
-        await ApiService.gateWayJoinRequest(roomName: App().auth.liveKitRoomName);
-      }
-    } catch (ex) {
-      loge('error:$ex');
-      rethrow;
     }
   }
 

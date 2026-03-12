@@ -63,35 +63,6 @@ function detectIntentFromText(text) {
 }
 
 /**
- * Parse XML-style tags from agent data channel messages.
- */
-function parseAgentXml(raw) {
-  const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
-
-  const transcriptMatch = text.match(/<transcript\s+type="([^"]+)">([\s\S]*?)<\/transcript>/);
-  if (transcriptMatch) {
-    return { kind: 'transcript', type: transcriptMatch[1], content: transcriptMatch[2] };
-  }
-
-  const resultMatch = text.match(/<show_result\s+type="([^"]+)">([\s\S]*?)<\/show_result>/);
-  if (resultMatch) {
-    return { kind: 'result', type: resultMatch[1], content: resultMatch[2] };
-  }
-
-  const infoBarMatch = text.match(/<info_bar\s+status="([^"]+)">([\s\S]*?)<\/info_bar>/);
-  if (infoBarMatch) {
-    return { kind: 'info_bar', status: infoBarMatch[1], message: infoBarMatch[2] };
-  }
-
-  const actionMatch = text.match(/<action_suggestion\s+action="([^"]+)"\s+icon="([^"]+)"(?:\s+label="([^"]*)")?>([\s\S]*?)<\/action_suggestion>/);
-  if (actionMatch) {
-    return { kind: 'action_suggestion', action: actionMatch[1], icon: actionMatch[2], label: actionMatch[3] || actionMatch[4] };
-  }
-
-  return null;
-}
-
-/**
  * Agent protocol: RPC methods, data channel message handling, protocol state,
  * photo capture, messaging, navigation/camera callbacks.
  * Accepts shared refs from the composition hook.
@@ -405,7 +376,14 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
               setLastAgentText(content);
             }
           } else if (data.type === 'action_suggestion') {
-            setActionSuggestion({ action: data.action, icon: data.icon || 'camera', label: data.label || '' });
+            // Map icon to EP hashtag so handleDone sends the right #command
+            const icon = data.action || data.icon || 'camera';
+            const hashtag = icon !== 'camera' ? `#${icon}` : null;
+            setActionSuggestion({ action: data.action, icon: icon, label: data.label || '', hashtag });
+          } else if (data.type === 'action_button') {
+            setActionSuggestion({ action: 'dispatch', icon: data.hashtag?.replace('#', '') || 'camera', label: data.label || '', hashtag: data.hashtag });
+          } else if (data.type === 'agent_version') {
+            console.log(`[VI Agent] version: ${data.version}`);
           } else if (data.type === 'task_started' || data.type === 'task_progress' || data.type === 'task_result') {
             setTaskEvents(prev => [...prev, { ...data, _ts: Date.now() }].slice(-TASK_EVENT_BUFFER_LIMIT));
           }
@@ -443,7 +421,9 @@ export function useAgentProtocol({ roomRef, videoTrackRef, agentIdentityRef }) {
       } else if (parsed.kind === 'info_bar') {
         setInfoBar({ status: parsed.status, message: parsed.message });
       } else if (parsed.kind === 'action_suggestion') {
-        setActionSuggestion({ action: parsed.action, icon: parsed.icon, label: parsed.label });
+        const icon = parsed.action || parsed.icon || 'camera';
+        const hashtag = icon !== 'camera' ? `#${icon}` : null;
+        setActionSuggestion({ action: parsed.action, icon: parsed.icon, label: parsed.label, hashtag });
       }
     });
   }, []);

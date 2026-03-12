@@ -43,5 +43,5 @@ USER appuser
 # Pre-download ML models (Silero VAD, etc.)
 RUN uv run src/agent.py download-files
 
-# Run the V3 agent
+# Run the agent
 CMD ["uv", "run", "src/agent.py", "start"]

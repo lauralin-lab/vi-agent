@@ -7,9 +7,12 @@ import type { PackageManifest, TemplateDefinition } from '../channels/types.js';
 //
 // Each package lives in packages/{package-id}/ and contains:
 //   manifest.json           — PackageManifest definition
-//   skill.md                — Skill prompt content
+//   SKILL.md                — AI skill prompt (phase-based format)
 //   templates/*.json        — Bundled template schemas
 //   tools/tools.json        — Custom tool definitions (optional)
+//
+// SKILL.md replaces the former instruction.md. The loader supports both
+// for backwards compatibility (SKILL.md takes priority).
 //
 // At startup, loadPackages() scans the directory and loads all valid
 // packages. At runtime, getPackage() and listPackages() provide access.
@@ -18,7 +21,9 @@ import type { PackageManifest, TemplateDefinition } from '../channels/types.js';
 /** A fully loaded experience package */
 export interface LoadedPackage {
   manifest: PackageManifest;
-  /** Skill prompt content (from skill.md) */
+  /** Instruction prompt content (from instruction.md) */
+  instructionPrompt: string;
+  /** @deprecated Use instructionPrompt instead. */
   skillPrompt: string;
   /** Bundled template definitions */
   templates: TemplateDefinition[];
@@ -128,26 +133,58 @@ async function tryLoadPackage(
     return null;
   }
 
-  // 2. Load skill prompt (from manifest.skill.prompt or default skill.md)
-  const skillPromptFile = manifest.skill?.prompt ?? 'skill.md';
-  let skillPrompt = '';
-  try {
-    skillPrompt = await readFile(join(pkgDir, skillPromptFile), 'utf-8');
-  } catch {
+  // 1b. Validate app_mode if present
+  if (manifest.app_mode) {
+    const warnings = validateAppMode(manifest.app_mode, manifest.id);
+    for (const w of warnings) {
+      console.warn(`[package-loader] ${manifest.id}: ${w}`);
+    }
+  }
+
+  // 2. Migrate: if only `skill` exists, populate `instruction` from it
+  if (!manifest.instruction && manifest.skill) {
+    manifest.instruction = {
+      file: manifest.skill.prompt ?? 'instruction.md',
+      model: manifest.skill.model,
+      max_turns: manifest.skill.max_turns,
+      max_tokens: manifest.skill.max_tokens,
+    };
+  }
+
+  // 3. Load skill/instruction prompt (SKILL.md takes priority over instruction.md)
+  let instructionPrompt = '';
+  const explicitFile = manifest.instruction?.file;
+
+  // Priority: explicit file from manifest > SKILL.md > instruction.md
+  const candidateFiles = explicitFile
+    ? [explicitFile]
+    : ['SKILL.md', 'instruction.md'];
+
+  for (const candidate of candidateFiles) {
+    try {
+      instructionPrompt = await readFile(join(pkgDir, candidate), 'utf-8');
+      break;
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  if (!instructionPrompt) {
     console.warn(
-      `[package-loader] ${manifest.id}: skill prompt "${skillPromptFile}" not found, using empty prompt`,
+      `[package-loader] ${manifest.id}: no SKILL.md or instruction.md found, using empty prompt`,
     );
   }
 
-  // 3. Load bundled templates
+  // 4. Load bundled templates
   const templates = await loadBundledTemplates(pkgDir);
 
-  // 4. Load tool definitions
+  // 5. Load tool definitions
   const toolDefinitions = await loadToolDefinitions(pkgDir);
 
   return {
     manifest,
-    skillPrompt,
+    instructionPrompt,
+    skillPrompt: instructionPrompt, // deprecated alias
     templates,
     toolDefinitions,
     resolvedPath: pkgDir,
@@ -183,6 +220,55 @@ async function loadBundledTemplates(pkgDir: string): Promise<TemplateDefinition[
   }
 
   return defs;
+}
+
+/**
+ * Validate app_mode fields from a package manifest.
+ * Returns array of warning messages (empty = valid).
+ */
+function validateAppMode(
+  appMode: NonNullable<PackageManifest['app_mode']>,
+  packageId: string,
+): string[] {
+  const warnings: string[] = [];
+
+  // Validate camera settings
+  if (appMode.camera) {
+    if (appMode.camera.resolution && !['standard', 'high'].includes(appMode.camera.resolution)) {
+      warnings.push(`app_mode.camera.resolution must be "standard" or "high", got "${appMode.camera.resolution}"`);
+    }
+    if (appMode.camera.flash && !['auto', 'on', 'off'].includes(appMode.camera.flash)) {
+      warnings.push(`app_mode.camera.flash must be "auto", "on", or "off", got "${appMode.camera.flash}"`);
+    }
+    if (appMode.camera.facing && !['front', 'back'].includes(appMode.camera.facing)) {
+      warnings.push(`app_mode.camera.facing must be "front" or "back", got "${appMode.camera.facing}"`);
+    }
+  }
+
+  // Validate layout
+  const validLayouts = ['canvas-first', 'result-first', 'dashboard'];
+  if (appMode.layout && !validLayouts.includes(appMode.layout)) {
+    warnings.push(`app_mode.layout must be one of ${validLayouts.join(', ')}, got "${appMode.layout}"`);
+  }
+
+  // Validate persistent_widget
+  if (appMode.persistent_widget) {
+    if (!appMode.persistent_widget.template) {
+      warnings.push('app_mode.persistent_widget.template is required');
+    }
+    if (!['top', 'bottom'].includes(appMode.persistent_widget.position)) {
+      warnings.push(`app_mode.persistent_widget.position must be "top" or "bottom", got "${appMode.persistent_widget.position}"`);
+    }
+  }
+
+  // Validate theme
+  if (appMode.theme?.accent) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(appMode.theme.accent)) {
+      warnings.push(`app_mode.theme.accent must be a hex color like "#2563eb", got "${appMode.theme.accent}"`);
+    }
+  }
+
+  return warnings;
 }
 
 async function loadToolDefinitions(pkgDir: string): Promise<ToolDefinition[]> {

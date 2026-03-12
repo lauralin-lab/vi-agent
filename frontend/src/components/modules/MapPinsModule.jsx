@@ -66,7 +66,7 @@ export default function MapPinsModule({ data, onAction }) {
                   {/* Label */}
                   <div className="flex items-center gap-2">
                     <span
-                      className={`font-medium truncate ${isSelected ? 'text-purple-200' : 'text-black/70'}`}
+                      className={`font-medium truncate ${isSelected ? 'text-purple-700' : 'text-black/70'}`}
                       style={{ fontSize: 'var(--text-sm)' }}
                     >
                       {marker.label}

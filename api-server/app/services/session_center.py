@@ -22,8 +22,8 @@ VALID_SESSION_STATUSES = {"created", "dispatched", "active", "paused", "complete
 class SessionCenter:
 
     async def _resolve_user_id(self, db: AsyncSession, vi_user_id: str):
-        """Resolve vi_user_id -> internal UUID. Raises ValueError if not found."""
-        return await resolve_user_id(db, vi_user_id)
+        """Resolve vi_user_id -> internal UUID. Auto-creates stub user if needed."""
+        return await resolve_user_id(db, vi_user_id, auto_create=True)
 
     async def create_session(
         self, db: AsyncSession, vi_user_id: str, context: dict | None = None,
@@ -144,9 +144,9 @@ class SessionCenter:
         if "status" in updates and updates["status"] not in VALID_SESSION_STATUSES:
             raise ValueError(f"Invalid session status: {updates['status']}")
         allowed_fields = {
-            "title", "intention", "status", "progress_step", "progress_total",
-            "progress_message", "result_summary", "result_html", "artifacts",
-            "timeline", "memory_updates",
+            "title", "intention", "status", "context", "progress_step",
+            "progress_total", "progress_message", "result_summary",
+            "result_html", "artifacts", "timeline", "memory_updates",
         }
         for key, value in updates.items():
             if key in allowed_fields and value is not None:

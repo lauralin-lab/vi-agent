@@ -103,11 +103,20 @@ case "$HOOK_EVENT" in
     ;;
 esac
 
-# ── macOS notification banner ──
-ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
-ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
-
-osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
+# ── macOS notification ──
+# Primary: iTerm2 bell → sends notification with session name, click jumps to exact tab
+# Fallback: terminal-notifier → click activates iTerm2 window (can't target tab)
+# Fallback 2: osascript → click opens Script Editor (worst UX)
+SESSION_TTY=$(ps -p $PPID -o tty= 2>/dev/null | tr -d ' ')
+if [ -n "$SESSION_TTY" ] && [ -w "/dev/$SESSION_TTY" ]; then
+  printf '\a' > /dev/$SESSION_TTY
+elif command -v terminal-notifier &>/dev/null; then
+  terminal-notifier -title "$PROJECT" -message "$SUMMARY" -activate com.googlecode.iterm2
+else
+  ESCAPED_PROJECT=$(echo "$PROJECT" | sed "s/\"/\\\\\"/g")
+  ESCAPED_SUMMARY=$(echo "$SUMMARY" | sed "s/\"/\\\\\"/g")
+  osascript -e "display notification \"${ESCAPED_SUMMARY}\" with title \"${ESCAPED_PROJECT}\""
+fi
 
 # ── Play bundled sound — only for events requiring user intervention ──
 if [ "$NEEDS_VOICE" = "true" ] && [ -f "$SOUND_FILE" ]; then

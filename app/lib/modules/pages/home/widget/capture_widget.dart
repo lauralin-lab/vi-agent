@@ -85,63 +85,67 @@ class _CaptureWidgetState extends ConsumerState<CaptureWidget> with SingleTicker
         final double offsetY = math.sin(rad) * 2.0;
         final double angle = math.sin(rad * 2) * 0.008;
 
-        return InkWell(
-          onTap: captureArr.length > 1
-              ? () {
-                  setState(() {
-                    _isExpand = true;
-                    _isExpand ? _driftController.stop() : _driftController.repeat();
-                  });
-                }
-              : null,
-          child: Transform(
-            alignment: Alignment.center,
-            transform: Matrix4.translationValues(0, offsetY, 0)..rotateZ(angle),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AppImage.asset(
-                  captureArr.last,
-                  width: 44.dpx,
-                  height: 44.dpx,
-                  fit: BoxFit.cover,
-                  borderRadius: BorderRadius.all(Radius.circular(12.dpx)),
-                ),
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Visibility(
-                    visible: captureArr.length == 1,
-                    child: InkWell(
-                      onTap: () => _onDelCaptureImage(0),
-                      child: Container(
-                        padding: EdgeInsets.all(2.dpx),
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black),
-                        child: AppImage.asset(
-                          'assets/images/ic_close_small.webp',
-                          width: 10.dpx,
-                          height: 10.dpx,
-                          fit: BoxFit.cover,
+        return Padding(
+          padding: EdgeInsets.only(left: 14.dpx),
+          child: InkWell(
+            onTap: captureArr.length > 1
+                ? () {
+                    setState(() {
+                      _isExpand = true;
+                      _driftController.stop();
+                    });
+                  }
+                : null,
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.translationValues(0, offsetY, 0)..rotateZ(angle),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AppImage.asset(
+                    captureArr.last,
+                    width: 44.dpx,
+                    height: 44.dpx,
+                    fit: BoxFit.cover,
+                    fadeIn: Duration.zero,
+                    borderRadius: BorderRadius.all(Radius.circular(12.dpx)),
+                  ),
+                  Positioned(
+                    top: -4,
+                    right: -4,
+                    child: Visibility(
+                      visible: captureArr.length == 1,
+                      child: InkWell(
+                        onTap: () => _onDelCaptureImage(0),
+                        child: Container(
+                          padding: EdgeInsets.all(2.dpx),
+                          decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black),
+                          child: AppImage.asset(
+                            'assets/images/ic_close_small.webp',
+                            width: 10.dpx,
+                            height: 10.dpx,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  bottom: -10,
-                  right: -4,
-                  child: Container(
-                    padding: EdgeInsets.all(4.dpx),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: Center(
-                      child: Text(
-                        '${captureArr.length}',
-                        style: TextStyle(color: Colors.black, fontSize: 10.dpx, fontWeight: FontWeight.w500),
+                  Positioned(
+                    bottom: -10,
+                    right: -4,
+                    child: Container(
+                      padding: EdgeInsets.all(4.dpx),
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                      child: Center(
+                        child: Text(
+                          '${captureArr.length}',
+                          style: TextStyle(color: Colors.black, fontSize: 10.dpx, fontWeight: FontWeight.w500),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -160,6 +164,7 @@ class _CaptureWidgetState extends ConsumerState<CaptureWidget> with SingleTicker
           child: Opacity(
             opacity: value,
             child: Container(
+              margin: EdgeInsets.symmetric(horizontal: 14.dpx),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12.dpx),
@@ -170,23 +175,34 @@ class _CaptureWidgetState extends ConsumerState<CaptureWidget> with SingleTicker
                 child: Container(
                   height: 54.dpx,
                   padding: EdgeInsets.all(5.dpx),
-                  width: context.screenWidth - 24.dpx,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: captureArr.length + 1,
                     separatorBuilder: (_, __) => Gap(8.dpx),
                     itemBuilder: (context, index) {
                       if (index == captureArr.length) {
-                        return context.buildCameraBtnLayer(
-                          size: Size(44.dpx, 44.dpx),
-                          borderRadius: BorderRadius.all(Radius.circular(12.dpx)),
-                          onTap: () => setState(() => _isExpand = false),
-                          child: Text(
-                            "Done",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10.dpx,
-                              fontWeight: FontWeight.bold,
+                        return GestureDetector(
+                          onTap: () => setState(() {
+                            _isExpand = false;
+                            _driftController.repeat();
+                          }),
+                          child: Container(
+                            width: 44.dpx,
+                            height: 44.dpx,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.all(Radius.circular(12.dpx)),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                              color: Colors.white.withValues(alpha: 0.05),
+                            ),
+                            child: Center(
+                              child: Text(
+                                "Done",
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 11.dpx,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ),
                           ),
                         );

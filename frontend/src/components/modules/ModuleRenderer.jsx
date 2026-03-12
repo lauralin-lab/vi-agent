@@ -23,6 +23,7 @@ const ShoppingListModule = lazy(() => import('./ShoppingListModule'));
 const MapPinsModule = lazy(() => import('./MapPinsModule'));
 const QuizModule = lazy(() => import('./QuizModule'));
 const ConversationModule = lazy(() => import('./ConversationModule'));
+const TextResultModule = lazy(() => import('./TextResultModule'));
 
 const MODULE_MAP = {
   // Legacy module type names (snake_case)
@@ -39,15 +40,21 @@ const MODULE_MAP = {
   map_pins: MapPinsModule,
   quiz: QuizModule,
   conversation: ConversationModule,
+  // Text result (agent plain-text responses)
+  'text-result': TextResultModule,
+  text_result: TextResultModule,
   // V5 Card Template Protocol names (kebab-case)
   'map-pins': MapPinsModule,
   'shopping-list': ShoppingListModule,
   'nutrition-card': NutritionCardModule,
   'comparison-table': ComparisonModule,
+  thinking: StepsGuideModule,
   'thinking-process': StepsGuideModule,
   'image-analysis': InfoCardModule,
   'calendar-event': InfoCardModule,
   'hero-image': InfoCardModule,
+  'info-card': InfoCardModule,
+  'place-card': PlaceCardModule,
   'image-gallery': ImageGalleryModule,
 };
 
@@ -133,11 +140,14 @@ export function extractModuleTitle(module_type, data) {
     'shopping-list': 'Shopping List',
     'nutrition-card': 'Nutrition',
     'comparison-table': 'Comparison',
+    thinking: 'Thinking',
     'thinking-process': 'Thinking',
     'image-analysis': 'Analysis',
     'calendar-event': 'Calendar',
     'hero-image': 'Hero',
     'image-gallery': 'Gallery',
+    'text-result': 'Result',
+    text_result: 'Result',
     'freeform-html': 'Content',
   };
   return names[module_type] || module_type;

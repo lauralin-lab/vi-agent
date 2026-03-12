@@ -27,9 +27,12 @@ services:
       - API_BASE_URL=${API_BASE_URL:-http://localhost:8000}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
       - USER_DATA_DIR=/data/users
     volumes:
       - api_user_data:/data/users
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -72,20 +75,68 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://:${REDIS_AUTH}@${REDIS_HOST}:${REDIS_PORT:-6379}/0
       - API_SERVER_URL=http://api-server:8000
-      - USER_ID=${NANOCLAW_USER_ID:-prod-user}
+      # USER_ID no longer needed — NanoClaw discovers active users dynamically
       - USER_DATA_DIR=/workspace
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - HOST_WORKSPACE_DIR=/var/lib/docker/volumes/vi-agent-prod_nanoclaw_workspace/_data
+      - CONTAINER_NETWORK=vi-agent-prod_vi-network
     volumes:
       - nanoclaw_workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       api-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3100/health"]
       interval: 15s
       timeout: 5s
       retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - vi-network
+
+  admin-server:
+    image: collov/vi-agent-admin-server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}
+      - CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-http://localhost:3001}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
+    volumes:
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
+    depends_on:
+      api-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - vi-network
+
+  admin-web:
+    image: collov/vi-agent-admin-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      admin-server:
+        condition: service_healthy
     logging:
       driver: json-file
       options:

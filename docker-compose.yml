@@ -11,6 +11,7 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vi} -d ${POSTGRES_DB:-vi_db}" ]
       interval: 5s
@@ -65,8 +66,12 @@ services:
       GCS_BUCKET: ${GCS_BUCKET:-vi-uploads}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-vi-internal-dev-token}
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
+      FIREBASE_PROJECTS: ${FIREBASE_PROJECTS:-}
       SHARED_SKILLS_DIR: /data/shared/skills
       USER_DATA_DIR: /data/users
+    volumes:
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,23 +139,84 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_pass}@redis:6379/0
       API_SERVER_URL: http://api-server:8000
-      USER_ID: ${NANOCLAW_USER_ID:-dev-user}
+      # USER_ID no longer needed — NanoClaw discovers active users dynamically
       USER_DATA_DIR: /workspace
       HEALTH_PORT: "3100"
+      CONTAINER_MODE: "true"
+      CONTAINER_NETWORK: vi_agent_vi-network
+      HOST_WORKSPACE_DIR: ${PWD}/data/dev/user
+      HOST_PROJECT_DIR: ${PWD}
     volumes:
       - ./data/dev/user:/workspace
       - ./nanoclaw/data/shared/skills:/skills:ro
       - ./packages:/packages:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy
       api-server:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3100/health" ]
+      test: [ "CMD-SHELL", "wget --spider -q http://localhost:3100/health" ]
       interval: 10s
       timeout: 5s
       retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vi-network
+
+  # --- Admin Backend ---
+  admin-server:
+    build:
+      context: ./admin-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vi}:${POSTGRES_PASSWORD:-vi_secret_change_me}@postgres:5432/${POSTGRES_DB:-vi_db}
+      CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3001}
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
+      FIREBASE_PROJECTS: ${FIREBASE_PROJECTS:-}
+    volumes:
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vi-network
+
+  # --- Admin Frontend ---
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+      args:
+        VITE_ADMIN_API_URL: ""
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_PACKAGE_NAME: ${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web}
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_WEB_PORT:-3001}:80"
+    depends_on:
+      - admin-server
     logging:
       driver: json-file
       options:
@@ -167,7 +233,14 @@ services:
       args:
         VITE_API_URL: ""
         VITE_LIVEKIT_URL: ${LIVEKIT_URL}
-        VITE_DEFAULT_USER_ID: ${NANOCLAW_USER_ID:-dev-user}
+        # VITE_DEFAULT_USER_ID removed — userId comes from Firebase auth
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_PACKAGE_NAME: ${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web}
     restart: unless-stopped
     ports:
       - "80:80"

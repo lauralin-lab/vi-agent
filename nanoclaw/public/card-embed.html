@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: transparent;
+    color: #e1e4ed;
+    overflow: hidden;
+  }
+  .card-content {
+    padding: 0;
+    width: 100%;
+  }
+  /* HTML card styling */
+  .html-card { width: 100%; }
+  .html-card img { max-width: 100%; height: auto; border-radius: 8px; }
+  .html-card table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  .html-card th, .html-card td { padding: 6px 10px; border: 1px solid #2a2d3a; text-align: left; font-size: 13px; }
+  .html-card th { background: rgba(108,126,225,0.1); font-weight: 600; }
+  .html-card h1, .html-card h2, .html-card h3, .html-card h4 { margin: 8px 0 4px; }
+  .html-card p { margin: 4px 0; line-height: 1.5; }
+  .html-card ul, .html-card ol { padding-left: 20px; margin: 4px 0; }
+  .html-card a { color: #6c7ee1; }
+  .html-card pre, .html-card code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+  .html-card pre { padding: 8px 12px; overflow-x: auto; margin: 8px 0; }
+
+  /* Module card styling */
+  .module-card {
+    background: rgba(26, 29, 39, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 16px;
+    width: 100%;
+  }
+  .module-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .module-icon { font-size: 24px; }
+  .module-title { font-size: 16px; font-weight: 600; color: #e1e4ed; }
+  .module-subtitle { font-size: 12px; color: #8b8fa3; margin-top: 2px; }
+  .module-field { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }
+  .module-field:last-child { border-bottom: none; }
+  .module-field-key { color: #8b8fa3; flex-shrink: 0; margin-right: 12px; }
+  .module-field-val { color: #e1e4ed; text-align: right; word-break: break-word; }
+  .module-field-val.highlight { color: #6c7ee1; font-weight: 600; }
+  .module-section { margin-top: 12px; }
+  .module-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #8b8fa3; margin-bottom: 6px; }
+  .module-chip { display: inline-block; background: rgba(108,126,225,0.15); color: #6c7ee1; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin: 2px; }
+  .module-image { width: 100%; border-radius: 8px; margin: 8px 0; }
+  .module-list-item { padding: 4px 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .module-rating { color: #fbbf24; }
+  .module-empty { color: #8b8fa3; font-size: 13px; padding: 16px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="card-content" id="card-content"></div>
+<script>
+(function() {
+  'use strict';
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str || '');
+    return div.innerHTML;
+  }
+
+  function renderStars(rating) {
+    const n = Math.round(Number(rating) || 0);
+    return '<span class="module-rating">' + '★'.repeat(Math.min(n, 5)) + '☆'.repeat(Math.max(5 - n, 0)) + '</span>';
+  }
+
+  function renderHtmlCard(card) {
+    return '<div class="html-card">' + (card.data.html || '') + '</div>';
+  }
+
+  function renderPlaceCard(data) {
+    let html = '<div class="module-card">';
+    if (data.image_url) html += '<img class="module-image" src="' + escapeHtml(data.image_url) + '" onerror="this.style.display=\'none\'">';
+    html += '<div class="module-header">';
+    html += '<div><div class="module-title">' + escapeHtml(data.name || data.title || '') + '</div>';
+    if (data.category) html += '<div class="module-subtitle">' + escapeHtml(data.category) + '</div>';
+    html += '</div></div>';
+    if (data.rating) html += '<div class="module-field"><span class="module-field-key">Rating</span><span class="module-field-val">' + renderStars(data.rating) + ' ' + data.rating + '</span></div>';
+    if (data.price_level) html += '<div class="module-field"><span class="module-field-key">Price</span><span class="module-field-val">' + escapeHtml(data.price_level) + '</span></div>';
+    if (data.address) html += '<div class="module-field"><span class="module-field-key">Address</span><span class="module-field-val">' + escapeHtml(data.address) + '</span></div>';
+    if (data.phone) html += '<div class="module-field"><span class="module-field-key">Phone</span><span class="module-field-val">' + escapeHtml(data.phone) + '</span></div>';
+    if (data.hours) html += '<div class="module-field"><span class="module-field-key">Hours</span><span class="module-field-val">' + escapeHtml(data.hours) + '</span></div>';
+    if (data.tags && data.tags.length) html += '<div class="module-section">' + data.tags.map(t => '<span class="module-chip">' + escapeHtml(t) + '</span>').join('') + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderInfoCard(data) {
+    let html = '<div class="module-card">';
+    html += '<div class="module-header">';
+    if (data.icon) html += '<span class="module-icon">' + data.icon + '</span>';
+    html += '<div><div class="module-title">' + escapeHtml(data.title || '') + '</div>';
+    if (data.subtitle) html += '<div class="module-subtitle">' + escapeHtml(data.subtitle) + '</div>';
+    html += '</div></div>';
+    if (data.fields) {
+      data.fields.forEach(function(f) {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(f.label) + '</span><span class="module-field-val' + (f.highlight ? ' highlight' : '') + '">' + escapeHtml(f.value) + '</span></div>';
+      });
+    }
+    if (data.footer) html += '<div style="margin-top:8px;font-size:12px;color:#8b8fa3">' + escapeHtml(data.footer) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderChecklist(data) {
+    let html = '<div class="module-card">';
+    html += '<div class="module-header"><div class="module-title">' + escapeHtml(data.title || 'Checklist') + '</div></div>';
+    const items = data.items || [];
+    items.forEach(function(item) {
+      const checked = item.checked || item.done;
+      html += '<div class="module-list-item">' + (checked ? '☑' : '☐') + ' ' + escapeHtml(item.text || item.label || item) + '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderRecipe(data) {
+    let html = '<div class="module-card">';
+    if (data.image_url) html += '<img class="module-image" src="' + escapeHtml(data.image_url) + '" onerror="this.style.display=\'none\'">';
+    html += '<div class="module-header"><div><div class="module-title">' + escapeHtml(data.title || data.name || '') + '</div>';
+    if (data.prep_time || data.cook_time) html += '<div class="module-subtitle">' + [data.prep_time ? 'Prep: ' + data.prep_time : '', data.cook_time ? 'Cook: ' + data.cook_time : ''].filter(Boolean).join(' | ') + '</div>';
+    html += '</div></div>';
+    if (data.ingredients && data.ingredients.length) {
+      html += '<div class="module-section"><div class="module-section-title">Ingredients</div>';
+      data.ingredients.forEach(function(i) { html += '<div class="module-list-item">' + escapeHtml(typeof i === 'string' ? i : i.name || JSON.stringify(i)) + '</div>'; });
+      html += '</div>';
+    }
+    if (data.steps && data.steps.length) {
+      html += '<div class="module-section"><div class="module-section-title">Steps</div>';
+      data.steps.forEach(function(s, idx) { html += '<div class="module-list-item"><strong>' + (idx + 1) + '.</strong> ' + escapeHtml(typeof s === 'string' ? s : s.text || s.instruction || JSON.stringify(s)) + '</div>'; });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderComparison(data) {
+    let html = '<div class="module-card">';
+    html += '<div class="module-header"><div class="module-title">' + escapeHtml(data.title || 'Comparison') + '</div></div>';
+    const items = data.items || data.options || [];
+    if (items.length >= 2) {
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+      items.forEach(function(item) {
+        html += '<div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px">';
+        html += '<div style="font-weight:600;margin-bottom:6px">' + escapeHtml(item.name || item.title || '') + '</div>';
+        if (item.pros) { html += '<div class="module-section-title">Pros</div>'; (item.pros || []).forEach(function(p) { html += '<div style="color:#4ade80;font-size:12px">+ ' + escapeHtml(p) + '</div>'; }); }
+        if (item.cons) { html += '<div class="module-section-title" style="margin-top:6px">Cons</div>'; (item.cons || []).forEach(function(c) { html += '<div style="color:#f87171;font-size:12px">- ' + escapeHtml(c) + '</div>'; }); }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderShoppingList(data) {
+    let html = '<div class="module-card">';
+    html += '<div class="module-header"><div class="module-title">' + escapeHtml(data.title || 'Shopping List') + '</div></div>';
+    const categories = data.categories || [{ name: '', items: data.items || [] }];
+    categories.forEach(function(cat) {
+      if (cat.name) html += '<div class="module-section-title">' + escapeHtml(cat.name) + '</div>';
+      (cat.items || []).forEach(function(item) {
+        const text = typeof item === 'string' ? item : (item.name || item.text || JSON.stringify(item));
+        const qty = item.quantity ? ' (' + item.quantity + ')' : '';
+        html += '<div class="module-list-item">☐ ' + escapeHtml(text) + escapeHtml(qty) + '</div>';
+      });
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderObjectFields(obj) {
+    var html = '';
+    Object.keys(obj).forEach(function(k) {
+      var v = obj[k];
+      if (v === null || v === undefined) return;
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(k) + '</span><span class="module-field-val" style="font-size:11px;color:#8b8fa3">' + escapeHtml(JSON.stringify(v)) + '</span></div>';
+      } else if (Array.isArray(v)) {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(k) + '</span><span class="module-field-val">' + v.map(function(i) { return escapeHtml(typeof i === 'string' ? i : JSON.stringify(i)); }).join(', ') + '</span></div>';
+      } else {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(k) + '</span><span class="module-field-val">' + escapeHtml(String(v)) + '</span></div>';
+      }
+    });
+    return html;
+  }
+
+  function renderGenericModule(card) {
+    const data = card.data || {};
+    const entries = Object.entries(data);
+    if (entries.length === 0) return '<div class="module-card"><div class="module-empty">No data</div></div>';
+
+    // Auto-detect title/name/heading from data
+    var title = data.title || data.name || data.heading || card.template || 'Card';
+    var subtitle = data.subtitle || data.description || '';
+    var icon = data.icon || '';
+    var imageUrl = data.image_url || data.imageUrl || data.image || data.url || '';
+    // Check if url looks like an image
+    var isImageUrl = imageUrl && /\.(jpg|jpeg|png|gif|webp|svg)|unsplash|image/i.test(imageUrl);
+
+    let html = '<div class="module-card">';
+
+    // Image at top if present
+    if (isImageUrl) {
+      html += '<img class="module-image" src="' + escapeHtml(imageUrl) + '" onerror="this.style.display=\'none\'">';
+    }
+
+    // Header
+    html += '<div class="module-header">';
+    if (icon) html += '<span class="module-icon">' + icon + '</span>';
+    html += '<div><div class="module-title">' + escapeHtml(title) + '</div>';
+    if (subtitle && subtitle !== title) html += '<div class="module-subtitle">' + escapeHtml(subtitle.length > 200 ? subtitle.slice(0, 200) + '...' : subtitle) + '</div>';
+    html += '</div></div>';
+
+    // Skip already-used keys
+    var skipKeys = { title: 1, name: 1, heading: 1, subtitle: 1, icon: 1 };
+    if (isImageUrl) { skipKeys.image_url = 1; skipKeys.imageUrl = 1; skipKeys.image = 1; }
+    // Don't skip description if it's long (show it as a section)
+    if (subtitle === data.description) skipKeys.description = 1;
+
+    entries.forEach(function(entry) {
+      const key = entry[0], val = entry[1];
+      if (skipKeys[key]) return;
+
+      if (typeof val === 'string' && val.length > 200) {
+        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + '</div><div style="font-size:13px;white-space:pre-wrap;line-height:1.5">' + escapeHtml(val) + '</div></div>';
+      } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+        html += '<div class="module-field"><span class="module-field-key">' + escapeHtml(key) + '</span><span class="module-field-val">' + escapeHtml(String(val)) + '</span></div>';
+      } else if (Array.isArray(val)) {
+        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + ' (' + val.length + ')</div>';
+        val.forEach(function(item) {
+          if (typeof item === 'string' || typeof item === 'number') {
+            html += '<div class="module-list-item">' + escapeHtml(String(item)) + '</div>';
+          } else if (typeof item === 'object' && item !== null) {
+            // Render object items as mini field groups
+            var itemTitle = item.name || item.title || item.label || item.question || '';
+            html += '<div style="padding:8px;margin:4px 0;background:rgba(0,0,0,0.2);border-radius:6px">';
+            if (itemTitle) html += '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + escapeHtml(itemTitle) + '</div>';
+            html += renderObjectFields(item);
+            html += '</div>';
+          }
+        });
+        html += '</div>';
+      } else if (typeof val === 'object' && val !== null) {
+        html += '<div class="module-section"><div class="module-section-title">' + escapeHtml(key) + '</div>';
+        html += '<div style="padding:4px 0">' + renderObjectFields(val) + '</div>';
+        html += '</div>';
+      }
+    });
+    html += '</div>';
+    return html;
+  }
+
+  // Module type → renderer map
+  var renderers = {
+    'html_stream': renderHtmlCard,
+    'freeform-html': renderHtmlCard,
+    'freeform_html': renderHtmlCard,
+    'place_card': function(c) { return renderPlaceCard(c.data); },
+    'place-card': function(c) { return renderPlaceCard(c.data); },
+    'info_card': function(c) { return renderInfoCard(c.data); },
+    'info-card': function(c) { return renderInfoCard(c.data); },
+    'checklist': function(c) { return renderChecklist(c.data); },
+    'recipe': function(c) { return renderRecipe(c.data); },
+    'comparison': function(c) { return renderComparison(c.data); },
+    'comparison-table': function(c) { return renderComparison(c.data); },
+    'comparison_table': function(c) { return renderComparison(c.data); },
+    'shopping_list': function(c) { return renderShoppingList(c.data); },
+    'shopping-list': function(c) { return renderShoppingList(c.data); },
+  };
+
+  function renderCard(card) {
+    var fn = renderers[card.template];
+    if (fn) return fn(card);
+    return renderGenericModule(card);
+  }
+
+  function doRender(card) {
+    var container = document.getElementById('card-content');
+    container.innerHTML = renderCard(card);
+    requestAnimationFrame(function() {
+      var height = container.scrollHeight;
+      window.parent.postMessage({ type: 'card-height', cardId: card.cardId, height: height }, '*');
+    });
+  }
+
+  // Self-initialize: try URL hash first (most reliable), then frameElement
+  var initialized = false;
+  if (window.location.hash && window.location.hash.length > 1) {
+    try {
+      doRender(JSON.parse(decodeURIComponent(window.location.hash.slice(1))));
+      initialized = true;
+    } catch (e) { /* bad hash data */ }
+  }
+  if (!initialized) {
+    try {
+      var frame = window.frameElement;
+      if (frame && frame.dataset.card) {
+        doRender(JSON.parse(frame.dataset.card));
+        initialized = true;
+      }
+    } catch (e) { /* cross-origin */ }
+  }
+
+  // Listen for postMessage (dynamic updates from chat streaming + cross-origin fallback)
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.type !== 'render-card') return;
+    if (e.data.card) doRender(e.data.card);
+  });
+
+  // Signal ready (for postMessage-based flow)
+  window.parent.postMessage({ type: 'card-embed-ready' }, '*');
+})();
+</script>
+</body>
+</html>

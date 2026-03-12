@@ -12,12 +12,12 @@ on:
           - prod
         default: staging
       ref:
-        description: "Git ref to deploy (rc/* branch for staging, V*.*.* tag for prod)"
-        required: true
+        description: "Git ref to deploy (rc/* branch for staging, V*.*.* tag for prod). Defaults to triggering ref."
+        required: false
 
 env:
   DOCKER_ORG: collov
-  SERVICES: api-server frontend nanoclaw realtime
+  SERVICES: api-server frontend nanoclaw realtime admin-server admin-web
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ jobs:
         id: env
         run: |
           ENV="${{ inputs.environment }}"
-          REF="${{ inputs.ref }}"
+          REF="${{ inputs.ref || github.ref_name }}"
 
           # Image tag: use ref directly if it's a named ref (tag/branch),
           # or shorten to 7 chars if it looks like a SHA
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [api-server, frontend, nanoclaw, realtime]
+        service: [api-server, frontend, nanoclaw, realtime, admin-server, admin-web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,6 +92,14 @@ jobs:
           build-args: |
             ${{ matrix.service == 'frontend' && 'VITE_API_URL=' || '' }}
             ${{ matrix.service == 'frontend' && 'VITE_LIVEKIT_URL=' || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_API_KEY={0}', secrets.VITE_FIREBASE_API_KEY) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_AUTH_DOMAIN={0}', secrets.VITE_FIREBASE_AUTH_DOMAIN) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_PROJECT_ID={0}', secrets.VITE_FIREBASE_PROJECT_ID) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_STORAGE_BUCKET={0}', secrets.VITE_FIREBASE_STORAGE_BUCKET) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_MESSAGING_SENDER_ID={0}', secrets.VITE_FIREBASE_MESSAGING_SENDER_ID) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_APP_ID={0}', secrets.VITE_FIREBASE_APP_ID) || '' }}
+            ${{ (matrix.service == 'frontend' || matrix.service == 'admin-web') && format('VITE_FIREBASE_PACKAGE_NAME={0}', secrets.VITE_FIREBASE_PACKAGE_NAME) || '' }}
+            ${{ matrix.service == 'admin-web' && 'VITE_ADMIN_API_URL=' || '' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
@@ -123,10 +131,14 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
             APP_DIR="/opt/vi-agent"
@@ -136,10 +148,21 @@ jobs:
             echo "=== Deploying vi-agent (${ENV}) ==="
             echo "Image tag: ${{ needs.prepare.outputs.image_tag }}"
 
+            # Authenticate Docker Hub for private image pulls
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
             # Pull secrets from Secret Manager → generate .env
             export ENV="${ENV}"
             export IMAGE_TAG="${{ needs.prepare.outputs.image_tag }}"
             bash "${APP_DIR}/pull-env.sh"
+
+            # Ensure Firebase SA file is readable by container processes
+            if [ -f "${APP_DIR}/firebase/sa.json" ]; then
+              chmod 644 "${APP_DIR}/firebase/sa.json"
+              echo "Firebase SA file ready."
+            else
+              echo "WARNING: No Firebase SA file at ${APP_DIR}/firebase/sa.json"
+            fi
 
             # Select compose file
             COMPOSE_FILE="docker-compose.${ENV}.yml"

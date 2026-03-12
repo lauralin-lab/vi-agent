@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_current_user, get_db, get_redis, verify_device_ownership
+from ..deps import get_db, get_firebase_user, get_redis, verify_device_ownership
 from ..models import User
 from ..services.memory_center import memory_center
 
@@ -62,7 +62,7 @@ class MemoryContextResponse(BaseModel):
 @router.get("/memories", response_model=list[MemoryFileInfo])
 async def list_memories_v3(
     layer: str | None = Query(None, description="Filter by layer: identity|semantic|episodic"),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List all memories for the authenticated user, optionally filtered by layer."""
@@ -73,7 +73,7 @@ async def list_memories_v3(
 @router.get("/memories/context", response_model=MemoryContextResponse)
 async def get_memory_context(
     max_chars: int = Query(3000, ge=100, le=10000),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Debug: view computed working memory (importance-scored context)."""
@@ -86,7 +86,7 @@ async def get_memory_context(
 @router.get("/memories/{memory_id}", response_model=MemoryFileContent)
 async def get_memory_by_uuid(
     memory_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single memory by UUID."""
@@ -100,7 +100,7 @@ async def get_memory_by_uuid(
 async def update_memory_by_uuid(
     memory_id: str,
     body: MemoryFileUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
     redis=Depends(get_redis),
 ):
@@ -124,7 +124,7 @@ async def update_memory_by_uuid(
 @router.delete("/memories/{memory_id}")
 async def delete_memory_by_uuid(
     memory_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
     redis=Depends(get_redis),
 ):
@@ -232,7 +232,7 @@ async def delete_memory_by_device(
 @router.get("/memory", response_model=list[MemoryFileInfo])
 async def list_memory(
     layer: str | None = Query(None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     memories = await memory_center.get_user_memories(db, user.vi_user_id, layer=layer)
@@ -242,7 +242,7 @@ async def list_memory(
 @router.get("/memory/{filename:path}", response_model=MemoryFileContent)
 async def get_memory_file(
     filename: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
     mem = await memory_center.get_memory(db, user.vi_user_id, filename)
@@ -255,7 +255,7 @@ async def get_memory_file(
 async def upsert_memory_file(
     filename: str,
     body: MemoryFileUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
     redis=Depends(get_redis),
 ):
@@ -273,7 +273,7 @@ async def upsert_memory_file(
 @router.delete("/memory/{filename:path}")
 async def delete_memory_file(
     filename: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
     redis=Depends(get_redis),
 ):

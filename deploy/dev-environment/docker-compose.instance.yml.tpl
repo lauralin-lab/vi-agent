@@ -78,11 +78,15 @@ services:
       - API_BASE_URL=http://${SERVER_IP}:__API_PORT__
       - CORS_ORIGINS=http://${SERVER_IP}:__FRONTEND_PORT__,https://${SERVER_IP}:__FRONTEND_HTTPS_PORT__,http://localhost:__FRONTEND_PORT__
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+      - FIREBASE_PROJECTS=${FIREBASE_PROJECTS:-}
       - VI_AGENT_NAME=vi-__DEV_NAME__
       - IMAGE_TAG=__SLOT__-build
       - USER_DATA_DIR=/data/users
+      - SHARED_SKILLS_DIR=/data/shared/skills
     volumes:
       - api_user_data:/data/users
+      - ${FIREBASE_SA_DIR:-./firebase}:/firebase:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,7 +117,14 @@ services:
       args:
         - VITE_API_URL=
         - VITE_LIVEKIT_URL=
-        - VITE_DEFAULT_USER_ID=${NANOCLAW_USER_ID:-dev-user}
+        # VITE_DEFAULT_USER_ID removed — userId comes from Firebase auth
+        - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:-}
+        - VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN:-}
+        - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID:-}
+        - VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET:-}
+        - VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID:-}
+        - VITE_FIREBASE_PACKAGE_NAME=${VITE_FIREBASE_PACKAGE_NAME:-com.viapp.web}
     restart: unless-stopped
     ports:
       - "__FRONTEND_PORT__:80"
@@ -143,17 +154,27 @@ services:
     restart: unless-stopped
     ports:
       - "__NANOCLAW_PORT__:3100"
+      - "__NANOCLAW_HTTPS_PORT__:3101"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - API_SERVER_URL=http://api-server:8000
-      - USER_ID=${NANOCLAW_USER_ID:-dev-user}
+      # USER_ID no longer needed — NanoClaw discovers active users dynamically
       - USER_DATA_DIR=/workspace
       - HEALTH_PORT=3100
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - DASHBOARD=true
+      - SSL_DIR=/etc/nginx/ssl
+      - CONTAINER_MODE=true
+      - AGENT_CONTAINER_IMAGE=nanoclaw-agent:latest
+      - HOST_PROJECT_DIR=__REPO_DIR__
+      - HOST_WORKSPACE_DIR=/var/lib/docker/volumes/vi-agent-__DEV_NAME___nanoclaw_workspace/_data
+      - CONTAINER_NETWORK=vi-agent-__DEV_NAME___default
     volumes:
       - nanoclaw_workspace:/workspace
       - __REPO_DIR__/packages:/packages:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy

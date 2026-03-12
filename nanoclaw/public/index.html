@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NanoClaw Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>NanoClaw</h1>
+      <div class="subtitle">Control Center</div>
+    </div>
+    <nav class="nav-links">
+      <a class="nav-link active" data-page="overview">
+        <span class="icon">&#9776;</span> Overview
+      </a>
+      <a class="nav-link" data-page="chat">
+        <span class="icon">&#9993;</span> Chat
+      </a>
+      <a class="nav-link" data-page="packages">
+        <span class="icon">&#128230;</span> Packages
+      </a>
+      <a class="nav-link" data-page="skills">
+        <span class="icon">&#128218;</span> Skills
+      </a>
+      <a class="nav-link" data-page="tools">
+        <span class="icon">&#9881;</span> Tools
+      </a>
+      <a class="nav-link" data-page="templates">
+        <span class="icon">&#9638;</span> Cards
+      </a>
+      <a class="nav-link" data-page="apis">
+        <span class="icon">&#128279;</span> APIs
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="status-dot live"></span> Connected
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- OVERVIEW PAGE                                           -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page active" id="page-overview">
+      <div class="page-header">
+        <h2>Overview</h2>
+        <p>System status, skills, memory, and configuration</p>
+      </div>
+
+      <!-- Status Cards -->
+      <div class="grid" id="health-cards"></div>
+
+      <!-- Active Users -->
+      <div class="overview-section" style="margin-top:24px">
+        <div class="section-header" data-toggle="users">
+          <span>Active Users</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-users">
+          <div id="active-users-list" class="grid">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tools -->
+      <div class="overview-section" style="margin-top:16px">
+        <div class="section-header" data-toggle="tools">
+          <span>Tools</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-tools">
+          <div id="tools-grid" class="skills-grid"></div>
+        </div>
+      </div>
+
+      <!-- Memory -->
+      <div class="overview-section" style="margin-top:16px">
+        <div class="section-header" data-toggle="memory">
+          <span>Memory</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-memory">
+          <div class="memory-layout">
+            <div class="memory-sidebar">
+              <div class="memory-layer" data-layer="identity">
+                <div class="memory-layer-header">
+                  <span>Identity</span>
+                  <button class="btn-sm" data-action="create" data-layer="identity">+</button>
+                </div>
+                <div class="memory-file-list" id="mem-files-identity"></div>
+              </div>
+              <div class="memory-layer" data-layer="semantic">
+                <div class="memory-layer-header">
+                  <span>Semantic</span>
+                  <button class="btn-sm" data-action="create" data-layer="semantic">+</button>
+                </div>
+                <div class="memory-file-list" id="mem-files-semantic"></div>
+              </div>
+              <div class="memory-layer" data-layer="episodic">
+                <div class="memory-layer-header">
+                  <span>Episodic</span>
+                  <button class="btn-sm" data-action="create" data-layer="episodic">+</button>
+                </div>
+                <div class="memory-file-list" id="mem-files-episodic"></div>
+              </div>
+            </div>
+            <div class="memory-editor">
+              <div class="memory-editor-header">
+                <span id="mem-editor-title">Select a file to view</span>
+                <div id="mem-editor-actions" style="display:none">
+                  <button class="btn btn-primary btn-sm" id="mem-save">Save</button>
+                  <button class="btn btn-sm mem-delete" id="mem-delete">Delete</button>
+                </div>
+              </div>
+              <textarea id="mem-editor-content" class="memory-textarea" placeholder="Select a file from the left panel..."></textarea>
+            </div>
+            <div class="memory-context">
+              <div class="memory-context-header">
+                <span>Context Snapshot</span>
+                <span class="badge badge-blue" id="mem-version">v0</span>
+              </div>
+              <div class="memory-context-body" id="mem-context-body">
+                <div class="loading">Waiting for context update...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Queues & Templates -->
+      <div class="overview-section" style="margin-top:16px">
+        <div class="section-header" data-toggle="infra">
+          <span>Queues & Templates</span>
+          <span class="section-chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="section-infra">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">Queue Depths</h4>
+              <div class="table-wrap" id="health-queues"><div class="loading">Loading...</div></div>
+            </div>
+            <div>
+              <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">Templates</h4>
+              <div class="table-wrap" id="templates-table"><div class="loading">Loading...</div></div>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">Card Store</h4>
+            <div class="grid" id="store-stats"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- CHAT PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- PACKAGES PAGE                                          -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-packages">
+      <div class="pkg-layout">
+        <!-- Package List -->
+        <div class="pkg-sidebar">
+          <div class="pkg-sidebar-header">
+            <span>Packages</span>
+            <button class="btn-sm" id="pkg-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="pkg-sidebar-filter">
+            <input type="text" id="pkg-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="pkg-sidebar-list" id="pkg-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <!-- Package Detail -->
+        <div class="pkg-main" id="pkg-main">
+          <div class="pkg-empty">Select a package to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- TOOLS PAGE                                              -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-tools">
+      <div class="skill-layout">
+        <div class="skill-sidebar">
+          <div class="skill-sidebar-header">
+            <span>Tools</span>
+            <button class="btn-sm" id="tool-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="skill-sidebar-filter">
+            <input type="text" id="tool-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="skill-sidebar-list" id="tool-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="skill-main" id="tool-main">
+          <div class="skill-empty">Select a tool to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- SKILLS PAGE                                              -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-skills">
+      <div class="skill-layout">
+        <div class="skill-sidebar">
+          <div class="skill-sidebar-header">
+            <span>Skills</span>
+            <button class="btn-sm" id="skill-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="skill-sidebar-filter">
+            <input type="text" id="skill-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="skill-sidebar-list" id="skill-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="skill-main" id="skill-main">
+          <div class="skill-empty">Select a skill to view its SKILL.md</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- CARDS PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-templates">
+      <div class="tpl-layout">
+        <div class="tpl-sidebar">
+          <div class="tpl-sidebar-header">
+            <span>Cards</span>
+            <button class="btn-sm" id="tpl-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="tpl-sidebar-filter">
+            <input type="text" id="tpl-filter-input" placeholder="Filter..." autocomplete="off">
+          </div>
+          <div class="tpl-sidebar-list" id="tpl-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="tpl-main" id="tpl-main">
+          <div class="tpl-empty">Select a card to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- APIs PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-apis">
+      <div class="api-layout">
+        <div class="api-sidebar">
+          <div class="api-sidebar-header">
+            <span>API Providers</span>
+            <button class="btn-sm" id="api-refresh-btn" title="Refresh">&#8635;</button>
+          </div>
+          <div class="api-sidebar-list" id="api-list">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        <div class="api-main" id="api-main">
+          <div class="api-empty">Select an API provider to view details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- CHAT PAGE                                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <section class="page" id="page-chat">
+      <div class="chat-layout">
+        <!-- Session Sidebar -->
+        <div class="chat-sidebar">
+          <div class="chat-sidebar-header">
+            <span class="chat-sidebar-title">Sessions</span>
+            <div class="chat-sidebar-actions">
+              <button class="btn-sm" id="refresh-sessions-btn" title="Refresh sessions">&#8635;</button>
+              <button class="btn btn-primary btn-sm" id="new-session-btn">+ New</button>
+            </div>
+          </div>
+          <div class="chat-sidebar-list" id="session-list">
+            <div class="loading" style="padding:16px;font-size:12px">Loading...</div>
+          </div>
+          <div class="chat-sidebar-info" id="session-info">
+            <div class="session-info-empty">Select a session for details</div>
+          </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-empty">Send a message to start a conversation with NanoClaw</div>
+          </div>
+
+          <!-- Collapsible Monitor -->
+          <div class="monitor-panel" id="monitor-panel">
+            <div class="monitor-header" id="monitor-toggle">
+              <span>&#9654; Monitor</span>
+              <div class="monitor-filters" id="channel-filters">
+                <label class="ch-filter"><input type="checkbox" value="ctx" checked><span class="ch-dot ch-ctx"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="exec" checked><span class="ch-dot ch-exec"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="stream" checked><span class="ch-dot ch-stream"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="intent" checked><span class="ch-dot ch-intent"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="actions" checked><span class="ch-dot ch-actions"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="summary" checked><span class="ch-dot ch-summary"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="frames" checked><span class="ch-dot ch-frames"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="media" checked><span class="ch-dot ch-media"></span></label>
+                <label class="ch-filter"><input type="checkbox" value="events" checked><span class="ch-dot ch-events"></span></label>
+              </div>
+              <button class="btn-sm" id="monitor-clear">Clear</button>
+            </div>
+            <div class="monitor-log" id="monitor-log" style="display:none"></div>
+          </div>
+
+          <!-- Input Area -->
+          <div class="chat-input-area" id="chat-input-area">
+            <div class="skill-picker" id="skill-picker" style="display:none">
+              <div class="skill-picker-header">Select a skill</div>
+              <div class="skill-picker-list" id="skill-picker-list"></div>
+            </div>
+            <div class="media-drop-area" id="chat-media-area">📎 Drop files here or click to upload</div>
+            <div class="chat-upload-preview" id="chat-upload-preview" style="display:none"></div>
+            <div class="chat-input-row">
+              <input type="text" id="chat-input" placeholder="Type a message... Use @ to mention a skill" autocomplete="off">
+              <button class="btn btn-primary" id="chat-send">Send</button>
+            </div>
+            <input type="file" id="chat-file-input" multiple accept="image/*,video/*,.pdf,.txt,.json,.csv" style="display:none">
+            <div class="chat-skill-tag" id="chat-skill-tag" style="display:none">
+              <span id="chat-skill-name"></span>
+              <button class="chat-skill-remove" id="chat-skill-remove">&times;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

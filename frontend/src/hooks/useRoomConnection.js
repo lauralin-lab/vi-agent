@@ -163,14 +163,24 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     });
 
     // Handle remote audio tracks (agent voice output)
+    // Track restart listeners for cleanup
+    const trackRestartListeners = new Map();
+
     newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track.kind === Track.Kind.Audio && participant.identity.startsWith('agent-')) {
         ensureAudioContext();
         newRoom.startAudio().catch(e => console.warn('[LiveKit] startAudio failed:', e));
 
+        // Deduplicate: if this publication.sid already has an audio element, skip
+        const audioId = `agent-audio-${participant.identity}-${publication.sid}`;
+        if (document.getElementById(audioId)) {
+          console.log('[LiveKit] Audio element already exists for', audioId, '— skipping');
+          return;
+        }
+
         try {
           const audioEl = track.attach();
-          audioEl.id = `agent-audio-${participant.identity}-${publication.sid}`;
+          audioEl.id = audioId;
           audioEl.style.display = 'none';
           document.body.appendChild(audioEl);
 
@@ -188,7 +198,14 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
             });
           };
           tryPlay();
+
+          // Clean up any previous listener for this track before adding new one
+          const prevListener = trackRestartListeners.get(track.sid);
+          if (prevListener) {
+            track.off('Restarted', prevListener);
+          }
           track.on('Restarted', tryPlay);
+          trackRestartListeners.set(track.sid, tryPlay);
         } catch (e) {
           console.warn('[LiveKit] Failed to attach agent audio track:', e.message);
         }
@@ -196,6 +213,12 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     });
     newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track.kind === Track.Kind.Audio && participant.identity.startsWith('agent-')) {
+        // Clean up Restarted listener
+        const listener = trackRestartListeners.get(track.sid);
+        if (listener) {
+          track.off('Restarted', listener);
+          trackRestartListeners.delete(track.sid);
+        }
         const elements = track.detach();
         elements.forEach(el => { el.pause(); el.srcObject = null; el.remove(); });
       }
@@ -280,37 +303,32 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     return newRoom;
   }, [onRoomSetup, updateAgentIdentity, ensureAudioContext, publishFallbackTracks, roomRef]);
 
-  // Anonymous connection (primary mode) — uses token cache for fast reconnects
-  const connectAnonymous = useCallback(async () => {
+  // Connect to LiveKit — requires Firebase auth (user must be logged in)
+  const connect = useCallback(async () => {
     try {
       setConnectionState('connecting');
+
+      const { auth } = await import('../services/firebase.js');
+      if (!auth.currentUser) {
+        console.warn('[LiveKit] No authenticated user — cannot connect');
+        setConnectionState('disconnected');
+        return;
+      }
 
       let tokenData;
       if (_tokenCache && (Date.now() - _tokenCache._ts) < TOKEN_CACHE_TTL) {
         tokenData = _tokenCache;
       } else {
-        tokenData = await api.getAnonymousLiveKitToken();
+        tokenData = await api.getLiveKitToken();
         _tokenCache = { ...tokenData, _ts: Date.now() };
       }
 
       const { token, livekit_url, session_id } = tokenData;
-      setSessionId(session_id);
-      await connectToRoom(token, livekit_url);
-    } catch (err) {
-      console.error('Failed to connect anonymously to LiveKit:', err);
-      _tokenCache = null; // Invalidate cache on error
-      setConnectionState('error');
-    }
-  }, [connectToRoom]);
-
-  // Authenticated connection
-  const connect = useCallback(async () => {
-    try {
-      setConnectionState('connecting');
-      const { token, livekit_url } = await api.getLiveKitToken();
+      if (session_id) setSessionId(session_id);
       await connectToRoom(token, livekit_url);
     } catch (err) {
       console.error('Failed to connect to LiveKit:', err);
+      _tokenCache = null;
       setConnectionState('error');
     }
   }, [connectToRoom]);
@@ -324,6 +342,7 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
       setLocalAudioTrack(null);
       setConnectionState('disconnected');
       updateAgentIdentity(null);
+      _tokenCache = null; // Force fresh room on next connect
     }
   }, [roomRef, updateAgentIdentity]);
 
@@ -478,7 +497,6 @@ export function useRoomConnection({ onRoomSetup, roomRef, agentIdentityRef, audi
     sessionId,
     agentIdentity,
     connect,
-    connectAnonymous,
     disconnect,
     toggleMic,
     setCameraEnabled,

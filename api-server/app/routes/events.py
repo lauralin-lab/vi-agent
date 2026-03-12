@@ -15,13 +15,52 @@ from typing import Literal
 
 from pydantic import BaseModel, TypeAdapter
 
-from ..deps import get_current_user_or_device, get_redis
-from ..models import User
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..deps import get_current_user_or_device, get_db, get_redis
+from ..models import User, async_session
 from ..schemas.redis_events import ExecRequest, StreamEvent, IntentionUpdate, CardAction
+from ..services.session_center import session_center
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Track taskId -> sessionId mappings for REST-dispatched exec requests
+_task_session_map: dict[str, str] = {}
+
+
+async def _update_session_on_exec_complete(data: dict, vi_user_id: str, redis, evt_type: str):
+    """Background task: update DB session status when exec completes."""
+    task_id = data.get("taskId")
+    if not task_id:
+        return
+    session_id = _task_session_map.pop(task_id, None)
+    if not session_id:
+        return
+    try:
+        async with async_session() as db:
+            if evt_type == "exec_result":
+                summary = data.get("summary", "")
+                result_payload = {"summary": summary}
+                # Persist card data from NanoClaw if present
+                cards = data.get("cards")
+                if cards:
+                    result_payload["cards"] = cards
+                await session_center.complete_session(
+                    db, session_id, result_payload,
+                    redis=redis, vi_user_id=vi_user_id,
+                )
+            elif evt_type == "exec_error":
+                error = data.get("error", "Unknown error")
+                await session_center.fail_session(
+                    db, session_id, error,
+                    redis=redis, vi_user_id=vi_user_id,
+                )
+        logger.info("[exec] Session %s -> %s (task %s)", session_id, evt_type, task_id)
+    except Exception as e:
+        logger.warning("[exec] Failed to update session %s: %s", session_id, e)
 
 
 @router.get("/events")
@@ -78,6 +117,13 @@ async def user_events(
                         except Exception as ve:
                             logger.warning("SSE intent event validation failed: %s — data: %s", ve, data)
 
+                    # Update DB session status on exec lifecycle events
+                    evt_type = data.get("type")
+                    if evt_type in ("exec_result", "exec_error") and f"vi:stream:{uid}" in channel:
+                        asyncio.create_task(_update_session_on_exec_complete(
+                            data, uid, redis, evt_type,
+                        ))
+
                     # Card ops have "op" field; lifecycle/legacy events have "type" field
                     if "op" in data:
                         event_type = data["op"]
@@ -127,6 +173,7 @@ async def dispatch_exec_user(
     req: UserExecRequest,
     user: User = Depends(get_current_user_or_device),
     redis=Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
 ):
     """Dispatch an execution request to NanoClaw for the authenticated user.
 
@@ -142,7 +189,40 @@ async def dispatch_exec_user(
 
     uid = user.vi_user_id
     task_id = f"exec-{uuid.uuid4().hex[:12]}"
-    session_id = req.session_id or f"session-{uuid.uuid4().hex[:12]}"
+
+    # Create a DB session to persist photos and enable history retrieval
+    context = {}
+    if req.media_urls:
+        context["photos"] = req.media_urls
+    context["source"] = "rest-dispatch"
+
+    try:
+        session_id = req.session_id
+        if not session_id:
+            session_id = await session_center.create_session(
+                db, uid, context=context, redis=redis,
+            )
+        else:
+            # Session already exists — update context with photos
+            try:
+                await session_center.update_session(db, session_id, {"context": context})
+            except ValueError:
+                # Session doesn't exist in DB (e.g. NanoClaw-native session from playground)
+                # Preserve the original session_id for continuity — NanoClaw uses it
+                # for Claude CLI --resume, so changing it breaks conversation memory.
+                pass
+
+        # Dispatch the session
+        await session_center.dispatch_session(
+            db, session_id, executor="nanoclaw", prompt=req.prompt[:500],
+            redis=redis, vi_user_id=uid,
+        )
+    except Exception as e:
+        logger.warning("[exec] Session persist failed (non-fatal): %s", e)
+        if not req.session_id:
+            session_id = f"session-{uuid.uuid4().hex[:12]}"
+        else:
+            session_id = req.session_id
 
     exec_msg = ExecRequest(
         taskId=task_id,
@@ -155,10 +235,14 @@ async def dispatch_exec_user(
         userId=uid,
     )
 
+    # Track taskId -> sessionId for DB status update on completion
+    _task_session_map[task_id] = session_id
+
     channel = f"vi:exec:{uid}"
     await redis.publish(channel, exec_msg.model_dump_json())
 
-    logger.info("[redis][api] Exec dispatch: task=%s skill=%s uid=%s", task_id, req.skill_slug, uid)
+    logger.warning("[exec] dispatch: task=%s session=%s (req.session_id=%s) uid=%s prompt=%.60s",
+                   task_id, session_id, req.session_id, uid, req.prompt)
 
     return {
         "ok": True,

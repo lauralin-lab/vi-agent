@@ -32,7 +32,7 @@ export const config = {
   apiServerUrl: optional('API_SERVER_URL', 'http://localhost:8000'),
 
   // Internal API auth token
-  internalApiToken: optional('INTERNAL_API_TOKEN', 'nanoclaw'),
+  internalApiToken: optional('INTERNAL_API_TOKEN', 'vi-internal-dev-token'),
 
   // Health endpoint
   healthPort: parseInt(optional('HEALTH_PORT', '3100'), 10),
@@ -43,4 +43,23 @@ export const config = {
   // Models
   intentionModel: optional('INTENTION_MODEL', 'claude-haiku-4-5-20251001'),
   executorModel: optional('EXECUTOR_MODEL', 'claude-sonnet-4-20250514'),
+
+  // Dashboard
+  dashboardEnabled: optional('DASHBOARD', 'false') === 'true',
+
+  // Container execution mode (v5.2) — default: true
+  containerMode: optional('CONTAINER_MODE', 'true') === 'true',
+  agentContainerImage: optional('AGENT_CONTAINER_IMAGE', 'nanoclaw-agent:latest'),
+
+  // Docker-in-Docker: host path prefix for translating container paths to host paths.
+  // When nanoclaw runs inside Docker and spawns agent containers via the host Docker socket,
+  // -v mount paths must be host paths, not nanoclaw-container paths.
+  // Set to the host project directory (e.g. /opt/vi-agent/instances/szj/src)
+  // or the named volume mount point for USER_DATA_DIR.
+  hostProjectDir: process.env.HOST_PROJECT_DIR || '',
+  hostWorkspaceDir: process.env.HOST_WORKSPACE_DIR || '',
 } as const;
+
+if (process.env.ENVIRONMENT === 'production' && config.internalApiToken === 'vi-internal-dev-token') {
+  throw new Error('INTERNAL_API_TOKEN must be set in production');
+}

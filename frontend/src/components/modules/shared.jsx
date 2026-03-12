@@ -9,6 +9,7 @@
  */
 
 import { motion } from 'framer-motion';
+import { useIsStreaming } from './StreamingContext';
 
 // ── Glass Card ──
 // Primary container for module content (light theme — rendered on white background)
@@ -210,7 +211,7 @@ export function CheckboxItem({ checked, onToggle, children, strikethrough = true
         mt-0.5 w-[18px] h-[18px] rounded-md border flex items-center justify-center shrink-0
         transition-all duration-200
         ${checked
-          ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
+          ? 'bg-purple-500/20 border-purple-500/40 text-purple-600'
           : 'bg-black/[0.03] border-black/[0.10] text-transparent group-hover:border-black/20'
         }
       `}>
@@ -257,7 +258,24 @@ export function WeatherIcon({ condition, size = 32 }) {
 }
 
 // ── Gradient Accent Bar ──
+// Automatically animates when inside a streaming block (via StreamingContext)
 export function AccentBar({ className = '' }) {
+  const isStreaming = useIsStreaming();
+
+  if (isStreaming) {
+    return (
+      <div className={`h-[2px] rounded-full overflow-hidden ${className}`}>
+        <div
+          className="h-full w-full rounded-full"
+          style={{
+            background: 'linear-gradient(90deg, transparent, rgba(168,85,247,0.5), rgba(59,130,246,0.45), transparent)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.8s ease-in-out infinite',
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div
       className={`h-[2px] rounded-full bg-gradient-to-r from-purple-500/40 via-blue-500/25 to-transparent ${className}`}

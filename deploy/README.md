@@ -71,7 +71,7 @@ Required environment variables in `.env`:
 ```
 Internet → :80 (nginx/frontend) → /api/* → :8000 (FastAPI)
                                          → LiveKit Cloud ← vi-realtime (agent)
-                                         → Redis ← vi-gateway (executor)
+                                         → Redis ← nanoclaw (executor)
 ```
 
 ## Management

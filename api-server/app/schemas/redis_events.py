@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 class PredictedIntention(BaseModel):
     id: str
-    skill_slug: str
+    skill_slug: Optional[str] = None
     title: str
     description: str
     confidence: float
@@ -172,6 +172,8 @@ class ExecStart(BaseModel):
     type: Literal["exec_start"] = "exec_start"
     taskId: str
     executor: str
+    prompt: str | None = None
+    mediaUrls: list[str] | None = None
 
 
 class ExecProgress(BaseModel):

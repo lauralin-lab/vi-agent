@@ -1,0 +1,12 @@
+{
+  "$id": "freeform-html",
+  "category": "present",
+  "renderer": "html",
+  "component": null,
+  "mutable": false,
+  "streamable": true,
+  "description": "Freeform HTML content — fallback for rich formatting that doesn't fit a structured template",
+  "slots": {
+    "html": { "type": "string", "required": true }
+  }
+}

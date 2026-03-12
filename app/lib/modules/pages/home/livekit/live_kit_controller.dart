@@ -1,26 +1,33 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:rive_rolls_collection/common.dart';
+
 import '../../../../service/global_provider.dart';
-import '../../../models/vps_model.dart';
+import '../../../../service/network/api_service.dart';
+import '../../../models/live_kit_action_model.dart';
+import '../../../models/room_info.dart';
 import '../provider/main_provider.dart';
 import '../widget/camera_action_button.dart';
 import 'live_kit_connection_state.dart';
 import 'live_kit_room_service.dart';
-import 'live_kit_rpc_handler.dart';
 import 'media_hardware_controller.dart';
-import 'room_event_handler.dart';
-export 'live_kit_rpc_handler.dart';
 
 /// liveKit 控制器定义
 final liveKitControllerProvider = Provider<LiveKitController>(
-  (ref) => LiveKitController(ref),
+      (ref) => LiveKitController(ref),
   name: 'liveKitControllerProvider',
 );
 
 /// LiveKitController — Facade 层
+///
+/// 职责：
+///   1. 状态机：idle → waitingPrerequisites → connecting → connected / failed（可重试）
+///   2. 前置条件监听（camera + auth）→ 自动触发连接
+///   3. Room 事件处理（断线重连 + agent 消息解析）
+///   4. 硬件操作委派给 MediaHardwareController
 class LiveKitController {
   final Ref ref;
 
@@ -29,57 +36,51 @@ class LiveKitController {
   /// Agent 回复消息流（broadcast，允许多个监听者）
   final StreamController<String> agentRecorder = StreamController<String>.broadcast();
 
-  /// 记录gateWay Join成功
-  bool gateWayConnected = false;
-
-  /// 当前连接状态
+  /// 当前连接状态（内部同步读取，UI 通过 connectionStatusProvider 异步消费）
   LiveKitConnectionState _state = LiveKitConnectionState.idle;
 
   LiveKitConnectionState get state => _state;
 
+  /// 缓存的房间信息（只获取一次，断线重连复用）
+  RoomInfo? _roomInfo;
+
+  /// 连接重入保护
+  bool _isConnecting = false;
+
+  /// Room 事件订阅取消函数
+  CancelListenFunc? _cancelRoomListen;
+
   /// 子模块
   late final LiveKitRoomService _roomService = LiveKitRoomService();
   late final MediaHardwareController _mediaController = MediaHardwareController(ref, _roomService);
-  late final LiveKitRpcHandler _rpcHandler = LiveKitRpcHandler(ref, _roomService, _mediaController);
-  late final RoomEventHandler _eventHandler = RoomEventHandler(ref, _roomService, agentRecorder);
 
   /// 房间是否连接成功
   bool get isConnected => _roomService.isConnected;
 
+  // ---------------------------------------------------------------------------
+  // 生命周期
+  // ---------------------------------------------------------------------------
+
   /// 初始化
   void init() {
-    logi('[LiveKitController] init');
+    _listenRoomEvents();
 
-    // 注册断线/重连回调
-    _eventHandler.onReconnected = () {
-      logi('[LiveKitController] Room reconnected, re-joining gateway...');
-      _transitionTo(LiveKitConnectionState.roomConnected);
-      gateWayConnected = false;
-      _tryConnectGateway();
-    };
-    _eventHandler.onDisconnected = () {
-      logi('[LiveKitController] Room disconnected, waiting for retry trigger...');
-      gateWayConnected = false;
-      _transitionTo(LiveKitConnectionState.waitingPrerequisites);
-      _evaluateState();
-    };
-
-    // 监听房间事件
-    _eventHandler.listen();
-    // 注册Rpc
-    _rpcHandler.registerServerRpc();
-
-    // liveKit 状态变更
-    _transitionTo(LiveKitConnectionState.idle);
+    // 初始状态：等待前置条件
+    _transitionTo(LiveKitConnectionState.waitingPrerequisites);
     _listenPrerequisites();
   }
 
   /// 释放资源
   Future<void> dispose() async {
-    _eventHandler.dispose();
+    _cancelRoomListen?.call();
+    _cancelRoomListen = null;
     await _roomService.dispose();
     await agentRecorder.close();
   }
+
+  // ---------------------------------------------------------------------------
+  // 前置条件
+  // ---------------------------------------------------------------------------
 
   /// 监听前置条件
   void _listenPrerequisites() {
@@ -90,117 +91,122 @@ class LiveKitController {
       }
     });
 
-    // auth 就绪
+    // auth 就绪 → 获取 token（仅一次）
     ref.listen(onAuthChangedProvider, (_, next) {
       final resp = next.maybeWhen(data: (value) => value, orElse: () => null);
       if (resp != null && resp.self != null) {
-        _evaluateState();
-      }
-    });
-
-    // vps 就绪
-    ref.listen(onVpsChangedProvider, (_, next) {
-      final resp = next.maybeWhen(data: (value) => value, orElse: () => null);
-      if (resp?.statusEnum == VpsStatus.initialized) {
-        _evaluateState();
+        _fetchRoomInfoIfNeeded();
       }
     });
   }
+
+  /// 获取房间信息（只获取一次，缓存复用）
+  Future<void> _fetchRoomInfoIfNeeded() async {
+    if (_roomInfo != null) {
+      _evaluateState();
+      return;
+    }
+    try {
+      _roomInfo = await ApiService.requestRoomInfo();
+      _evaluateState();
+    } catch (e) {
+      _transitionTo(LiveKitConnectionState.failed);
+      loge('[LiveKit] Failed to fetch RoomInfo: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 状态机
+  // ---------------------------------------------------------------------------
 
   /// 状态机核心：根据当前 state + 条件决定下一步
   Future<void> _evaluateState() async {
-    switch (_state) {
-      case LiveKitConnectionState.idle:
-      case LiveKitConnectionState.waitingPrerequisites:
-        await _tryConnect();
-
-      case LiveKitConnectionState.roomConnected:
-      case LiveKitConnectionState.waitingVps:
-        _tryConnectGateway();
-
-      default:
-        break;
+    if (_state.canAttemptConnect && _roomInfo != null) {
+      await _tryConnect();
     }
   }
 
-  /// 尝试连接房间
+  /// 尝试连接房间（带重入保护）
   Future<void> _tryConnect() async {
-    if (_state.isConnected) return;
-
+    if (_isConnecting || _state.isConnected) return;
+    _isConnecting = true;
     _transitionTo(LiveKitConnectionState.connecting);
+
     try {
-      await _roomService.connect();
+      await _roomService.connect(_roomInfo!);
       if (isConnected) {
-        _transitionTo(LiveKitConnectionState.roomConnected);
+        _transitionTo(LiveKitConnectionState.connected);
         _mediaController.syncMicState();
-        _tryConnectGateway();
       } else {
-        // connect() 内部前置条件未满足，等待 _listenPrerequisites 重新触发
         _transitionTo(LiveKitConnectionState.waitingPrerequisites);
       }
     } catch (ex) {
-      loge('[LiveKitController] Connect error: $ex');
-      // 等待 RoomDisconnectedEvent → onDisconnected → _evaluateState 触发下次重试
-      _transitionTo(LiveKitConnectionState.waitingPrerequisites);
-    }
-  }
-
-  /// 尝试连接 Gateway
-  void _tryConnectGateway() {
-    if (!isConnected) return;
-    if (gateWayConnected) return;
-
-    if (_roomService.isVpsReady) {
-      _connectGateway();
-    } else {
-      _transitionTo(LiveKitConnectionState.waitingVps);
-    }
-  }
-
-  /// 连接 Gateway
-  Future<void> _connectGateway() async {
-    _transitionTo(LiveKitConnectionState.connectingGateway);
-    try {
-      gateWayConnected = true;
-      await _roomService.joinGateWay();
-      _transitionTo(LiveKitConnectionState.done);
-    } catch (ex) {
-      gateWayConnected = false;
-      loge('[LiveKitController] Gateway error: $ex');
-      // 等待 onReconnected 或 VPS 变化重新触发 _tryConnectGateway
-      _transitionTo(LiveKitConnectionState.roomConnected);
+      loge('[LiveKit] Connect error: $ex');
+      _transitionTo(LiveKitConnectionState.failed);
+    } finally {
+      _isConnecting = false;
     }
   }
 
   /// 状态转换
   void _transitionTo(LiveKitConnectionState newState) {
     if (_state == newState) return;
-    logi('LiveKit State: $_state -> $newState');
     _state = newState;
-    // 用 microtask 延迟，避免在 initState/build 阶段同步修改 provider
     Future.microtask(() {
       ref.read(connectionStatusProvider.notifier).state = newState;
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Room 事件（直接监听，无回调间接层）
+  // ---------------------------------------------------------------------------
+
+  /// 开始监听 Room 事件
+  void _listenRoomEvents() {
+    _cancelRoomListen?.call();
+    _cancelRoomListen = _roomService.room.events.listen(_onRoomEvent);
+  }
+
+  /// Room 事件分发
+  void _onRoomEvent(dynamic event) {
+    if (event is DataReceivedEvent) {
+      _handleDataReceived(event);
+    } else if (event is RoomReconnectedEvent) {
+      logi('[LiveKit] Room reconnected');
+      _transitionTo(LiveKitConnectionState.connected);
+    } else if (event is RoomDisconnectedEvent) {
+      logi('[LiveKit] Room disconnected');
+      _transitionTo(LiveKitConnectionState.waitingPrerequisites);
+      _evaluateState();
+    }
+  }
+
+  /// 解析 Agent 数据消息
+  void _handleDataReceived(DataReceivedEvent event) {
+    final rawMessage = utf8.decode(event.data);
+    try {
+      final action = LiveKitActionModel.fromXml(rawMessage);
+      if (action.tag == LiveKitActionTag.transcript &&
+          action.type == LiveKitActionType.agent &&
+          action.content.isNotEmpty) {
+        agentRecorder.add(action.content);
+      }
+    } catch (e) {
+      loge('[LiveKit] XML parse failed: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 公开 API
+  // ---------------------------------------------------------------------------
+
   /// 相机操作事件分发
-  Future<void> onActionEvent(BuildContext context, CameraActionType type) async {
-    await _mediaController.onActionEvent(context, type);
+  Future<void> onActionEvent(CameraActionType type) async {
+    await _mediaController.onActionEvent(type);
   }
 
   /// 设置麦克风采集状态
   void setMicrophoneEnabled(bool enabled) {
     _roomService.room.localParticipant?.setMicrophoneEnabled(enabled);
-  }
-
-  /// 上传文件并发送给 GateWay
-  void uploadAndSendToGateWay(String filePath) {
-    _mediaController.uploadAndSendToGateWay(filePath);
-  }
-
-  /// 请求 Action Card
-  void requestActionCard() {
-    logi('[LiveKitController] requestActionCard');
-    _rpcHandler.app2ServerRpc(App2ServerRpcType.requestActionCard, '{}');
   }
 }

@@ -132,18 +132,6 @@ export function recordSessionMedia(sessionId: string, mediaUrl: string): void {
 }
 
 /**
- * Get the current final states of all cards in a session.
- * Returns only non-removed cards, ordered by first appearance.
- */
-export function getSessionCards(sessionId: string): CardFinalState[] {
-  const cards = finalStates.get(sessionId);
-  if (!cards) return [];
-
-  // Maintain insertion order (Map preserves insertion order in JS)
-  return Array.from(cards.values()).filter((c) => c.status !== 'removed');
-}
-
-/**
  * Return the complete session card state for persistence or API response.
  */
 export function getSessionCardState(sessionId: string): SessionCardState {
@@ -164,23 +152,6 @@ export function getSessionCardState(sessionId: string): SessionCardState {
     finalState,
     media: media ? Array.from(media) : [],
   };
-}
-
-/**
- * Replay a session: return all card events in order.
- * Consumers can iterate these to reconstruct the canvas state progressively.
- */
-export function replaySession(sessionId: string): CardEventLogEntry[] {
-  return eventLogs.get(sessionId) ?? [];
-}
-
-/**
- * Clear all data for a session (cleanup on session end or memory pressure).
- */
-export function clearSession(sessionId: string): void {
-  eventLogs.delete(sessionId);
-  finalStates.delete(sessionId);
-  sessionMedia.delete(sessionId);
 }
 
 /**

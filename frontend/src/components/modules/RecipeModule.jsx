@@ -103,7 +103,7 @@ export default function RecipeModule({ data, onAction }) {
                       {isString ? ing : (
                         <>
                           {ing.amount && (
-                            <span className="text-purple-300/80 mr-1.5">{ing.amount}</span>
+                            <span className="text-purple-500/70 mr-1.5">{ing.amount}</span>
                           )}
                           {ing.item || ing.name || ''}
                         </>
@@ -131,12 +131,12 @@ export default function RecipeModule({ data, onAction }) {
                 return (
                   <div key={i} className="flex gap-3">
                     <span
-                      className="w-6 h-6 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center shrink-0 text-purple-300 font-medium"
+                      className="w-6 h-6 rounded-full bg-purple-500/15 border border-purple-500/25 flex items-center justify-center shrink-0 text-purple-600 font-medium"
                       style={{ fontSize: 'var(--text-xs)' }}
                     >
                       {i + 1}
                     </span>
-                    <p className="text-white/75 pt-0.5" style={{ fontSize: 'var(--text-sm)' }}>
+                    <p className="text-black/70 pt-0.5" style={{ fontSize: 'var(--text-sm)' }}>
                       {text}
                     </p>
                   </div>

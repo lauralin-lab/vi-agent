@@ -2,7 +2,9 @@
 
 > **Last Updated:** 2026-03-04
 >
-> **Builds on:** architecture-v5.md (infrastructure phasing — unchanged, see `.archived/`)
+> **Builds on:** architecture-v5.md (infrastructure phasing — see `docs/.archived/`)
+>
+> **Extended by:** system_v5.2.md (Skills, Experience Packages, and the Development Loop)
 >
 > **Scope:** This document defines the **Experience Package Architecture**, **Card Template Protocol**, **Camera→Session Dual World Architecture**, **NanoClaw Streaming Protocol**, and **NanoClaw Core Backend Architecture** — the technical systems that power the Session Canvas experience and all downstream output channels.
 

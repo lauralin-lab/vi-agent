@@ -1,16 +1,16 @@
 import logging
+import time
 import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
-from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
-from passlib.hash import bcrypt
+from livekit.api import AccessToken, VideoGrants
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..deps import get_current_user, get_db
+from ..deps import get_db, get_firebase_user
 from ..models import User
 
 from ..limiter import limiter
@@ -37,35 +37,17 @@ class AnonymousTokenResponse(BaseModel):
     session_id: str | None = None
 
 
-async def _dispatch_agent(room_name: str) -> None:
-    """Explicitly dispatch the vi-realtime agent to a room.
-
-    This ensures an agent is always available even when reconnecting
-    to an existing room where a previous agent may have left.
-    """
-    try:
-        async with LiveKitAPI(
-            url=settings.LIVEKIT_URL,
-            api_key=settings.LIVEKIT_API_KEY,
-            api_secret=settings.LIVEKIT_API_SECRET,
-        ) as lk_api:
-            req = CreateAgentDispatchRequest(room=room_name)
-            if settings.VI_AGENT_NAME:
-                req.agent_name = settings.VI_AGENT_NAME
-            dispatch = await lk_api.agent_dispatch.create_dispatch(req)
-            logger.info("Agent dispatched to room %s: %s", room_name, dispatch.id)
-    except Exception as e:
-        logger.warning("Failed to dispatch agent to room %s: %s", room_name, e)
-
-
 @router.post("/token", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def get_livekit_token(
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_firebase_user),
     db: AsyncSession = Depends(get_db),
 ):
-    room_name = f"vi-room-{user.vi_user_id}"
+    # Dynamic room name with timestamp — each session gets a fresh room
+    # so LiveKit dispatches a new agent instance reliably
+    ts = int(time.time())
+    room_name = f"vi-room-{user.vi_user_id}-{ts}"
 
     # Identity must start with "user-" for VI agent to recognize it
     user_identity = f"user-{user.id}"
@@ -88,8 +70,8 @@ async def get_livekit_token(
 
     jwt_token = token.to_jwt()
 
-    # Dispatch the agent to the room
-    await _dispatch_agent(room_name)
+    # Agent is auto-dispatched by LiveKit's rtc_session mechanism
+    # when the user joins the room — no explicit dispatch needed.
 
     return TokenResponse(
         token=jwt_token,
@@ -122,7 +104,6 @@ async def get_anonymous_livekit_token(
     if not user:
         user = User(
             email=f"{device_id}@anonymous.vi",
-            password_hash=bcrypt.hash("!anonymous-no-login-" + str(uuid.uuid4())),
             vi_user_id=vi_user_id,
             display_name="Anonymous",
             is_active=True,
@@ -131,7 +112,8 @@ async def get_anonymous_livekit_token(
         await db.commit()
         await db.refresh(user)
 
-    room_name = f"vi-room-{vi_user_id}"
+    ts = int(time.time())
+    room_name = f"vi-room-{vi_user_id}-{ts}"
 
     # Identity must start with "user-" for VI agent to recognize it
     user_identity = f"user-{user.id}"
@@ -154,8 +136,8 @@ async def get_anonymous_livekit_token(
 
     jwt_token = token.to_jwt()
 
-    # Dispatch the agent to the room
-    await _dispatch_agent(room_name)
+    # Agent is auto-dispatched by LiveKit's rtc_session mechanism
+    # when the user joins the room — no explicit dispatch needed.
 
     return AnonymousTokenResponse(
         token=jwt_token,

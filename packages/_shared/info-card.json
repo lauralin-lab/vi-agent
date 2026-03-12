@@ -1,0 +1,27 @@
+{
+  "$id": "info-card",
+  "category": "present",
+  "renderer": "react",
+  "component": "InfoCardModule",
+  "mutable": false,
+  "streamable": false,
+  "description": "Structured info card with key-value fields, custom accent color, and footer",
+  "slots": {
+    "title": { "type": "string", "required": true },
+    "subtitle": { "type": "string" },
+    "icon": { "type": "string", "default": "ℹ️" },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "value": { "type": "string" },
+          "highlight": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "footer": { "type": "string" },
+    "accent_color": { "type": "string" }
+  }
+}

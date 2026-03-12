@@ -139,9 +139,6 @@ class DevToolsPage extends StatelessWidget {
   void _showQuickCopy(BuildContext context) {
     final app = App();
     final items = <_CopyItem>[
-      _CopyItem('Gateway URL', app.auth.gateWayUrl),
-      _CopyItem('Gateway Token', app.auth.gateWayToken),
-      _CopyItem('Workspace URL', app.auth.workSpaceUrl),
       _CopyItem('Device ID', app.deviceId),
       _CopyItem('App Version', '${app.version}+${app.buildNumber}'),
       _CopyItem('Package Name', app.packageName),

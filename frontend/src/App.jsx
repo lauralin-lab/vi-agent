@@ -3,11 +3,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import HistoryView from './components/HistoryView';
 import DeviceFrame from './components/DeviceFrame';
-import ActivePiP from './components/ActivePiP';
+import LoginPage from './components/LoginPage';
 
 import LiveCameraView from './components/LiveCameraView';
 import LiveSessionView from './components/LiveSessionView';
-import MemoryView from './components/MemoryView';
+import SettingsView from './components/SettingsView';
+import AllTasksView from './components/AllTasksView';
+import PlaygroundView from './components/PlaygroundView';
 
 import { useAuth } from './hooks/useAuth';
 import { useLiveKit } from './hooks/useLiveKit';
@@ -97,14 +99,20 @@ function App() {
   // View state
   const [viewState, setViewState] = useState(() => {
     const path = window.location.pathname;
+    if (path === '/playground') return 'playground';
     if (path === '/memories' || path === '/memory') return 'memory';
     if (path === '/home' || path === '/history') return 'home';
     return 'camera';
   });
+  const [allTasksScrollDate, setAllTasksScrollDate] = useState(null);
   const [sessionData, setSessionData] = useState(null);
+  // Track the sessionId returned by the backend for camera-initiated sessions
+  // (LiveCameraView dispatches before navigating, LiveSessionView needs the ID for follow-ups)
+  const currentSessionIdRef = useRef(null);
   const [liveResult, setLiveResult] = useState(null);
   const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [lastIntention, setLastIntention] = useState('');
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   // ── Badge state ──
   const [badges, setBadges] = useState({ home: 0, memory: 0 });
@@ -157,7 +165,8 @@ function App() {
   }, [livekit.memoryUpdatedAt]);
 
   // ── SSE real-time events (global — active on ALL pages when LiveKit is disconnected) ──
-  const viUserId = api.getViUserId();
+  // Only connect SSE after Firebase auth completes (avoid 401 with stale/invalid userId)
+  const viUserId = auth.isAuthenticated ? api.getViUserId() : null;
   const livekitConnected = livekit.connectionState === 'connected';
   const { events: sseEvents, sseConnected } = useRealtimeEvents(viUserId, livekitConnected, nanoClaw.processEvent);
 
@@ -189,13 +198,22 @@ function App() {
   const SESSION_CACHE_MAX = 10;
   const sessionCacheRef = useRef(new Map());
 
-  // --- Auto-connect LiveKit on mount ---
+  // --- Auto-connect LiveKit when authenticated (skip for playground) ---
   useEffect(() => {
-    if (livekit.connectionState === 'disconnected') {
-      livekit.connectAnonymous();
+    if (viewState === 'playground') return;
+    if (auth.isAuthenticated && livekit.connectionState === 'disconnected') {
+      livekit.connect();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentional: only on mount
+  }, [auth.isAuthenticated, viewState]);
+
+  // --- Disconnect LiveKit when entering playground (no camera/mic needed) ---
+  useEffect(() => {
+    if (viewState === 'playground' && livekit.connectionState === 'connected' && livekit.disconnect) {
+      livekit.disconnect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewState]);
 
   // --- Camera enable/disable based on view ---
   // V5: Keep camera enabled during live-session for PiP
@@ -208,12 +226,7 @@ function App() {
     }
   }, [viewState, livekit.setCameraEnabled]);
 
-  // V5: Return to full camera from PiP
-  const handleReturnToCamera = useCallback(() => {
-    setViewState('camera');
-  }, []);
-
-  // D.1: Send page context to agent when view changes
+// D.1: Send page context to agent when view changes
   useEffect(() => {
     if (livekit.connectionState === 'connected' && livekit.sendPageContext) {
       livekit.sendPageContext(viewState);
@@ -222,7 +235,7 @@ function App() {
 
   // D.3: Register navigation callback so agent can navigate user
   const handleAgentNavigate = useCallback((page) => {
-    const validPages = ['camera', 'history', 'home', 'live-session', 'memory'];
+    const validPages = ['camera', 'history', 'home', 'live-session', 'memory', 'all-tasks'];
     if (validPages.includes(page)) {
       setViewState(page);
     }
@@ -260,6 +273,7 @@ function App() {
       }
     }
     setViewState('home');
+    setHistoryRefreshKey(k => k + 1);
   };
 
   const handleOpenCamera = () => {
@@ -268,6 +282,12 @@ function App() {
 
   const handleOpenHistory = () => {
     setViewState('home');
+    setHistoryRefreshKey(k => k + 1);
+  };
+
+  const handleOpenAllTasks = (dateKey = null) => {
+    setAllTasksScrollDate(dateKey);
+    setViewState('all-tasks');
   };
 
   const handleSelectSession = (useCaseData) => {
@@ -305,6 +325,7 @@ function App() {
     setLiveResult(result);
     setCapturedPhotos(photos || []);
     setLastIntention(intention || '');
+    currentSessionIdRef.current = null; // reset — will be set by LiveCameraView's dispatch response
     setSessionData(null);
     setViewState('live-session');
   };
@@ -329,10 +350,41 @@ function App() {
     setViewState('memory');
   };
 
+  // --- Auth gate: show login page if not authenticated ---
+  if (auth.loading) {
+    return (
+      <div className="flex flex-col items-center h-full overflow-hidden bg-black">
+        <DeviceFrame>
+          <div className="w-full h-full bg-black" />
+        </DeviceFrame>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center h-full overflow-hidden bg-black">
+        <DeviceFrame>
+          <LoginPage
+            onLoginWithGoogle={auth.loginWithGoogle}
+            onTestLogin={auth.loginWithTestCode}
+            error={auth.error}
+            needsInviteCode={auth.needsInviteCode}
+          />
+        </DeviceFrame>
+      </div>
+    );
+  }
+
+  // --- Playground: full-page desktop layout, no DeviceFrame, no LiveKit ---
+  if (viewState === 'playground') {
+    return <PlaygroundView nanoClaw={nanoClaw} />;
+  }
+
   return (
     <div className="flex flex-col items-center h-full overflow-hidden bg-black">
       <DeviceFrame>
-        <div className="relative w-full h-full bg-black font-sans select-none">
+        <div className="relative w-full h-full font-sans select-none" style={{ background: '#F2F2F7' }}>
           <AnimatePresence mode="wait">
             {viewState === 'camera' && (
               <LiveCameraView
@@ -340,6 +392,7 @@ function App() {
                 livekit={livekit}
                 onOpenHistory={handleOpenHistory}
                 onViewResult={handleViewResult}
+                sessionIdRef={currentSessionIdRef}
               />
             )}
 
@@ -355,18 +408,20 @@ function App() {
                 sessionData={sessionData}
                 onAddPhoto={handleAddPhotoToSession}
                 sessionCacheRef={sessionCacheRef}
+                sessionIdRef={currentSessionIdRef}
               />
             )}
 
             {viewState === 'home' && (
               <HistoryView
-                key="home"
+                key={`home-${historyRefreshKey}`}
                 isHome={true}
                 onBack={handleBackToHistory}
                 onOpenCamera={handleOpenCamera}
                 onSelectSession={handleSelectSession}
                 onProfileTap={handleProfileTap}
                 onClearSessionCache={handleClearSessionCache}
+                onOpenAllTasks={handleOpenAllTasks}
                 isAuthenticated={auth.isAuthenticated}
                 user={auth.user}
                 livekit={livekit}
@@ -384,6 +439,7 @@ function App() {
                 onSelectSession={handleSelectSession}
                 onProfileTap={handleProfileTap}
                 onClearSessionCache={handleClearSessionCache}
+                onOpenAllTasks={handleOpenAllTasks}
                 isAuthenticated={auth.isAuthenticated}
                 user={auth.user}
                 livekit={livekit}
@@ -395,25 +451,24 @@ function App() {
             )}
 
             {viewState === 'memory' && (
-              <MemoryView
-                key="memory"
+              <SettingsView
+                key="settings"
                 onBack={handleBackToHistory}
                 livekit={livekit}
               />
             )}
+            {viewState === 'all-tasks' && (
+              <AllTasksView
+                key="all-tasks"
+                onBack={() => setViewState('home')}
+                onSelectSession={handleSelectSession}
+                scrollToDateKey={allTasksScrollDate}
+                isAuthenticated={auth.isAuthenticated}
+              />
+            )}
           </AnimatePresence>
 
-          {/* V5: Camera PiP overlay during session view */}
-          {viewState === 'live-session' && (
-            <ActivePiP
-              localVideoTrack={livekit.localVideoTrack}
-              onReturnToCamera={handleReturnToCamera}
-              onCapture={handleAddPhotoToSession}
-              visible={true}
-            />
-          )}
-
-          {/* Global toast notifications */}
+{/* Global toast notifications */}
           <NotificationManager toasts={toasts} onDismiss={dismissToast} />
         </div>
       </DeviceFrame>

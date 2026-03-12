@@ -14,6 +14,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface RequestStore {
   userId: string;
+  sessionId?: string;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestStore>();

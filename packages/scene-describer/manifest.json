@@ -12,8 +12,8 @@
     "intention_level": "L1"
   },
 
-  "skill": {
-    "prompt": "skill.md",
+  "instruction": {
+    "file": "SKILL.md",
     "model": "claude-sonnet-4-6",
     "max_turns": 3,
     "max_tokens": 4096
@@ -26,7 +26,7 @@
 
   "tools": {
     "bundled": [],
-    "builtin": ["web_search", "publish_result"]
+    "builtin": ["web_search"]
   },
 
   "apis": {},

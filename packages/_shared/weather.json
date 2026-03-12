@@ -1,0 +1,37 @@
+{
+  "$id": "weather",
+  "category": "present",
+  "renderer": "react",
+  "component": "WeatherModule",
+  "mutable": false,
+  "streamable": false,
+  "description": "Current weather conditions with horizontal scrollable forecast",
+  "slots": {
+    "location": { "type": "string", "required": true },
+    "current": {
+      "type": "object",
+      "required": true,
+      "properties": {
+        "temp": { "type": "number" },
+        "condition": { "type": "string" },
+        "icon": { "type": "string" },
+        "humidity": { "type": "number" },
+        "wind": { "type": "string" },
+        "unit": { "type": "string", "default": "C" }
+      }
+    },
+    "forecast": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "day": { "type": "string" },
+          "high": { "type": "number" },
+          "low": { "type": "number" },
+          "condition": { "type": "string" },
+          "icon": { "type": "string" }
+        }
+      }
+    }
+  }
+}

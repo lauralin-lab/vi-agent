@@ -6,7 +6,8 @@
 #   bash tw-pr.sh commit-type TITLE                   # Infer feat/fix/refactor/test/docs
 #   bash tw-pr.sh create ISSUE TITLE BODY BASE BRANCH # Create PR, return number + url
 #   bash tw-pr.sh comment ISSUE TEXT                   # Post comment on Issue (non-fatal)
-#   bash tw-pr.sh watch PR                               # Watch CI checks
+#   bash tw-pr.sh watch PR                               # Watch CI checks (blocks until done)
+#   bash tw-pr.sh wait-merged PR [REPO]                 # Poll until PR is merged (10 min max)
 #   bash tw-pr.sh add-reviewer PR REVIEWER             # Request review (non-fatal)
 #   bash tw-pr.sh verify-merged BRANCH                 # Check if PR merged, print number+url
 #
@@ -19,7 +20,7 @@ set -euo pipefail
 
 usage() {
   echo "Usage: tw-pr.sh <subcommand> [args...]" >&2
-  echo "Subcommands: exists, commit-type, create, comment, watch, add-reviewer, verify-merged" >&2
+  echo "Subcommands: exists, commit-type, create, comment, watch, wait-merged, add-reviewer, verify-merged" >&2
   exit 1
 }
 
@@ -147,6 +148,51 @@ cmd_add_reviewer() {
   echo "Review requested from $reviewer on PR #$pr"
 }
 
+cmd_wait_merged() {
+  local pr="${1:-}" repo="${2:-}"
+  if [ -z "$pr" ]; then
+    echo "ERROR: wait-merged requires PR number" >&2
+    exit 1
+  fi
+
+  local repo_flag=""
+  [ -n "$repo" ] && repo_flag="--repo $repo"
+
+  local max_polls=60  # 10 minutes max (60 × 10s)
+  local poll_count=0
+  echo "⏳ Waiting for PR #$pr to merge..."
+
+  while true; do
+    local state
+    state=$(gh pr view "$pr" --json state --jq '.state' $repo_flag 2>/dev/null) || {
+      echo "WARNING: Could not query PR state" >&2
+      state="UNKNOWN"
+    }
+
+    if [ "$state" = "MERGED" ]; then
+      echo "PR #$pr merged"
+      return 0
+    fi
+
+    if [ "$state" = "CLOSED" ]; then
+      echo "ERROR: PR #$pr was closed without merging" >&2
+      echo "Check: gh pr view $pr $repo_flag" >&2
+      return 1
+    fi
+
+    poll_count=$((poll_count + 1))
+    if [ "$poll_count" -ge "$max_polls" ]; then
+      echo "ERROR: Timed out waiting for PR #$pr to merge (10 min)" >&2
+      echo "Check CI: gh pr checks $pr $repo_flag" >&2
+      return 3
+    fi
+
+    local elapsed=$((poll_count * 10))
+    echo "  ⏳ ${elapsed}s / 600s — state: $state"
+    sleep 10
+  done
+}
+
 cmd_verify_merged() {
   local branch="${1:-}"
   if [ -z "$branch" ]; then
@@ -185,6 +231,7 @@ case "$SUBCOMMAND" in
   create)         cmd_create "$@" ;;
   comment)        cmd_comment "$@" ;;
   watch)          cmd_watch "$@" ;;
+  wait-merged)    cmd_wait_merged "$@" ;;
   add-reviewer)   cmd_add_reviewer "$@" ;;
   verify-merged)  cmd_verify_merged "$@" ;;
   *)              usage ;;

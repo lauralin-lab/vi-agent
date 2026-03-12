@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Mic, MicOff, Wifi, WifiOff,
+  ArrowLeft, Mic, MicOff, Wifi, WifiOff, Camera,
   Loader2, Upload, Check, ScanLine, CheckCircle2, X, Edit3,
   Search, Languages, Eye, Sparkles, Receipt, ShoppingBag,
   RefreshCw
@@ -50,6 +50,7 @@ export default function LiveCameraView({
   livekit,
   onOpenHistory,
   onViewResult,
+  sessionIdRef,
 }) {
   const { play } = useSound();
   const videoRef = useRef(null);
@@ -116,11 +117,13 @@ export default function LiveCameraView({
   });
 
   // Connection icon — derived from computed status for top bar
+  // When room is connected but agent hasn't joined yet, show "connecting" not "offline"
   const connectionIcon = (() => {
     const state = livekit.connectionState;
     if (state === 'disconnected' || state === 'error') return 'offline';
     if (state === 'reconnecting') return 'weak';
-    if (agentComputedStatus === 'offline') return 'offline';
+    if (state === 'connecting') return 'connecting';
+    if (state === 'connected' && !livekit.agentIdentity) return 'connecting';
     if (agentComputedStatus === 'weak_connection') return 'weak';
     if (agentComputedStatus === 'connecting') return 'connecting';
     return 'connected';
@@ -545,8 +548,18 @@ export default function LiveCameraView({
     doneClickedRef.current = true;
     play('session.send');
 
-    // User-edited intention takes priority, then agent intention, then card text
-    const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? 'Analyze this photo' : lastCardTextRef.current);
+    // Clear previous session ref so follow-ups wait for the new session ID
+    // (prevents race condition where LiveSessionView reads stale session ID)
+    if (sessionIdRef) sessionIdRef.current = null;
+
+    // User-edited intention takes priority, then agent intention, then action button hashtag, then card text
+    // Default to #ask (general analysis) when no specific intention is set
+    const actionHashtag = livekit.actionSuggestion?.hashtag;
+    const actionLabel = livekit.actionSuggestion?.label;
+    const defaultPrompt = actionHashtag
+      ? `${actionHashtag} ${actionLabel || 'Analyze this photo'}`
+      : '#ask Analyze this photo';
+    const finalIntention = editedIntention.trim() || livekit.intentionText || (capturedMedia.length > 0 ? defaultPrompt : lastCardTextRef.current);
 
     // Capture refs before navigation unmounts this component
     const dispatch = livekit.sendDispatch;
@@ -589,14 +602,18 @@ export default function LiveCameraView({
     }
 
     // V5: Dispatch exec request via REST → Redis → NanoClaw.
-    const prompt = finalIntention || 'Analyze this photo';
+    const prompt = finalIntention || '#ask Analyze this photo';
     try {
-      await api.dispatchExec({
+      const resp = await api.dispatchExec({
         prompt,
         mediaUrls: allUrls,
         priority: 'thorough',
       });
-      console.log('[redis][frontend] Exec dispatched:', prompt, allUrls.length, 'media files');
+      // Store the backend-created sessionId so LiveSessionView can use it for follow-ups
+      if (resp?.sessionId && sessionIdRef) {
+        sessionIdRef.current = resp.sessionId;
+      }
+      console.log('[redis][frontend] Exec dispatched:', prompt, allUrls.length, 'media files, session:', resp?.sessionId);
     } catch (e) {
       console.error('[redis][frontend] Failed to dispatch exec:', e);
     }
@@ -1120,7 +1137,7 @@ export default function LiveCameraView({
 
       {/* Bottom Controls — floating glass overlay */}
       <div className="absolute bottom-0 left-0 right-0 z-30">
-        <div className="w-full flex items-center justify-center px-6 py-4 gap-6">
+        <div className="w-full flex items-center justify-center gap-8 px-6 py-4">
           {/* Mic Toggle */}
           <motion.button
             onClick={handleMicToggle}
@@ -1138,49 +1155,55 @@ export default function LiveCameraView({
             }
           </motion.button>
 
-          {/* Shutter Button — always captures photo */}
+          {/* Action Button — captures photo + shows current action label */}
           {(() => {
             const agentAction = livekit.actionSuggestion?.action;
+            const actionLabel = livekit.actionSuggestion?.label;
+            const actionHashtag = livekit.actionSuggestion?.hashtag;
             const glowAction = (agentAction && agentAction !== 'dispatch' && agentAction !== 'ready' && agentAction !== 'done') ? agentAction : null;
             const glow = ACTION_GLOW[glowAction] || null;
-            const glowBorder = glow ? glow.border : 'border-white/40';
-            const glowShadow = glow ? glow.shadow : 'none';
-            const ShutterIcon = (glowAction && INTENT_ICONS[glowAction]) || ScanLine;
+            const glowShadow = glow ? glow.shadow : undefined;
+            // Display label: prefer explicit label, then hashtag without #, then action name
+            const displayLabel = actionLabel || (actionHashtag ? actionHashtag.replace('#', '') : null) || glowAction;
 
             return (
-              <div className="relative">
+              <div className="relative flex flex-col items-center">
                 <button
                   onClick={handleShutterClick}
                   onPointerDown={handleShutterDown}
                   onPointerUp={handleShutterUp}
                   onPointerLeave={() => { if (!isRecording) clearTimeout(longPressTimerRef.current); }}
                   disabled={connectionIcon === 'offline' && !livekit.localVideoTrack}
-                  className={`group relative w-[5.5rem] h-[5.5rem] rounded-full border-[5px] flex items-center justify-center transition-all duration-300 ${isRecording ? 'border-red-500/50 scale-110' : glowBorder
-                    } active:scale-95 select-none touch-none disabled:opacity-30`}
-                  style={{ boxShadow: isRecording ? 'none' : glowShadow }}
+                  className="w-[76px] h-[76px] rounded-full flex items-center justify-center transition-colors duration-200 active:scale-95 select-none touch-none disabled:opacity-30"
+                  style={{
+                    border: isRecording ? '4px solid rgba(239,68,68,0.6)' : '4px solid rgba(255,255,255,0.7)',
+                    background: 'transparent',
+                    boxShadow: isRecording ? 'none' : (glowShadow || '0 0 20px rgba(255,255,255,0.1)'),
+                  }}
                 >
                   {isRecording ? (
-                    <div className="w-7 h-7 rounded-md bg-red-500 animate-pulse transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
+                    <div className="w-7 h-7 rounded-md bg-red-500 animate-pulse shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
                   ) : (
-                    <div className="w-[4.25rem] h-[4.25rem] rounded-full flex items-center justify-center transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.3)] bg-white">
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={ShutterIcon.displayName || ShutterIcon.name || 'icon'}
-                          initial={{ opacity: 0, scale: 0.7 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.7 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <ShutterIcon
-                            size={28}
-                            strokeWidth={2}
-                            className="text-black/70 drop-shadow-sm"
-                          />
-                        </motion.div>
-                      </AnimatePresence>
-                    </div>
+                    <div
+                      className="w-[60px] h-[60px] rounded-full bg-white flex items-center justify-center"
+                      style={{
+                        boxShadow: '0 0 20px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.8)',
+                      }}
+                    />
                   )}
                 </button>
+                {displayLabel && !isRecording && (
+                  <span
+                    className="mt-1.5 text-center font-medium capitalize tracking-wide select-none"
+                    style={{
+                      fontSize: '10px',
+                      color: 'rgba(255,255,255,0.75)',
+                      textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    {displayLabel}
+                  </span>
+                )}
               </div>
             );
           })()}

@@ -1,0 +1,24 @@
+{
+  "$id": "image-gallery",
+  "category": "present",
+  "renderer": "react",
+  "component": "ImageGalleryModule",
+  "mutable": false,
+  "streamable": false,
+  "description": "Horizontal scrollable image gallery with snap scrolling, dot indicators, and fullscreen lightbox",
+  "slots": {
+    "title": { "type": "string" },
+    "images": {
+      "type": "array",
+      "required": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "caption": { "type": "string" },
+          "alt": { "type": "string" }
+        }
+      }
+    }
+  }
+}
